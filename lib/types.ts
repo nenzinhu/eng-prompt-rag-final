@@ -68,3 +68,45 @@ export interface IngerirResp {
 export interface UploadResp {
   salvos: string[]
 }
+
+// ── Comparação entre modelos ────────────────────────────────────────────────
+
+export interface CompararAlvo {
+  provider: string
+  modelo: string
+}
+
+export interface CompararResposta {
+  provider: string
+  modelo: string
+  rotulo: string
+  resposta: string
+  resposta_direta: string
+  segundos: number
+  erro: string | null
+}
+
+export interface FatoExclusivo {
+  fato: string
+  modelo: string
+}
+
+export type NivelConcordancia = 'alta' | 'media' | 'baixa' | 'indefinida'
+
+export interface CompararResp {
+  pergunta: string
+  respostas: CompararResposta[]
+  nivel_concordancia: NivelConcordancia
+  divergencia_numerica: boolean
+  similaridade_conclusoes: number
+  numeros_comuns: string[]
+  numeros_exclusivos: FatoExclusivo[]
+  nomes_comuns: string[]
+  nomes_exclusivos: FatoExclusivo[]
+  sem_fatos: boolean
+  modelos_ok: number
+  modelos_total: number
+  pouco_embasado: boolean
+  confianca_media: number
+  contexto: Evidencia[]
+}

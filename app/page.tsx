@@ -9,10 +9,12 @@ import TabPanel from '@/components/TabPanel'
 import PerguntarTab from '@/components/tabs/PerguntarTab'
 import BuscarTab from '@/components/tabs/BuscarTab'
 import ResolverTab from '@/components/tabs/ResolverTab'
+import CompararTab from '@/components/tabs/CompararTab'
 import PdfsTab from '@/components/tabs/PdfsTab'
 
 const TABS: TabDef[] = [
   { id: 'perguntar', label: 'Perguntar', labelShort: 'Perguntar', icon: '💬' },
+  { id: 'comparar', label: 'Comparar Modelos', labelShort: 'Comparar', icon: '⚖️' },
   { id: 'buscar', label: 'Buscar', labelShort: 'Busca', icon: '🔍' },
   { id: 'resolver', label: 'Resolver Questão', labelShort: 'Resolver', icon: '🎯' },
   { id: 'pdfs', label: 'PDFs', labelShort: 'PDFs', icon: '📚' },
@@ -41,6 +43,9 @@ export default function Home() {
           </TabPanel>
           <TabPanel active={active === 'buscar'}>
             <BuscarTab />
+          </TabPanel>
+          <TabPanel active={active === 'comparar'}>
+            <CompararTab providers={providers} />
           </TabPanel>
           <TabPanel active={active === 'resolver'}>
             <ResolverTab providers={providers} />

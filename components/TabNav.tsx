@@ -42,7 +42,7 @@ export default function TabNav({
     <nav className="sticky top-[64px] z-40 flex justify-center px-4 py-3">
       <div
         ref={navRef}
-        className="glass relative flex gap-1 rounded-2xl p-1.5"
+        className="glass relative flex flex-wrap justify-center gap-1 rounded-2xl p-1.5"
       >
         <div
           ref={indicatorRef}

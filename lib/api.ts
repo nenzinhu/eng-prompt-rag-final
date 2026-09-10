@@ -7,6 +7,8 @@ import type {
   PdfsResp,
   IngerirResp,
   UploadResp,
+  CompararAlvo,
+  CompararResp,
 } from './types'
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -34,6 +36,8 @@ export const api = {
     postJson<PerguntarResp>('/api/perguntar', { pergunta, provider, modelo }),
   resolver: (texto: string, provider: string, modelo: string) =>
     postJson<ResolverResp>('/api/resolver', { texto, provider, modelo }),
+  comparar: (pergunta: string, modelos: CompararAlvo[]) =>
+    postJson<CompararResp>('/api/comparar', { pergunta, modelos }),
   pdfs: async (): Promise<PdfsResp> => {
     const r = await fetch('/api/pdfs')
     return r.json()

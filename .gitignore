@@ -11,6 +11,10 @@ out/
 dist/
 .vercel/
 
+# TypeScript (gerado pelo Next)
+next-env.d.ts
+*.tsbuildinfo
+
 # Segredos — NUNCA commitar
 .env
 .env.*

@@ -7,10 +7,13 @@ Roda como Vercel Serverless Function (Python/ASGI). Sem backend local:
 - Geração de resposta: provedor de IA escolhido no dropdown do frontend
   (OpenRouter, Groq, NVIDIA NIM, AIHubMix, ...) via API OpenAI-compatible
 """
+import asyncio
 import io
 import json
 import os
 import re
+import time
+import unicodedata
 from typing import Optional
 from urllib.parse import quote
 
@@ -37,12 +40,23 @@ app = FastAPI(title="Engenharia de Prompt — RAG API (cloud)")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ── Provedores de IA (todos com API "OpenAI-compatible") ───────────────────
+# Lista verificada em 10/09/2026: cada modelo abaixo respondeu de fato a uma
+# chamada real de chat. Modelos que retornavam erro/recusa foram removidos.
+# O primeiro de cada lista é o padrão do dropdown.
 PROVIDERS = {
     "groq": {
         "label": "Groq",
         "base_url": "https://api.groq.com/openai/v1",
         "env_key": "GROQ_API_KEY",
-        "models": ["groq/compound", "groq/compound-mini"],
+        "models": [
+            "groq/compound-mini",
+            "groq/compound",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.8-27b",
+            "allam-2-7b",
+            "qwen/qwen3.6-27b",  # emite tags <think> na resposta
+        ],
     },
     "openrouter": {
         "label": "OpenRouter",
@@ -50,20 +64,27 @@ PROVIDERS = {
         "env_key": "OPENROUTER_API_KEY",
         "models": [
             "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-            "google/gemma-4-31b-it:free",
+            "inclusionai/ling-3.0-flash-fin:free",
+            "nex-agi/nex-n2.5-pro:free",
+            "nex-agi/nex-n2.5-mini:free",
+            "cohere/north-mini-code:free",
+            "liquid/lfm-2.5-2.6b:free",
+            "dots-studio/dots-3-note-preview:free",
+            "inclusionai/ling-3.0-flash-sante:free",
+            "nvidia/nemotron-3-super-120b-a12b:free",
+            "poolside/laguna-xs-2.1:free",
+            "openrouter/free",
+            "nvidia/nemotron-3.5-lightning:free",  # lento (~90 s)
         ],
     },
     "nvidia": {
         "label": "NVIDIA NIM",
         "base_url": "https://integrate.api.nvidia.com/v1",
         "env_key": "NVIDIA_API_KEY",
-        "models": ["meta/llama-3.1-70b-instruct"],
-    },
-    "aihubmix": {
-        "label": "AIHubMix",
-        "base_url": "https://aihubmix.com/v1",
-        "env_key": "AIHUBMIX_API_KEY",
-        "models": ["hy3-free", "nemotron-3.5-lightning-free", "coding-kimi-k3-free", "gpt-oss-20b-free"],
+        "models": [
+            "nvidia/nemotron-3-super-120b-a12b",
+            "nvidia/nemotron-3.5-lightning-30b-a3b",
+        ],
     },
 }
 
@@ -359,6 +380,267 @@ async def resolver(req: ResolverReq):
         "contexto": [{"conteudo": c["content"], "fonte": c["source"], "pagina": c["page"]} for c in chunks[:4]],
         "provider": req.provider,
         "modelo": modelo,
+    }
+
+
+# ── Comparar a mesma pergunta entre vários modelos ─────────────────────────
+#
+# Sobre a métrica: similaridade de vocabulário NÃO mede concordância. Medições
+# reais mostraram que respostas divergentes ("26 milhões" vs "450 mil
+# habitantes") pontuavam MAIS que respostas concordantes, porque falar do mesmo
+# assunto já compartilha vocabulário. A comparação abaixo é feita sobre FATOS
+# concretos (números e nomes próprios), que é onde a discordância aparece.
+
+_STOPWORDS = {
+    "que", "qual", "quais", "para", "por", "com", "uma", "dos", "das", "the", "and",
+    "sao", "ser", "esta", "estao", "como", "mais", "menos", "seu", "sua", "seus",
+    "suas", "nao", "sim", "tambem", "onde", "quando", "porque", "pode", "podem",
+    "deve", "devem", "esse", "essa", "isso", "este", "aquele", "aquela",
+    "um", "uma", "uns", "umas", "de", "do", "da", "em", "no", "na", "nos", "nas",
+    "ao", "aos", "as", "os", "e", "ou", "se", "ele", "ela", "eles", "elas",
+}
+
+# Palavras capitalizadas por início de frase / uso comum — não são nomes próprios.
+_NAO_SAO_NOMES = {
+    "essa", "esse", "este", "esta", "isso", "aquilo", "aquele", "aquela", "alem",
+    "portanto", "entao", "assim", "quando", "onde", "qual", "quais", "para", "com",
+    "nao", "sim", "tambem", "porem", "contudo", "logo", "segundo", "durante",
+    "apos", "antes", "depois", "aqui", "ali", "exemplo", "fonte", "fonte", "pagina",
+    "nota", "observacao", "resposta", "resumo", "conclusao", "introducao",
+    "de", "da", "do", "das", "dos", "em", "no", "na", "nos", "nas", "ao", "aos",
+    "um", "uma", "uns", "umas", "se", "ou", "e", "mas", "que", "como", "quando",
+}
+
+
+def _limpar_resposta(texto: str) -> str:
+    """Remove blocos de raciocínio (<think>...</think>) que alguns modelos emitem."""
+    limpo = re.sub(r"<think>.*?</think>", "", texto, flags=re.DOTALL | re.IGNORECASE)
+    limpo = re.sub(r"</?think>", "", limpo, flags=re.IGNORECASE)
+    return limpo.strip()
+
+
+def _normalizar_numero(tok: str) -> str:
+    """'1.000' e '1000' viram o mesmo fato; '26,3' vira '26.3'."""
+    t = tok.strip().rstrip(".,")
+    if re.fullmatch(r"\d{1,3}(\.\d{3})+", t):      # separador de milhar brasileiro
+        t = t.replace(".", "")
+    elif re.fullmatch(r"\d{1,3}(,\d{3})+", t):    # separador de milhar americano
+        t = t.replace(",", "")
+    else:
+        t = t.replace(",", ".")
+    return t
+
+
+def _extrair_numeros(texto: str) -> set[str]:
+    """Números citados no texto, normalizados ('1.000' == '1000', '26,3' == '26.3')."""
+    nums = set()
+    for tok in re.findall(r"\d[\d.,]*", texto):
+        n = _normalizar_numero(tok)
+        if n and re.search(r"\d", n):
+            nums.add(n)
+    return nums
+
+
+def _extrair_nomes(texto: str) -> set[str]:
+    """Nomes próprios citados no texto (informativo — mais ruidoso que números).
+
+    Descarta palavras capitalizadas que abrem frase/linha/item de lista ou que
+    são rótulos seguidos de dois-pontos ("**Conecta:**", "Defina:") — são verbos
+    que os modelos capitalizam por formatação, não nomes de coisa alguma.
+    """
+    nomes = set()
+    terminadores = ".!?:\n"
+    for m in re.finditer(r"\b[A-ZÀ-Ý][a-zà-ÿ]{2,}\b", texto):
+        # é rótulo? ("Palavra:" ou "**Palavra:**")
+        j = m.end()
+        while j < len(texto) and texto[j] in "*_` \t":
+            j += 1
+        if j < len(texto) and texto[j] == ":":
+            continue
+
+        # abre frase/linha/item de lista?
+        i = m.start() - 1
+        while i >= 0 and texto[i] in " \t*_`-–—>#•|\"'([{":
+            i -= 1
+        if i < 0 or texto[i] in terminadores:
+            continue
+
+        norm = unicodedata.normalize("NFKD", m.group(0).lower())
+        norm = "".join(c for c in norm if not unicodedata.combining(c))
+        if norm in _NAO_SAO_NOMES or len(norm) < 3:
+            continue
+        nomes.add(norm)
+    return nomes
+
+
+def _palavras_conteudo(texto: str) -> set[str]:
+    """Vocabulário significativo — métrica AUXILIAR de semelhança de texto."""
+    t = unicodedata.normalize("NFKD", texto.lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return {p for p in re.findall(r"[a-z0-9]{4,}", t) if p not in _STOPWORDS}
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+SYSTEM_PROMPT_COMPARAR = (
+    "Você é um assistente do curso de Engenharia de Prompt. Responda à pergunta do aluno "
+    "usando principalmente o CONTEXTO fornecido (trechos das apostilas). Cite a fonte e a página "
+    "quando possível. Complemente com conhecimento geral se o contexto não bastar.\n\n"
+    "Ao final, escreva OBRIGATORIAMENTE uma última linha, sozinha, no formato exato:\n"
+    "RESPOSTA DIRETA: <a resposta essencial em no máximo 20 palavras, sem markdown>"
+)
+
+
+def _extrair_resposta_direta(texto: str) -> str:
+    """Pega a linha 'RESPOSTA DIRETA: ...' que o modelo foi instruído a emitir."""
+    m = re.findall(r"RESPOSTA\s*DIRETA\s*:?\**\s*(.+)", texto, flags=re.IGNORECASE)
+    if not m:
+        return ""
+    linha = m[-1]
+    linha = linha.replace("*", "").strip()
+    return linha[:400]
+
+
+class CompararItem(BaseModel):
+    provider: str
+    modelo: Optional[str] = None
+
+
+class CompararReq(BaseModel):
+    pergunta: str
+    modelos: list[CompararItem]
+
+
+@app.post("/api/comparar")
+async def comparar(req: CompararReq):
+    """Consulta a MESMA pergunta em vários modelos e aponta onde eles divergem.
+
+    Todos recebem o mesmo contexto do RAG, então qualquer diferença vem do
+    modelo. Cada um é instruído a terminar com uma linha 'RESPOSTA DIRETA:',
+    que dá uma conclusão curta e comparável — comparar o texto completo seria
+    comparar formatação, não conteúdo.
+    """
+    pergunta = req.pergunta.strip()
+    if not pergunta:
+        raise HTTPException(400, "Pergunta vazia.")
+    if not 2 <= len(req.modelos) <= 4:
+        raise HTTPException(400, "Informe entre 2 e 4 modelos para comparar.")
+
+    emb = (await gerar_embeddings([pergunta]))[0]
+    chunks = await buscar_chunks(emb, n=6)
+    if not chunks:
+        raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
+
+    contexto, media = montar_contexto(chunks)
+    user_prompt = f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {pergunta}"
+
+    async def responder(item: CompararItem) -> dict:
+        cfg = PROVIDERS.get(item.provider)
+        modelo = item.modelo or (cfg["models"][0] if cfg else "")
+        nome = f"{item.provider}/{modelo}"
+        inicio = time.perf_counter()
+        try:
+            bruto = await chamar_llm(item.provider, modelo, SYSTEM_PROMPT_COMPARAR, user_prompt)
+            resposta = _limpar_resposta(bruto)
+            erro = None
+        except HTTPException as e:
+            resposta, erro = "", str(e.detail)
+        except Exception as e:  # rede, timeout, formato inesperado
+            resposta, erro = "", f"{type(e).__name__}: {e}"[:300]
+        direta, resto = _extrair_resposta_direta(resposta), resposta
+        if direta:
+            # remove a linha da resposta direta do corpo exibido (fica no campo próprio)
+            resto = re.sub(r"\**\s*RESPOSTA\s*DIRETA\s*:?\**.*$", "", resposta,
+                           flags=re.IGNORECASE | re.DOTALL).strip()
+        return {
+            "provider": item.provider,
+            "modelo": modelo,
+            "rotulo": nome,
+            "resposta": resto,
+            "resposta_direta": direta,
+            "segundos": round(time.perf_counter() - inicio, 1),
+            "erro": erro,
+        }
+
+    # Em paralelo: o tempo total é o do modelo mais lento, não a soma.
+    respostas = list(await asyncio.gather(*(responder(m) for m in req.modelos)))
+
+    # ── Comparação sobre a RESPOSTA DIRETA (curta e comparável) ────────────
+    boas = [r for r in respostas if not r["erro"] and r["resposta_direta"]]
+    diretas = {r["rotulo"]: r["resposta_direta"] for r in boas}
+
+    numeros_por_modelo = {rot: _extrair_numeros(d) for rot, d in diretas.items()}
+    nomes_por_modelo = {rot: _extrair_nomes(d) for rot, d in diretas.items()}
+
+    def dividir(por_modelo: dict[str, set[str]]) -> tuple[list[str], list[dict]]:
+        onde: dict[str, list[str]] = {}
+        for rotulo, itens in por_modelo.items():
+            for it in itens:
+                onde.setdefault(it, []).append(rotulo)
+        comuns = sorted(i for i, ms in onde.items() if len(ms) >= 2)
+        exclusivos = sorted(
+            ({"fato": i, "modelo": ms[0]} for i, ms in onde.items() if len(ms) == 1),
+            key=lambda d: d["fato"],
+        )
+        return comuns, exclusivos
+
+    def vazio(por_modelo):
+        """Nenhum fato para comparar (todos os modelos não citam fatos)."""
+        return not any(por_modelo.values())
+
+    numeros_comuns, numeros_exclusivos = dividir(numeros_por_modelo)
+    nomes_comuns, nomes_exclusivos = dividir(nomes_por_modelo)
+
+    # Similaridade entre as conclusões (curtas, então aqui vocabulário diz algo).
+    conj = [_palavras_conteudo(d) for d in diretas.values()]
+    vocab, pares = [], 0
+    for i in range(len(conj)):
+        for j in range(i + 1, len(conj)):
+            vocab.append(_jaccard(conj[i], conj[j]))
+            pares += 1
+    similaridade = round(sum(vocab) / pares, 3) if pares else 0.0
+
+    # Divergência em número na conclusão = conflito concreto (26 mi vs 460 mil).
+    divergencia_numerica = len(boas) >= 2 and bool(numeros_exclusivos)
+
+    # Calibrado com medições reais: conclusões equivalentes escritas por modelos
+    # diferentes ficam em ~0,28-0,36 de Jaccard (a redação difere), então o
+    # limiar de "alta" não pode ser alto. Nomes compartilhados (os modelos
+    # citam as mesmas entidades) reforçam o acordo.
+    if len(boas) < 2:
+        nivel = "indefinida"
+    elif divergencia_numerica:
+        nivel = "baixa"                      # conflito verificável
+    elif len(nomes_comuns) >= 2 or similaridade >= 0.30:
+        nivel = "alta"
+    elif similaridade >= 0.20:
+        nivel = "media"
+    else:
+        nivel = "baixa"
+
+    return {
+        "pergunta": pergunta,
+        "respostas": respostas,
+        "nivel_concordancia": nivel,
+        "divergencia_numerica": divergencia_numerica,
+        "similaridade_conclusoes": similaridade,
+        "numeros_comuns": numeros_comuns,
+        "numeros_exclusivos": numeros_exclusivos,
+        "nomes_comuns": nomes_comuns,
+        "nomes_exclusivos": nomes_exclusivos,
+        "sem_fatos": vazio(numeros_por_modelo) and vazio(nomes_por_modelo),
+        "modelos_ok": len(boas),
+        "modelos_total": len(req.modelos),
+        "pouco_embasado": media < LIMIAR_CONFIANCA,
+        "confianca_media": round(media, 3),
+        "contexto": [
+            {"conteudo": c["content"], "fonte": c["source"], "pagina": c["page"], "relevancia": round(c["similarity"], 3)}
+            for c in chunks
+        ],
     }
 
 
