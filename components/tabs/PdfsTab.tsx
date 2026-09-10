@@ -77,16 +77,16 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
     setLog((prev) => [...prev, { type, msg }])
   }
 
-  async function entrar(t: string) {
+  async function entrar(usuario: string, senha: string) {
     setVerificando(true)
     setErroToken('')
     try {
-      await api.adminVerificar(t)
-      salvarTokenAdmin(t)
-      setToken(t)
+      const d = await api.adminLogin(usuario, senha)
+      salvarTokenAdmin(d.token)
+      setToken(d.token)
       setValido(true)
     } catch (e) {
-      setErroToken(e instanceof Error ? e.message : 'Não foi possível validar o token')
+      setErroToken(e instanceof Error ? e.message : 'Não foi possível entrar')
     } finally {
       setVerificando(false)
     }

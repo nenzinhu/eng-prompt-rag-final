@@ -19,7 +19,9 @@ que não faz I/O e é coberto pelos testes em `tests/test_rag_core.py`.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import hmac
 import io
 import json
 import os
@@ -62,6 +64,14 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+ADMIN_USER = os.environ.get("ADMIN_USER", "")
+ADMIN_PASS = os.environ.get("ADMIN_PASS", "")
+
+# Duração da sessão do admin (segundos). A área restrita pede usuário e senha;
+# o login emite um token assinado (HMAC) com esta validade. Serverless é
+# stateless, então a sessão é auto-contida (assinatura + expiração), não um
+# estado em memória.
+SESSAO_ADMIN_SEGUNDOS = 8 * 60 * 60  # 8 horas
 
 # Origens liberadas no CORS. Sem configuração, só o desenvolvimento local.
 ALLOWED_ORIGINS = [
@@ -269,11 +279,67 @@ def escrita_via_service_role() -> bool:
     return bool(SUPABASE_SERVICE_ROLE_KEY)
 
 
+def _segredo_sessao() -> str:
+    """Segredo usado para assinar as sessões. Deriva do ADMIN_TOKEN para não
+    exigir mais uma variável de ambiente. Se não houver, a autenticação fica
+    indisponível (falha fechada)."""
+    if not ADMIN_TOKEN:
+        raise HTTPException(
+            503,
+            "ADMIN_TOKEN não configurado no servidor. Defina a variável de ambiente "
+            "ADMIN_TOKEN (segredo) para habilitar a área restrita.",
+        )
+    return ADMIN_TOKEN
+
+
+def emitir_sessao(usuario: str) -> tuple[str, int]:
+    """Emite um token de sessão assinado (HMAC) com expiração.
+
+    Formato: base64url(payload).base64url(assinatura), onde payload é
+    `{"u": usuario, "exp": epoch}`. Serverless é stateless, então a sessão é
+    auto-contida: qualquer instância valida pela assinatura + expiração.
+    """
+    segredo = _segredo_sessao()
+    exp = int(time.time()) + SESSAO_ADMIN_SEGUNDOS
+    payload = base64.urlsafe_b64encode(json.dumps({"u": usuario, "exp": exp}).encode()).rstrip(b"=").decode()
+    assinatura = base64.urlsafe_b64encode(
+        hmac.new(segredo.encode(), payload.encode(), hashlib.sha256).digest()
+    ).rstrip(b"=").decode()
+    return f"{payload}.{assinatura}", exp
+
+
+def validar_sessao(token: str) -> bool:
+    """Valida a assinatura e a expiração de um token de sessão."""
+    if not token:
+        return False
+    try:
+        segredo = _segredo_sessao()
+    except HTTPException:
+        return False
+    if "." not in token:
+        return False
+    payload, assinatura = token.rsplit(".", 1)
+    esperada = base64.urlsafe_b64encode(
+        hmac.new(segredo.encode(), payload.encode(), hashlib.sha256).digest()
+    ).rstrip(b"=").decode()
+    if not hmac.compare_digest(assinatura, esperada):
+        return False
+    try:
+        dados = json.loads(base64.urlsafe_b64decode(payload.encode() + b"=" * (-len(payload) % 4)))
+    except Exception:
+        return False
+    exp = dados.get("exp", 0)
+    return int(exp) > int(time.time())
+
+
 async def exigir_admin(x_admin_token: str = Header(default="")):
     """Protege as rotas de escrita e as que gastam chave de IA.
 
-    Falha fechada: sem ADMIN_TOKEN configurado no ambiente, as rotas ficam
-    indisponíveis (503) em vez de abertas.
+    Aceita um token de sessão válido (emitido pelo /api/admin/login) ou, por
+    retrocompatibilidade, o ADMIN_TOKEN direto (usado por scripts/CLI).
+
+    Falha fechada: sem ADMIN_TOKEN configurado, as rotas ficam indisponíveis
+    (503) em vez de abertas.
     """
     if not ADMIN_TOKEN:
         raise HTTPException(
@@ -281,8 +347,11 @@ async def exigir_admin(x_admin_token: str = Header(default="")):
             "ADMIN_TOKEN não configurado no servidor. Defina a variável de ambiente "
             "ADMIN_TOKEN para habilitar as rotas de escrita.",
         )
-    if not secrets.compare_digest(x_admin_token, ADMIN_TOKEN):
-        raise HTTPException(401, "Token de admin ausente ou inválido (header X-Admin-Token).")
+    if validar_sessao(x_admin_token):
+        return
+    if secrets.compare_digest(x_admin_token, ADMIN_TOKEN):
+        return
+    raise HTTPException(401, "Sessão de admin ausente ou inválida (faça login na área restrita).")
 
 
 # ── Limite de uso das rotas que gastam chave de IA ─────────────────────────
@@ -699,12 +768,37 @@ async def status():
 def config_publica():
     """O que o front precisa saber antes de mostrar os botões de escrita."""
     return {
-        "admin_necessario": bool(ADMIN_TOKEN),
+        "admin_necessario": bool(ADMIN_TOKEN and ADMIN_USER and ADMIN_PASS),
         "escrita_via": "service_role" if escrita_via_service_role() else "anon",
         "inseguro": not escrita_via_service_role(),
         "extensoes": list(EXTENSOES_DOCUMENTO),
         "max_upload_mb": MAX_UPLOAD_BYTES // (1024 * 1024),
     }
+
+
+class LoginReq(BaseModel):
+    usuario: str
+    senha: str
+
+
+@app.post("/api/admin/login")
+def admin_login(req: LoginReq):
+    """Autentica o administrador e devolve uma sessão.
+
+    Valida usuário e senha (comparação em tempo constante para evitar ataque de
+    timing). Emite um token de sessão assinado com validade de 8 h, que o front
+    envia no header X-Admin-Token nas rotas de escrita.
+    """
+    if not (ADMIN_USER and ADMIN_PASS and ADMIN_TOKEN):
+        raise HTTPException(
+            503,
+            "Credenciais de admin não configuradas. Defina ADMIN_USER, ADMIN_PASS e "
+            "ADMIN_TOKEN no servidor.",
+        )
+    if not (secrets.compare_digest(req.usuario or "", ADMIN_USER) and secrets.compare_digest(req.senha or "", ADMIN_PASS)):
+        raise HTTPException(401, "Usuário ou senha inválidos.")
+    token, exp = emitir_sessao(ADMIN_USER)
+    return {"token": token, "expira": exp, "usuario": ADMIN_USER}
 
 
 @app.get("/api/admin/verificar")

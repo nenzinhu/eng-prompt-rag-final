@@ -89,6 +89,8 @@ export const api = {
   pdfs: () => pedir<PdfsResp>('/api/pdfs'),
 
   // ── Rotas de escrita (exigem o token de admin) ───────────────────────────
+  adminLogin: (usuario: string, senha: string) =>
+    postJson<{ token: string; expira: number; usuario: string }>('/api/admin/login', { usuario, senha }),
   adminVerificar: (token: string) =>
     pedir<{ ok: boolean }>('/api/admin/verificar', { headers: { 'X-Admin-Token': token } }),
   previaIngestao: (arquivo: string, token: string) =>
