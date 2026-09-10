@@ -44,6 +44,9 @@ export interface ResolverResp {
   resposta: string | null
   conteudo_resposta: string
   explicacao: string
+  explicacao_rapida: string
+  explicacao_detalhada: string
+  alternativas_erradas: Record<string, string>
   pouco_embasado: boolean
   confianca_media: number
   contexto: Evidencia[]

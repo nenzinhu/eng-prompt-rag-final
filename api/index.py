@@ -288,9 +288,16 @@ SYSTEM_PROMPT_PERGUNTA = (
 
 SYSTEM_PROMPT_RESOLVER = (
     "Você é um assistente que resolve questões de múltipla escolha do curso de Engenharia de "
-    'Prompt, usando o CONTEXTO das apostilas. Responda SEMPRE em JSON: {"letra": "A", '
-    '"explicacao": "..."}. Escolha a alternativa correta com base no contexto e, se necessário, '
-    "complemente com conhecimento geral."
+    "Prompt, usando o CONTEXTO das apostilas e, se necessário, conhecimento geral. Para CADA "
+    "alternativa que NÃO for a correta, explique em 1 frase curta por que ela está errada "
+    "(o que a torna um distrator). Responda SEMPRE em JSON, sem nenhum texto fora dele:\n"
+    "{\n"
+    '  "letra": "A",\n'
+    '  "explicacao_rapida": "resumo de 1-2 frases, direto ao ponto, fácil de ler rápido",\n'
+    '  "explicacao_detalhada": "raciocínio completo, citando o contexto quando possível",\n'
+    '  "alternativas_erradas": {"B": "motivo curto", "C": "motivo curto", "D": "motivo curto"}\n'
+    "}\n"
+    "Não inclua a letra correta em \"alternativas_erradas\"."
 )
 
 SYSTEM_PROMPT_SIMPLIFICAR = (
@@ -553,13 +560,22 @@ async def resolver(req: ResolverReq):
         f"CONTEXTO:\n{contexto}\n\nQUESTÃO:\n{questao}\n\nALTERNATIVAS:\n{alternativas_fmt}",
     )
 
-    letra, explicacao = None, resposta_bruta
+    letra = None
+    explicacao_rapida = resposta_bruta
+    explicacao_detalhada = ""
+    alternativas_erradas: dict[str, str] = {}
     match = re.search(r"\{.*\}", resposta_bruta, re.DOTALL)
     if match:
         try:
             parsed = json.loads(match.group(0))
             letra = (parsed.get("letra") or "").strip().upper() or None
-            explicacao = parsed.get("explicacao", resposta_bruta)
+            explicacao_rapida = parsed.get("explicacao_rapida") or parsed.get("explicacao") or resposta_bruta
+            explicacao_detalhada = parsed.get("explicacao_detalhada") or ""
+            alternativas_erradas = {
+                k.strip().upper(): v.strip()
+                for k, v in (parsed.get("alternativas_erradas") or {}).items()
+                if isinstance(v, str) and v.strip() and k.strip().upper() != letra
+            }
         except json.JSONDecodeError:
             pass
 
@@ -568,7 +584,10 @@ async def resolver(req: ResolverReq):
         "alternativas": alternativas,
         "resposta": letra,
         "conteudo_resposta": alternativas.get(letra, "") if letra else "",
-        "explicacao": explicacao,
+        "explicacao": explicacao_rapida,
+        "explicacao_rapida": explicacao_rapida,
+        "explicacao_detalhada": explicacao_detalhada,
+        "alternativas_erradas": alternativas_erradas,
         "pouco_embasado": media < LIMIAR_CONFIANCA,
         "confianca_media": round(media, 3),
         "contexto": [{"conteudo": c["content"], "fonte": c["source"], "pagina": c["page"]} for c in chunks[:4]],
