@@ -1,0 +1,55 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { api } from '@/lib/api'
+import type { ProvidersResp } from '@/lib/types'
+import Header from '@/components/Header'
+import TabNav, { type TabDef } from '@/components/TabNav'
+import TabPanel from '@/components/TabPanel'
+import PerguntarTab from '@/components/tabs/PerguntarTab'
+import BuscarTab from '@/components/tabs/BuscarTab'
+import ResolverTab from '@/components/tabs/ResolverTab'
+import PdfsTab from '@/components/tabs/PdfsTab'
+
+const TABS: TabDef[] = [
+  { id: 'perguntar', label: 'Perguntar', labelShort: 'Perguntar', icon: '💬' },
+  { id: 'buscar', label: 'Buscar', labelShort: 'Busca', icon: '🔍' },
+  { id: 'resolver', label: 'Resolver Questão', labelShort: 'Resolver', icon: '🎯' },
+  { id: 'pdfs', label: 'PDFs', labelShort: 'PDFs', icon: '📚' },
+]
+
+export default function Home() {
+  const [active, setActive] = useState('perguntar')
+  const [providers, setProviders] = useState<ProvidersResp>({})
+  const [statusTick, setStatusTick] = useState(0)
+
+  useEffect(() => {
+    api
+      .providers()
+      .then(setProviders)
+      .catch(() => setProviders({}))
+  }, [])
+
+  return (
+    <>
+      <Header key={statusTick} />
+      <TabNav tabs={TABS} active={active} onChange={setActive} />
+      <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-4">
+        <div className="relative">
+          <TabPanel active={active === 'perguntar'}>
+            <PerguntarTab providers={providers} />
+          </TabPanel>
+          <TabPanel active={active === 'buscar'}>
+            <BuscarTab />
+          </TabPanel>
+          <TabPanel active={active === 'resolver'}>
+            <ResolverTab providers={providers} />
+          </TabPanel>
+          <TabPanel active={active === 'pdfs'}>
+            <PdfsTab onStatusChange={() => setStatusTick((t) => t + 1)} />
+          </TabPanel>
+        </div>
+      </main>
+    </>
+  )
+}
