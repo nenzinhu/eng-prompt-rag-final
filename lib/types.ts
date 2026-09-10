@@ -77,8 +77,21 @@ export interface IngerirResp {
   erro?: string
 }
 
+export interface UploadSubstituicao {
+  arquivo: string
+  substituiu: string
+  motivo: string
+}
+
+export interface UploadIgnorado {
+  arquivo: string
+  motivo: string
+}
+
 export interface UploadResp {
   salvos: string[]
+  substituidos?: UploadSubstituicao[]
+  ignorados?: UploadIgnorado[]
 }
 
 // ── Comparação entre modelos ────────────────────────────────────────────────

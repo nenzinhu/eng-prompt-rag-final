@@ -8,6 +8,7 @@ Roda como Vercel Serverless Function (Python/ASGI). Sem backend local:
   (OpenRouter, Groq, NVIDIA NIM, AIHubMix, ...) via API OpenAI-compatible
 """
 import asyncio
+import hashlib
 import io
 import json
 import os
@@ -86,6 +87,28 @@ PROVIDERS = {
             "nvidia/nemotron-3.5-lightning-30b-a3b",
         ],
     },
+    "nous": {
+        "label": "Nous Portal",
+        "base_url": "https://inference-api.nousresearch.com/v1",
+        "env_key": "NOUS_API_KEY",
+        "models": [
+            # Verificados em 10/09/2026 (chamada real de chat) — gratuitos primeiro
+            "meituan/longcat-2.0:free",
+            "inclusionai/ling-3.0-flash-sante:free",
+            "inclusionai/ling-3.0-flash-fin:free",
+            "poolside/laguna-s-2.1:free",
+            "poolside/laguna-xs-2.1:free",
+            "mistralai/mistral-nemo",  # pago, mais barato do portal (~$0.02/1M in)
+            "openai/gpt-oss-20b",
+            "meta-llama/llama-3.1-8b-instruct",
+            "inclusionai/ling-3.0-flash",
+            "qwen/qwen3.7-flash",
+            "amazon/nova-micro-v1",
+            "openai/gpt-oss-120b",
+            "deepseek/deepseek-v4-flash-0731",
+            "qwen/qwen3-30b-a3b-instruct-2507",
+        ],
+    },
 }
 
 _H = {"Authorization": f"Bearer {SUPABASE_ANON_KEY}", "apikey": SUPABASE_ANON_KEY}
@@ -154,7 +177,8 @@ async def upload_pdf_storage(filename: str, data: bytes):
     r.raise_for_status()
 
 
-async def listar_pdfs_storage() -> list[str]:
+async def listar_arquivos_storage() -> list[dict]:
+    """PDFs do bucket, com o MD5 do conteúdo (eTag) para detectar duplicatas."""
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post(
             f"{SUPABASE_URL}/storage/v1/object/list/ementas",
@@ -162,7 +186,33 @@ async def listar_pdfs_storage() -> list[str]:
             json={"prefix": ""},
         )
     r.raise_for_status()
-    return [f["name"] for f in r.json() if f["name"].endswith(".pdf")]
+    arquivos = []
+    for f in r.json():
+        if not f["name"].lower().endswith(".pdf"):
+            continue
+        meta = f.get("metadata") or {}
+        arquivos.append({
+            "nome": f["name"],
+            # O Storage guarda o MD5 do arquivo no eTag — não precisamos baixá-lo.
+            "md5": (meta.get("eTag") or "").strip('"').lower(),
+            "tamanho": meta.get("size"),
+            "criado_em": f.get("created_at"),
+        })
+    return arquivos
+
+
+async def listar_pdfs_storage() -> list[str]:
+    return [a["nome"] for a in await listar_arquivos_storage()]
+
+
+async def remover_pdf_storage(filename: str):
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.request(
+            "DELETE",
+            f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(filename)}",
+            headers=_H,
+        )
+    r.raise_for_status()
 
 
 async def baixar_pdf_storage(filename: str) -> bytes:
@@ -727,13 +777,73 @@ async def comparar(req: CompararReq):
 
 @app.post("/api/upload")
 async def upload(files: list[UploadFile] = File(...)):
-    salvos = []
+    """Envia PDFs ao Storage sem permitir duplicatas.
+
+    Regras (evitam indexar o mesmo documento duas vezes):
+    - mesmo conteúdo + mesmo nome  → ignora (já está lá)
+    - mesmo conteúdo + outro nome  → SOBRESCREVE: apaga o antigo (arquivo e
+      chunks) e mantém só o novo nome, para não haver dois iguais no índice
+    - mesmo nome + conteúdo novo   → versão atualizada: apaga os chunks antigos
+      (senão sobrariam chunks das duas versões)
+    - arquivo novo                 → salva
+    """
+    existentes = await listar_arquivos_storage()
+    por_md5 = {a["md5"]: a for a in existentes if a["md5"]}
+    por_nome = {a["nome"]: a for a in existentes}
+
+    salvos: list[str] = []
+    substituidos: list[dict] = []
+    ignorados: list[dict] = []
+
     for f in files:
-        if f.filename.endswith(".pdf"):
-            data = await f.read()
-            await upload_pdf_storage(f.filename, data)
-            salvos.append(f.filename)
-    return {"salvos": salvos}
+        nome = f.filename or ""
+        if not nome.lower().endswith(".pdf"):
+            ignorados.append({"arquivo": nome, "motivo": "não é PDF"})
+            continue
+
+        data = await f.read()
+        if not data:
+            ignorados.append({"arquivo": nome, "motivo": "arquivo vazio"})
+            continue
+        md5 = hashlib.md5(data).hexdigest()
+
+        igual = por_md5.get(md5)
+        if igual and igual["nome"] == nome:
+            ignorados.append({"arquivo": nome, "motivo": "conteúdo idêntico já indexado"})
+            continue
+
+        if igual:
+            # Mesmo documento com nome diferente → substitui o existente.
+            await apagar_chunks_por_fonte(igual["nome"])
+            await remover_pdf_storage(igual["nome"])
+            por_nome.pop(igual["nome"], None)
+            substituidos.append({"arquivo": nome, "substituiu": igual["nome"],
+                                 "motivo": "mesmo conteúdo, nome diferente"})
+        elif nome in por_nome:
+            # Mesmo nome, conteúdo novo → versão atualizada.
+            await apagar_chunks_por_fonte(nome)
+            substituidos.append({"arquivo": nome, "substituiu": nome,
+                                 "motivo": "versão atualizada do mesmo arquivo"})
+        else:
+            salvos.append(nome)
+
+        await upload_pdf_storage(nome, data)
+        por_md5[md5] = {"nome": nome, "md5": md5}
+        por_nome[nome] = {"nome": nome, "md5": md5}
+
+    return {"salvos": salvos, "substituidos": substituidos, "ignorados": ignorados}
+
+
+@app.get("/api/duplicatas")
+async def duplicatas():
+    """Diagnóstico: arquivos no Storage com o mesmo conteúdo (MD5)."""
+    arquivos = await listar_arquivos_storage()
+    agrupado: dict[str, list[str]] = {}
+    for a in arquivos:
+        if a["md5"]:
+            agrupado.setdefault(a["md5"], []).append(a["nome"])
+    grupos = [nomes for nomes in agrupado.values() if len(nomes) > 1]
+    return {"total_arquivos": len(arquivos), "grupos_duplicados": grupos}
 
 
 @app.get("/api/pdfs")

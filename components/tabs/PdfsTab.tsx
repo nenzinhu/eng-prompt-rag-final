@@ -79,8 +79,28 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
     logLine('info', `⬆ Enviando ${pending.length} arquivo(s)…`)
     try {
       const d = await api.upload(pending)
-      logLine('ok', `✓ ${d.salvos.length} arquivo(s) salvos no Supabase Storage: ${d.salvos.join(', ')}`)
+
+      for (const nome of d.salvos) {
+        logLine('ok', `✓ ${nome}: novo arquivo salvo no Storage`)
+      }
+      for (const s of d.substituidos ?? []) {
+        logLine(
+          'info',
+          s.arquivo === s.substituiu
+            ? `↻ ${s.arquivo}: versão atualizada substituiu a anterior`
+            : `↻ ${s.arquivo}: mesclado com "${s.substituiu}" (mesmo conteúdo, nome diferente)`,
+        )
+      }
+      for (const i of d.ignorados ?? []) {
+        logLine('info', `⏭ ${i.arquivo}: ignorado — ${i.motivo}`)
+      }
+
+      const nadaMudou = !d.salvos.length && !(d.substituidos ?? []).length
       setPending([])
+      if (nadaMudou) {
+        logLine('info', '⏭ Nada a reindexar — nenhum arquivo mudou.')
+        return
+      }
       await runIngest()
     } catch {
       logLine('err', '✗ Erro no upload')
@@ -116,6 +136,10 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
           <strong className="font-medium text-text">Arraste PDFs ou clique para selecionar</strong>
           <br />
           Arquivos .pdf são enviados ao Supabase Storage e indexados
+          <br />
+          <span className="text-[0.78rem]">
+            Arquivo repetido é ignorado; mesmo conteúdo com nome diferente substitui o anterior.
+          </span>
         </p>
         <input
           ref={fileInputRef}
