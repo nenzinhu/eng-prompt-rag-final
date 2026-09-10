@@ -89,6 +89,8 @@ export interface GlossarioResp {
   modelo: string
   /** Presente quando os termos foram exibidos mas não puderam ser salvos. */
   aviso_salvamento?: string
+  /** Presente quando o modelo não devolveu os termos no formato esperado. */
+  aviso_geracao?: string
 }
 
 export interface PdfsResp {

@@ -53,7 +53,7 @@ export default function GlossarioTab({
     try {
       const d = await api.glossario(temaForcado ?? tema, provider, modelo)
       setTermos(d.termos)
-      setAviso(d.aviso_salvamento ?? '')
+      setAviso(d.aviso_salvamento ?? d.aviso_geracao ?? '')
       buscarSalvos(busca)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao gerar glossário')

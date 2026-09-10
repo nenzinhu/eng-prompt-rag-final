@@ -45,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from rag_core import (  # noqa: E402
     calcular_concordancia,
     chunk_texto,
+    conclusao_fallback,
     extrair_alternativas,
     extrair_bloco_json,
     extrair_resposta_direta,
@@ -68,6 +69,15 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB por arquivo
 MAX_RESULTADOS_BUSCA = 20
 CACHE_STATUS_SEGUNDOS = 30
 LIMITE_LLM_POR_MINUTO = 20  # por IP, por instância (ver observação em _limitar_llm)
+
+# Orçamento de tempo da função serverless (vercel.json: maxDuration). Os timeouts
+# das chamadas de IA precisam caber AQUI DENTRO: antes o cliente esperava 90 s num
+# orçamento de 60 s, então um modelo lento morria com 504 sem explicação, em vez
+# de devolver um erro claro. Medido em produção: /api/glossario estourava o
+# limite quando o modelo não devolvia JSON válido e a retentativa dobrava o tempo.
+TEMPO_MAX_FUNCAO = float(os.environ.get("MAX_DURACAO_FUNCAO", "60"))
+MARGEM_SEGURANCA = 8.0  # reserva para serializar a resposta antes do corte
+TIMEOUT_LLM = TEMPO_MAX_FUNCAO - MARGEM_SEGURANCA
 
 EXTENSOES_DOCUMENTO = (".pdf", ".txt", ".md")
 
@@ -480,7 +490,13 @@ def contexto_para_texto(evidencias: list[dict]) -> str:
 # ── Chamada ao provedor de IA escolhido (dropdown) ──────────────────────────
 
 
-async def chamar_llm(provider: str, modelo: str, system_prompt: str, user_prompt: str) -> str:
+async def chamar_llm(
+    provider: str,
+    modelo: str,
+    system_prompt: str,
+    user_prompt: str,
+    timeout: Optional[float] = None,
+) -> str:
     cfg = PROVIDERS.get(provider)
     if not cfg:
         raise HTTPException(400, f"Provedor desconhecido: {provider}")
@@ -493,18 +509,27 @@ async def chamar_llm(provider: str, modelo: str, system_prompt: str, user_prompt
             f"Chave de API não configurada para '{provider}' "
             f"(defina {cfg['env_key']} nas variáveis de ambiente).",
         )
-    async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=10.0)) as client:
-        r = await client.post(
-            f"{cfg['base_url']}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": modelo,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "temperature": 0.3,
-            },
+    limite = max(5.0, min(timeout or TIMEOUT_LLM, TIMEOUT_LLM))
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(limite, connect=10.0)) as client:
+            r = await client.post(
+                f"{cfg['base_url']}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": modelo,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.3,
+                },
+            )
+    except httpx.TimeoutException:
+        # Erro claro em vez do 504 seco da plataforma.
+        raise HTTPException(
+            504,
+            f"O modelo '{modelo}' não respondeu em {round(limite)}s. Tente outro modelo "
+            f"ou uma pergunta mais curta.",
         )
     if r.status_code != 200:
         raise HTTPException(502, f"Erro do provedor {provider}: {r.text[:300]}")
@@ -786,7 +811,10 @@ async def glossario(req: GlossarioReq, request: Request):
     texto_usuario = req.tema.strip()
     query = texto_usuario or "principais conceitos, termos técnicos e siglas do curso"
     emb = (await gerar_embeddings([query]))[0]
-    chunks = await buscar_chunks(emb, n=25)
+    # 12 chunks em vez de 25: o glossário é a rota com o maior contexto e era a
+    # única que estourava o tempo da função. Metade do contexto acelera a resposta
+    # sem perder os termos relevantes (o material por assunto vem nos primeiros).
+    chunks = await buscar_chunks(emb, n=12)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
 
@@ -815,9 +843,19 @@ async def glossario(req: GlossarioReq, request: Request):
             if isinstance(t, dict) and t.get("termo") and t.get("explicacao")
         ]
 
+    # A retentativa resolve a maioria dos casos em que o modelo foge do formato
+    # JSON, mas cada tentativa custa uma chamada inteira do modelo. Duas chamadas
+    # não cabem no orçamento da função quando o modelo é lento — era essa a causa
+    # do 504 no glossário (2 × ~25 s num limite de 60 s).
+    inicio = time.perf_counter()
     termos: list[dict] = []
-    for _ in range(2):  # o modelo às vezes foge do formato JSON — uma retentativa resolve a maioria
-        bruto = limpar_resposta(await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_GLOSSARIO, user_prompt))
+    for _ in range(2):
+        restante = TEMPO_MAX_FUNCAO - (time.perf_counter() - inicio) - MARGEM_SEGURANCA
+        if restante < 8:  # não há mais tempo para uma chamada útil
+            break
+        bruto = limpar_resposta(
+            await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_GLOSSARIO, user_prompt, timeout=restante)
+        )
         termos = extrair_termos(bruto)
         if termos:
             break
@@ -827,6 +865,11 @@ async def glossario(req: GlossarioReq, request: Request):
         aviso = await salvar_termos_glossario(termos, origem=texto_usuario[:200])
 
     resposta = {"termos": termos, "provider": req.provider, "modelo": modelo}
+    if not termos:
+        resposta["aviso_geracao"] = (
+            "O modelo não devolveu os termos no formato esperado dentro do tempo disponível. "
+            "Tente de novo ou escolha outro modelo."
+        )
     if aviso:
         # Não bloqueia a resposta ao aluno, mas deixa de falhar em silêncio.
         resposta["aviso_salvamento"] = f"Termos exibidos, mas não foram salvos no banco — {aviso}"
@@ -974,6 +1017,10 @@ async def comparar(req: CompararReq, request: Request):
         if direta:
             # remove a linha da resposta direta do corpo exibido (fica no campo próprio)
             resto = remover_linha_resposta_direta(resposta)
+        else:
+            # O modelo não emitiu a linha obrigatória: usa a última linha útil, para
+            # que a comparação entre modelos não fique cega.
+            direta = conclusao_fallback(resposta)
         return {
             "provider": item.provider,
             "modelo": modelo,

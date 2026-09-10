@@ -179,6 +179,23 @@ def extrair_bloco_json(bruto: str) -> str | None:
     return achado.group(0) if achado else None
 
 
+def conclusao_fallback(texto: str) -> str:
+    """Última linha útil da resposta — para modelos que ignoram a linha RESPOSTA DIRETA.
+
+    Nem todo modelo segue a instrução de terminar com "RESPOSTA DIRETA: ...". Sem
+    uma conclusão, a comparação entre modelos caía em "indefinida" mesmo com
+    respostas válidas (observado em produção, 10/09/2026). A última linha não
+    vazia costuma ser a conclusão.
+    """
+    linhas = [linha.strip() for linha in (texto or "").splitlines() if linha.strip()]
+    for linha in reversed(linhas):
+        limpa = re.sub(r"^[#>*•\-\d.)\s]+", "", linha).replace("**", "").strip()
+        limpa = re.sub(r"\s+", " ", limpa)
+        if len(limpa) >= 12:
+            return limpa[:200]
+    return ""
+
+
 # ── Comparação de fatos entre modelos ───────────────────────────────────────
 
 STOPWORDS = {

@@ -19,6 +19,7 @@ from api.rag_core import (  # noqa: E402
     TAMANHO_CHUNK,
     calcular_concordancia,
     chunk_texto,
+    conclusao_fallback,
     dividir_fatos,
     extrair_alternativas,
     extrair_bloco_json,
@@ -227,6 +228,31 @@ def test_remover_linha_resposta_direta():
 def test_extrair_bloco_json():
     assert extrair_bloco_json('bla {"letra": "A"} tchau') == '{"letra": "A"}'
     assert extrair_bloco_json("sem json") is None
+
+
+# ── conclusão de reserva (modelos que ignoram a linha RESPOSTA DIRETA) ───────
+
+
+def test_conclusao_fallback_usa_ultima_linha():
+    """Caso real: o modelo respondeu bem mas não emitiu 'RESPOSTA DIRETA:'."""
+    texto = "O few-shot prompting usa exemplos.\n\nEle melhora a consistência sem fine-tuning."
+    assert conclusao_fallback(texto) == "Ele melhora a consistência sem fine-tuning."
+
+
+def test_conclusao_fallback_limpa_marcacao():
+    texto = "Explicação longa aqui.\n\n**Conclusão:** o bit é a menor unidade de armazenamento."
+    assert conclusao_fallback(texto) == "Conclusão: o bit é a menor unidade de armazenamento."
+
+
+def test_conclusao_fallback_pula_linha_curta():
+    texto = "A resposta essencial é que o método tem quatro pilares.\nFim."
+    assert conclusao_fallback(texto).startswith("A resposta essencial")
+
+
+def test_conclusao_fallback_texto_vazio():
+    assert conclusao_fallback("") == ""
+    assert conclusao_fallback("   \n  ") == ""
+    assert conclusao_fallback("curto") == ""
 
 
 # ── concordância entre modelos ──────────────────────────────────────────────
