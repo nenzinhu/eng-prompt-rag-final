@@ -9,15 +9,19 @@ venv/
 .next/
 out/
 dist/
+
+# Vercel
 .vercel/
+.vercel
 
 # TypeScript (gerado pelo Next)
 next-env.d.ts
 *.tsbuildinfo
 
-# Segredos — NUNCA commitar
+# Segredos — NUNCA commitar (o template .env.example continua versionado)
 .env
 .env.*
+.env*
 !.env.example
 
 # Sistema
