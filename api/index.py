@@ -150,6 +150,22 @@ PROVIDERS = {
             "nvidia/nemotron-3.5-lightning-30b-a3b",    # 47,7 s — lento demais para o glossário
         ],
     },
+    "anyapi": {
+        "label": "AnyAPI",
+        "base_url": "https://api.anyapi.ai/v1",
+        "env_key": "ANYAPI_API_KEY",
+        # Testados com CHAMADA REAL em 10/09/2026 via /v1/chat/completions.
+        # O /v1/models lista 10 modelos :free, mas só 2 respondem de fato:
+        #   dots-studio  ~2-4 s  (responde JSON, emite <thinking> removido na limpeza)
+        #   nemotron-omni ~1-3 s  (o mais rápido)
+        # Os outros 8 dão 404 (erro de modelo), 429 (rate limit) ou estouram o
+        # timeout (nemotron-ultra >60 s). Deixá-los fora evita o dropdown cheio
+        # de opções que falham.
+        "models": [
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",  # ~1-3 s
+            "dots-studio/dots-3-note-preview:free",                # ~2-4 s
+        ],
+    },
     "openrouter": {
         "label": "OpenRouter",
         "base_url": "https://openrouter.ai/api/v1",
