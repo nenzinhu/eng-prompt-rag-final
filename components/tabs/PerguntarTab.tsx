@@ -22,6 +22,8 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
 
   const [verificando, setVerificando] = useState(false)
   const [perguntasVerificacao, setPerguntasVerificacao] = useState<string[]>([])
+  const [respostasVerificacao, setRespostasVerificacao] = useState<Record<number, string>>({})
+  const [carregandoVerificacaoIdx, setCarregandoVerificacaoIdx] = useState<number | null>(null)
 
   async function enviar() {
     if (!pergunta.trim()) return
@@ -29,6 +31,7 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
     setErro('')
     setRespostaSimples('')
     setPerguntasVerificacao([])
+    setRespostasVerificacao({})
     try {
       const d = await api.perguntar(pergunta, provider, modelo)
       setResultado(d)
@@ -59,10 +62,27 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
     try {
       const d = await api.verificar(pergunta, resultado.resposta, resultado.contexto, provider, modelo)
       setPerguntasVerificacao(d.perguntas)
+      setRespostasVerificacao({})
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao gerar perguntas de verificação')
     } finally {
       setVerificando(false)
+    }
+  }
+
+  async function responderVerificacao(idx: number, perguntaVerificacao: string) {
+    if (respostasVerificacao[idx] || carregandoVerificacaoIdx !== null) return
+    setCarregandoVerificacaoIdx(idx)
+    try {
+      const d = await api.perguntar(perguntaVerificacao, provider, modelo)
+      setRespostasVerificacao((r) => ({ ...r, [idx]: d.resposta }))
+    } catch (e) {
+      setRespostasVerificacao((r) => ({
+        ...r,
+        [idx]: e instanceof Error ? `⚠️ ${e.message}` : '⚠️ Erro ao gerar resposta',
+      }))
+    } finally {
+      setCarregandoVerificacaoIdx(null)
     }
   }
 
@@ -188,13 +208,28 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
               {perguntasVerificacao.length > 0 && (
                 <div className="mb-4 rounded-lg border border-violet/20 bg-violet/[0.05] p-4">
                   <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-violet">
-                    Perguntas para testar seu entendimento
+                    Perguntas para testar seu entendimento — clique para ver a resposta
                   </div>
-                  <ul className="list-disc space-y-1.5 pl-5 text-[0.85rem] text-text">
+                  <div className="flex flex-col gap-1.5">
                     {perguntasVerificacao.map((p, i) => (
-                      <li key={i}>{p}</li>
+                      <div key={i}>
+                        <button
+                          onClick={() => responderVerificacao(i, p)}
+                          className="w-full rounded-lg px-2 py-1.5 text-left text-[0.85rem] text-text transition-colors hover:bg-white/[0.05]"
+                        >
+                          <span className="text-violet">•</span> {p}
+                        </button>
+                        {carregandoVerificacaoIdx === i && (
+                          <div className="ml-4 mt-1 text-[0.78rem] text-muted">Pensando…</div>
+                        )}
+                        {respostasVerificacao[i] && (
+                          <div className="ml-4 mt-1 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+                            <Markdown>{respostasVerificacao[i]}</Markdown>
+                          </div>
+                        )}
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 </div>
               )}
 
