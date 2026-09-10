@@ -45,12 +45,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from rag_core import (  # noqa: E402
     calcular_concordancia,
     chunk_texto,
+    classificar_fidelidade,
     conclusao_fallback,
     extrair_alternativas,
     extrair_bloco_json,
     extrair_resposta_direta,
     formatar_alternativas,
+    frase_tem_apoio_textual,
     limpar_resposta,
+    quebrar_frases,
     remover_linha_resposta_direta,
     rotulos_unicos,
 )
@@ -846,6 +849,69 @@ async def verificar(req: VerificarReq, request: Request):
     if not perguntas:
         perguntas = [l.strip("-•* ").strip() for l in bruto.splitlines() if l.strip()][:2]
     return {"perguntas": perguntas[:2], "provider": req.provider, "modelo": modelo}
+
+
+class AuditarReq(BaseModel):
+    resposta: str
+    n_por_frase: int = 1
+
+
+@app.post("/api/auditar")
+async def auditar(req: AuditarReq, request: Request):
+    """Verifica frase por frase se a resposta tem apoio no material (detecção de alucinação).
+
+    Quebra a resposta em frases e, para cada uma, busca no índice vetorial o
+    trecho mais parecido. A similaridade vira um nível (apoiada / parcial /
+    não apoiada) — o front pinta as frases sem apoio para o aluno ver onde a IA
+    saiu da apostila.
+
+    Fica fora do tempo da resposta: é uma chamada separada, disparada pelo front
+    depois que a resposta aparece. Por isso tem o mesmo limite de uso das rotas
+    que gastam chave.
+    """
+    _limitar_llm(request)
+    resposta = (req.resposta or "").strip()
+    if not resposta:
+        raise HTTPException(400, "Resposta vazia.")
+
+    frases = quebrar_frases(resposta)
+    if not frases:
+        return {"frases": [], "resumo": {"apoiadas": 0, "parciais": 0, "nao_apoiadas": 0}}
+
+    # Embeddings de todas as frases de uma vez (1 chamada ao gte-small).
+    embeddings = await gerar_embeddings(frases)
+
+    resultados = []
+    for frase, emb in zip(frases, embeddings):
+        # Busca até 3 chunks: a frase pode estar espalhada em mais de um trecho,
+        # e o chunk mais próximo nem sempre contém o trecho literal.
+        chunks = await buscar_chunks(emb, n=max(req.n_por_frase, 3))
+        melhor = max((c["similarity"] for c in chunks), default=0.0)
+        nivel = classificar_fidelidade(melhor)
+        # A similaridade sozinha dá falso-positivo (frase inventada curta acha
+        # um chunk parecido). O apoio textual rebaixa o nível conforme a
+        # cobertura real das palavras da frase nos chunks:
+        #   nenhum apoio textual  → não apoiada
+        #   apoio parcial         → parcial (nunca acima de parcial)
+        apoio = frase_tem_apoio_textual(frase, chunks)
+        if apoio == "nenhum":
+            nivel = "nao_apoiada"
+        elif apoio == "parcial" and nivel == "apoiada":
+            nivel = "parcial"
+        resultados.append({
+            "frase": frase,
+            "nivel": nivel,
+            "similaridade": round(melhor, 3),
+            "fonte": chunks[0]["source"] if chunks else None,
+            "pagina": chunks[0]["page"] if chunks else None,
+        })
+
+    resumo = {
+        "apoiadas": sum(1 for r in resultados if r["nivel"] == "apoiada"),
+        "parciais": sum(1 for r in resultados if r["nivel"] == "parcial"),
+        "nao_apoiadas": sum(1 for r in resultados if r["nivel"] == "nao_apoiada"),
+    }
+    return {"frases": resultados, "resumo": resumo}
 
 
 class GlossarioReq(BaseModel):

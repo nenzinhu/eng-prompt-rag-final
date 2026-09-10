@@ -49,6 +49,21 @@ export interface PerguntarResp {
   modelo: string
 }
 
+export type NivelFidelidade = 'apoiada' | 'parcial' | 'nao_apoiada'
+
+export interface FraseAuditada {
+  frase: string
+  nivel: NivelFidelidade
+  similaridade: number
+  fonte?: string | null
+  pagina?: number | null
+}
+
+export interface AuditarResp {
+  frases: FraseAuditada[]
+  resumo: { apoiadas: number; parciais: number; nao_apoiadas: number }
+}
+
 export interface ResolverResp {
   questao: string
   alternativas: Record<string, string>

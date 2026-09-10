@@ -179,6 +179,83 @@ def extrair_bloco_json(bruto: str) -> str | None:
     return achado.group(0) if achado else None
 
 
+def quebrar_frases(texto: str, tamanho_minimo: int = 40) -> list[str]:
+    """Divide um texto em frases completas, descartando fragmentos curtos.
+
+    Usado pela auditoria de fidelidade (frase por frase): a resposta do modelo é
+    quebrada em frases, e cada uma é verificada contra o material. Cortes no meio
+    de palavra e fragmentos de formatação (negrito, listas) ficam de fora para
+    não poluir a verificação.
+
+    Descarta frases mais curtas que `tamanho_minimo` — fragmentos curtos não dão
+    sinal confiável de similaridade com o material.
+    """
+    if not texto:
+        return []
+    # Limpa marcadores de formatação que sobrariam como frases-lixo.
+    limpo = re.sub(r"[*_`>#]+", " ", texto)
+    # Divide em parágrafos e, dentro deles, em frases por pontuação final.
+    frases: list[str] = []
+    for paragrafo in re.split(r"\n\s*\n", limpo):
+        for frase in re.split(r"(?<=[.!?])\s+|\n", paragrafo):
+            frase = re.sub(r"\s+", " ", frase).strip()
+            if len(frase) >= tamanho_minimo:
+                frases.append(frase)
+    return frases
+
+
+def _nucleo_palavras(texto: str) -> set[str]:
+    """Conjunto de palavras significativas (>=4 letras), sem acento nem stopwords.
+
+    Usado para conferir se uma frase realmente aparece no chunk que ela casou.
+    Palavras curtas e stopwords não distinguem conteúdo, então ficam de fora.
+    """
+    t = unicodedata.normalize("NFKD", (texto or "").lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return {p for p in re.findall(r"[a-z0-9]{4,}", t) if p not in STOPWORDS}
+
+
+def frase_tem_apoio_textual(frase: str, chunks: list[dict]) -> str:
+    """Quanto do conteúdo da frase realmente aparece nos chunks.
+
+    A similaridade vetorial sozinha dá falso-positivo: uma frase inventada curta
+    (ex.: "a capital é um canguru azul") acha um chunk semanticamente próximo e
+    é marcada como apoiada. Aqui conferimos se PALAVRAS significativas da frase
+    aparecem de fato no chunk mais parecido.
+
+    Devolve um nível:
+    - "total"    se o chunk cobre a maioria das palavras-chave
+    - "parcial"  se cobre algumas, mas não a maioria
+    - "nenhum"   se mal toca no conteúdo
+    """
+    palavras = _nucleo_palavras(frase)
+    if len(palavras) < 3:
+        return "total"  # frase curta demais para conferir — não acusa sem prova
+    melhor = 0
+    for c in chunks:
+        texto_chunk = (c.get("content") or "").lower()
+        melhor = max(melhor, sum(1 for p in palavras if p in texto_chunk))
+    fracao = melhor / len(palavras)
+    if fracao >= 0.5:
+        return "total"
+    if fracao >= 0.3:
+        return "parcial"
+    return "nenhum"
+
+
+def classificar_fidelidade(similaridade: float) -> str:
+    """Converte a similaridade de uma frase com o material em um nível.
+
+    Limiares calibrados para o gte-small (cosine). Acima de 0.6 a frase está
+    claramente apoiada no material; abaixo de 0.4 provavelmente foi inventada.
+    """
+    if similaridade >= 0.60:
+        return "apoiada"
+    if similaridade >= 0.40:
+        return "parcial"
+    return "nao_apoiada"
+
+
 def conclusao_fallback(texto: str) -> str:
     """Última linha útil da resposta — para modelos que ignoram a linha RESPOSTA DIRETA.
 

@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import { api } from '@/lib/api'
 import { useProviderModel } from '@/lib/useProviderModel'
-import type { ProvidersResp, PerguntarResp } from '@/lib/types'
+import type { AuditarResp, ProvidersResp, PerguntarResp } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
 import EvidenceList from '../EvidenceList'
 import WarnBanner from '../WarnBanner'
 import Markdown from '../Markdown'
+import RespostaAuditada from '../RespostaAuditada'
 
 export default function PerguntarTab({ providers }: { providers: ProvidersResp }) {
   const { provider, modelo, trocarProvider, setModelo, pronto, nenhumConfigurado } = useProviderModel(providers)
@@ -15,6 +16,11 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
   const [resultado, setResultado] = useState<PerguntarResp | null>(null)
+
+  // Auditoria de fidelidade (frase por frase).
+  const [auditando, setAuditando] = useState(false)
+  const [auditoria, setAuditoria] = useState<AuditarResp | null>(null)
+  const [auditarAuto, setAuditarAuto] = useState(true)
 
   const [simplificando, setSimplificando] = useState(false)
   const [respostaSimples, setRespostaSimples] = useState('')
@@ -31,14 +37,32 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
     setRespostaSimples('')
     setPerguntasVerificacao([])
     setRespostasVerificacao({})
+    setAuditoria(null)
     try {
       const d = await api.perguntar(pergunta, provider, modelo)
       setResultado(d)
+      // Dispara a auditoria frase por frase automaticamente, se ligada.
+      if (auditarAuto && d.resposta) {
+        void auditar(d.resposta)
+      }
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao gerar resposta')
       setResultado(null)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function auditar(texto: string) {
+    setAuditando(true)
+    try {
+      const a = await api.auditar(texto)
+      setAuditoria(a)
+    } catch {
+      // Auditoria é um extra — se falhar, não quebra a resposta exibida.
+      setAuditoria(null)
+    } finally {
+      setAuditando(false)
     }
   }
 
@@ -189,12 +213,39 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
                   {verificando ? 'Gerando perguntas…' : '🎓 Testar meu entendimento'}
                 </button>
                 <button
+                  onClick={() => auditar(resultado.resposta)}
+                  disabled={auditando}
+                  className={`rounded-lg border px-3.5 py-2 text-[0.78rem] font-medium transition-colors disabled:opacity-40 ${
+                    auditarAuto
+                      ? 'border-cyan/25 bg-cyan/10 text-cyan hover:bg-cyan/20'
+                      : 'border-white/10 bg-white/[0.03] text-text hover:bg-white/[0.06]'
+                  }`}
+                  title={auditarAuto ? 'Auditoria automática ligada' : 'Auditoria automática desligada — clique para auditar'}
+                >
+                  {auditando ? 'Verificando…' : '🔎 Auditar frases'}
+                </button>
+                <button
+                  onClick={() => setAuditarAuto((v) => !v)}
+                  className={`rounded-lg border px-3.5 py-2 text-[0.78rem] font-medium transition-colors ${
+                    auditarAuto
+                      ? 'border-white/10 bg-white/[0.03] text-muted hover:text-text'
+                      : 'border-cyan/25 bg-cyan/10 text-cyan hover:bg-cyan/20'
+                  }`}
+                >
+                  {auditarAuto ? 'AUTO: verificar a cada resposta' : 'Manual: verificar sob demanda'}
+                </button>
+                <button
                   onClick={exportarMarkdown}
                   className="rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06]"
                 >
                   ⬇️ Exportar .md
                 </button>
               </div>
+
+              {auditando && auditoria === null && (
+                <RespostaAuditada texto={resultado.resposta} auditadas={null} auditando />
+              )}
+              {auditoria && <RespostaAuditada texto={resultado.resposta} auditadas={auditoria.frases} auditando={false} />}
 
               {respostaSimples && (
                 <div className="mb-4 rounded-lg border border-cyan/20 bg-cyan/[0.05] p-4">

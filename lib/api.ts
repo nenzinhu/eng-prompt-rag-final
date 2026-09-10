@@ -16,6 +16,7 @@ import type {
   VerificarResp,
   GlossarioResp,
   TermoGlossario,
+  AuditarResp,
 } from './types'
 
 /** Erro de API que preserva o corpo devolvido pelo backend. */
@@ -79,6 +80,8 @@ export const api = {
     postJson<ResolverResp>('/api/resolver', { texto, provider, modelo }),
   glossario: (tema: string, provider: string, modelo: string) =>
     postJson<GlossarioResp>('/api/glossario', { tema, provider, modelo }),
+  /** Auditoria de fidelidade: frase por frase contra o material. */
+  auditar: (resposta: string) => postJson<AuditarResp>('/api/auditar', { resposta }),
   glossarioTermosSalvos: (q = '') =>
     pedir<{ termos: TermoGlossario[] }>(`/api/glossario/termos?q=${encodeURIComponent(q)}`),
   comparar: (pergunta: string, modelos: CompararAlvo[]) =>

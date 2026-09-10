@@ -19,6 +19,7 @@ from api.rag_core import (  # noqa: E402
     TAMANHO_CHUNK,
     calcular_concordancia,
     chunk_texto,
+    classificar_fidelidade,
     conclusao_fallback,
     dividir_fatos,
     extrair_alternativas,
@@ -27,10 +28,12 @@ from api.rag_core import (  # noqa: E402
     extrair_numeros,
     extrair_resposta_direta,
     formatar_alternativas,
+    frase_tem_apoio_textual,
     jaccard,
     limpar_resposta,
     normalizar_numero,
     palavras_conteudo,
+    quebrar_frases,
     remover_linha_resposta_direta,
     rotulos_unicos,
 )
@@ -233,7 +236,6 @@ def test_extrair_bloco_json():
 
 # ── conclusão de reserva (modelos que ignoram a linha RESPOSTA DIRETA) ───────
 
-
 def test_conclusao_fallback_usa_ultima_linha():
     """Caso real: o modelo respondeu bem mas não emitiu 'RESPOSTA DIRETA:'."""
     texto = "O few-shot prompting usa exemplos.\n\nEle melhora a consistência sem fine-tuning."
@@ -331,3 +333,75 @@ def test_mesmo_modelo_duas_vezes_ainda_compara():
     r = calcular_concordancia(diretas)
     assert len(diretas) == 2, "as duas respostas precisam sobreviver"
     assert r["nivel_concordancia"] == "alta"
+
+
+# ── auditoria de fidelidade (frase por frase) ────────────────────────────────
+
+
+def test_quebrar_frases_separa_por_pontuacao():
+    texto = "O few-shot usa exemplos. Ele melhora a consistência sem fine-tuning."
+    frases = quebrar_frases(texto, tamanho_minimo=5)
+    assert len(frases) == 2
+    assert frases[0].startswith("O few-shot")
+    assert frases[1].startswith("Ele melhora")
+
+
+def test_quebrar_frases_descarta_fragmentos_curtos():
+    texto = "Frase longa e completa sobre o tema. Curta."
+    assert quebrar_frases(texto, tamanho_minimo=20) == ["Frase longa e completa sobre o tema."]
+
+
+def test_quebrar_frases_limpa_formatacao():
+    texto = "**Negrito** e `codigo` na resposta."
+    frases = quebrar_frases(texto, tamanho_minimo=5)
+    assert frases and "*" not in frases[0] and "`" not in frases[0]
+
+
+def test_quebrar_frases_ignora_vazio():
+    assert quebrar_frases("") == []
+    assert quebrar_frases("  \n  ") == []
+
+
+def test_classificar_fidelidade_niveis():
+    assert classificar_fidelidade(0.8) == "apoiada"
+    assert classificar_fidelidade(0.6) == "apoiada"
+    assert classificar_fidelidade(0.5) == "parcial"
+    assert classificar_fidelidade(0.4) == "parcial"
+    assert classificar_fidelidade(0.3) == "nao_apoiada"
+
+
+# ── apoio textual (falso-positivo da similaridade) ──────────────────────────
+
+
+def test_apoio_textual_confirma_quando_palavras_estao_no_chunk():
+    frase = "O few-shot prompting fornece exemplos ao modelo antes da instrução final."
+    chunk = {"content": "o few-shot prompting fornece exemplos ao modelo antes da instrução final e melhora a consistência"}
+    assert frase_tem_apoio_textual(frase, [chunk]) == "total"
+
+
+def test_apoio_textual_pega_frase_inventada():
+    """Regressão: a frase inventada marcava 'apoiada' (84%) mesmo sem estar no chunk."""
+    frase = "A capital da Australia e um canguru azul que danca samba."
+    chunk = {"content": "o direito autoral juntamente com os direitos de propriedade intelectual no brasil"}
+    assert frase_tem_apoio_textual(frase, [chunk]) == "nenhum"
+
+
+def test_apoio_textual_aceita_frase_curta():
+    # Frase curta demais para conferir palavra por palavra não acusa sem prova.
+    assert frase_tem_apoio_textual("É importante.", [{"content": "texto totalmente diferente aqui"}]) == "total"
+
+
+def test_apoio_textual_com_sobreposicao_parcial():
+    frase = "O fine-tuning ajusta os parâmetros do modelo com dados rotulados."
+    chunk = {"content": "o fine-tuning ajusta os parâmetros do modelo para tarefas específicas"}
+    assert frase_tem_apoio_textual(frase, [chunk]) == "total"
+
+
+def test_apoio_textual_parcial_quando_cobre_parte():
+    """2 de 6 palavras-chave no chunk = apoio parcial, não total."""
+    frase = "O empreendedor deve elaborar um plano de negócios para reduzir riscos."
+    chunks = [
+        {"content": "passo a passo da abertura da empresa e formalização"},
+        {"content": "o plano de negócios descreve a estrutura e os riscos do empreendimento"},
+    ]
+    assert frase_tem_apoio_textual(frase, chunks) == "parcial"
