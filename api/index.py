@@ -90,41 +90,54 @@ app.add_middleware(
 )
 
 # ── Provedores de IA (todos com API "OpenAI-compatible") ───────────────────
-# Lista verificada em 10/09/2026: cada modelo abaixo respondeu de fato a uma
-# chamada real de chat. Modelos que retornavam erro/recusa foram removidos.
-# O primeiro de cada lista é o padrão do dropdown.
+# Listas verificadas com CHAMADA REAL em 10/09/2026, medindo latência via
+# /api/perguntar com pergunta trivial. A ordem importa duas vezes: o primeiro
+# item é o padrão do dropdown, e o primeiro provedor da lista é o padrão da
+# interface. Um modelo lento no topo faz o app parecer quebrado — o glossário
+# estourava o orçamento de 60 s da função serverless por causa disso.
+#
+# Regras da ordenação: entre gratuitos primeiro (o aluno não deve gastar nada por
+# padrão) e, dentro de cada grupo, do mais rápido para o mais lento. Modelos que
+# responderam erro foram removidos, com a medição anotada.
 PROVIDERS = {
     "groq": {
         "label": "Groq",
         "base_url": "https://api.groq.com/openai/v1",
         "env_key": "GROQ_API_KEY",
+        # Medidos: compound-mini 1,8 s · gpt-oss-120b 1,2 s · allam-2-7b 1,8 s
+        # · compound 1,9 s · qwen3.6-27b 2,5 s · gpt-oss-20b 3,0 s
         "models": [
-            "groq/compound-mini",
-            "groq/compound",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
-            "qwen/qwen3.8-27b",
-            "allam-2-7b",
-            "qwen/qwen3.6-27b",  # emite tags <think> na resposta
+            "groq/compound-mini",      # 1,8 s
+            "openai/gpt-oss-120b",     # 1,2 s (o mais rápido)
+            "groq/compound",           # 1,9 s
+            "allam-2-7b",              # 1,8 s
+            "openai/gpt-oss-20b",      # 3,0 s
+            "qwen/qwen3.6-27b",        # 2,5 s — emite tags <think>, tratadas na limpeza
+            # qwen/qwen3.8-27b removido: HTTP 502 na verificação de 10/09/2026.
         ],
     },
-    "openrouter": {
-        "label": "OpenRouter",
-        "base_url": "https://openrouter.ai/api/v1",
-        "env_key": "OPENROUTER_API_KEY",
+    "nous": {
+        "label": "Nous Portal",
+        "base_url": "https://inference-api.nousresearch.com/v1",
+        "env_key": "NOUS_API_KEY",
+        # Gratuitos primeiro (padrão não custa nada), depois os pagos baratos.
+        # Medidos: laguna-xs 1,9 s · ling-sante 2,6 s · ling-fin 4,7 s · laguna-s 6,2 s
+        # · longcat 16,6 s · llama-8b 1,6 s · nova-micro 1,7 s · mistral-nemo 2,3 s
+        # · gpt-oss-20b 4,9 s · qwen3.7-flash 8,9 s
         "models": [
-            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-            "inclusionai/ling-3.0-flash-fin:free",
-            "nex-agi/nex-n2.5-pro:free",
-            "nex-agi/nex-n2.5-mini:free",
-            "cohere/north-mini-code:free",
-            "liquid/lfm-2.5-2.6b:free",
-            "dots-studio/dots-3-note-preview:free",
-            "inclusionai/ling-3.0-flash-sante:free",
-            "nvidia/nemotron-3-super-120b-a12b:free",
-            "poolside/laguna-xs-2.1:free",
-            "openrouter/free",
-            "nvidia/nemotron-3.5-lightning:free",  # lento (~90 s)
+            "poolside/laguna-xs-2.1:free",              # 1,9 s — gratuito e rápido
+            "inclusionai/ling-3.0-flash-sante:free",    # 2,6 s
+            "inclusionai/ling-3.0-flash-fin:free",      # 4,7 s
+            "poolside/laguna-s-2.1:free",               # 6,2 s
+            "meituan/longcat-2.0:free",                 # 16,6 s — o mais lento; evite no glossário
+            "meta-llama/llama-3.1-8b-instruct",         # 1,6 s (pago ~$0.04/1M)
+            "amazon/nova-micro-v1",                     # 1,7 s (pago ~$0.03/1M)
+            "mistralai/mistral-nemo",                   # 2,3 s (pago ~$0.02/1M)
+            "openai/gpt-oss-20b",                       # 4,9 s
+            "qwen/qwen3.7-flash",                       # 8,9 s
+            # Verificados em 09/09/2026 (chamada real), sem medição de latência nesta rodada.
+            "openai/gpt-oss-120b",
+            "deepseek/deepseek-v4-flash-0731",
         ],
     },
     "nvidia": {
@@ -132,30 +145,30 @@ PROVIDERS = {
         "base_url": "https://integrate.api.nvidia.com/v1",
         "env_key": "NVIDIA_API_KEY",
         "models": [
-            "nvidia/nemotron-3-super-120b-a12b",
-            "nvidia/nemotron-3.5-lightning-30b-a3b",
+            "nvidia/nemotron-3-super-120b-a12b",        # 4,8 s
+            "nvidia/nemotron-3.5-lightning-30b-a3b",    # 47,7 s — lento demais para o glossário
         ],
     },
-    "nous": {
-        "label": "Nous Portal",
-        "base_url": "https://inference-api.nousresearch.com/v1",
-        "env_key": "NOUS_API_KEY",
+    "openrouter": {
+        "label": "OpenRouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "env_key": "OPENROUTER_API_KEY",
+        # ATENÇÃO (10/09/2026): a cota diária de modelos gratuitos está esgotada
+        # ("free-models-per-day", 0/50 restantes) — o provedor responde 429 até o
+        # reset. A lista abaixo volta a funcionar quando a cota renovar; a
+        # mensagem do provedor é repassada ao usuário em caso de erro.
         "models": [
-            # Verificados em 10/09/2026 (chamada real de chat) — gratuitos primeiro
-            "meituan/longcat-2.0:free",
-            "inclusionai/ling-3.0-flash-sante:free",
+            "liquid/lfm-2.5-2.6b:free",
+            "cohere/north-mini-code:free",
+            "nex-agi/nex-n2.5-mini:free",
+            "dots-studio/dots-3-note-preview:free",
             "inclusionai/ling-3.0-flash-fin:free",
-            "poolside/laguna-s-2.1:free",
+            "nex-agi/nex-n2.5-pro:free",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+            "nvidia/nemotron-3-super-120b-a12b:free",
             "poolside/laguna-xs-2.1:free",
-            "mistralai/mistral-nemo",  # pago, mais barato do portal (~$0.02/1M in)
-            "openai/gpt-oss-20b",
-            "meta-llama/llama-3.1-8b-instruct",
-            "inclusionai/ling-3.0-flash",
-            "qwen/qwen3.7-flash",
-            "amazon/nova-micro-v1",
-            "openai/gpt-oss-120b",
-            "deepseek/deepseek-v4-flash-0731",
-            "qwen/qwen3-30b-a3b-instruct-2507",
+            "openrouter/free",
+            "nvidia/nemotron-3.5-lightning:free",  # lento (~90 s)
         ],
     },
 }
