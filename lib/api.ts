@@ -13,6 +13,7 @@ import type {
   SimplificarResp,
   VerificarResp,
   GlossarioResp,
+  TermoGlossario,
 } from './types'
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -46,6 +47,10 @@ export const api = {
     postJson<ResolverResp>('/api/resolver', { texto, provider, modelo }),
   glossario: (tema: string, provider: string, modelo: string) =>
     postJson<GlossarioResp>('/api/glossario', { tema, provider, modelo }),
+  glossarioTermosSalvos: async (q = ''): Promise<{ termos: TermoGlossario[] }> => {
+    const r = await fetch(`/api/glossario/termos?q=${encodeURIComponent(q)}`)
+    return r.json()
+  },
   comparar: (pergunta: string, modelos: CompararAlvo[]) =>
     postJson<CompararResp>('/api/comparar', { pergunta, modelos }),
   pdfs: async (): Promise<PdfsResp> => {

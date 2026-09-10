@@ -20,12 +20,38 @@ export default function GlossarioTab({
   const [erro, setErro] = useState('')
   const [termos, setTermos] = useState<TermoGlossario[] | null>(null)
 
+  const [busca, setBusca] = useState('')
+  const [buscando, setBuscando] = useState(false)
+  const [termosSalvos, setTermosSalvos] = useState<TermoGlossario[]>([])
+
+  async function buscarSalvos(q: string) {
+    setBuscando(true)
+    try {
+      const d = await api.glossarioTermosSalvos(q)
+      setTermosSalvos(d.termos)
+    } catch {
+      setTermosSalvos([])
+    } finally {
+      setBuscando(false)
+    }
+  }
+
+  useEffect(() => {
+    buscarSalvos('')
+  }, [])
+
+  useEffect(() => {
+    const t = setTimeout(() => buscarSalvos(busca), 350)
+    return () => clearTimeout(t)
+  }, [busca])
+
   async function gerar(temaForcado?: string) {
     setLoading(true)
     setErro('')
     try {
       const d = await api.glossario(temaForcado ?? tema, provider, modelo)
       setTermos(d.termos)
+      buscarSalvos(busca)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao gerar glossário')
       setTermos(null)
@@ -45,6 +71,43 @@ export default function GlossarioTab({
     <div>
       <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
         Sumário de termos técnicos das apostilas, explicados de forma simples
+      </p>
+
+      <div className="glass mb-6 rounded-xl p-4">
+        <div className="mb-2.5 font-mono text-[0.68rem] uppercase tracking-wider text-cyan">
+          🔎 Buscar termo já salvo
+        </div>
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Ex: byte, bit, few-shot..."
+          className="glass w-full rounded-lg p-3 font-mono text-[0.82rem] text-text outline-none placeholder:text-muted focus:border-violet/40"
+        />
+        <div className="mt-3">
+          {buscando && <div className="text-[0.78rem] text-muted">Buscando…</div>}
+          {!buscando && termosSalvos.length === 0 && (
+            <div className="text-[0.78rem] text-muted">
+              {busca.trim() ? 'Nenhum termo salvo encontrado com esse filtro.' : 'Nenhum termo salvo ainda — gere um sumário abaixo.'}
+            </div>
+          )}
+          {!buscando && termosSalvos.length > 0 && (
+            <div className="flex max-h-[280px] flex-col gap-1.5 overflow-y-auto pr-1">
+              {termosSalvos.map((t, i) => (
+                <div key={i} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+                  <div className="mb-0.5 font-mono text-[0.78rem] font-semibold text-cyan">{t.termo}</div>
+                  <div className="text-[0.8rem] leading-relaxed text-muted">{t.explicacao}</div>
+                  {t.exemplo && (
+                    <div className="mt-1.5 text-[0.75rem] italic text-muted/80">Ex: {t.exemplo}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="mb-2.5 font-mono text-[0.68rem] uppercase tracking-wider text-violet">
+        ✨ Gerar novo sumário
       </p>
       <ProviderSelect
         providers={providers}

@@ -215,6 +215,38 @@ async def remover_pdf_storage(filename: str):
     r.raise_for_status()
 
 
+async def salvar_termos_glossario(termos: list[dict], origem: str = ""):
+    if not termos:
+        return
+    rows = [
+        {"termo": t["termo"], "explicacao": t["explicacao"], "exemplo": t.get("exemplo") or None, "origem": origem}
+        for t in termos
+    ]
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            f"{SUPABASE_URL}/rest/v1/glossario_termos",
+            headers={
+                **_H,
+                "Content-Type": "application/json",
+                "Prefer": "resolution=merge-duplicates,return=minimal",
+            },
+            params={"on_conflict": "termo_normalizado"},
+            json=rows,
+        )
+    r.raise_for_status()
+
+
+async def buscar_termos_glossario(q: str = "", limite: int = 200) -> list[dict]:
+    params = {"select": "termo,explicacao,exemplo,created_at", "order": "termo.asc", "limit": str(limite)}
+    if q.strip():
+        termo_like = f"*{q.strip()}*"
+        params["or"] = f"(termo.ilike.{termo_like},explicacao.ilike.{termo_like})"
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(f"{SUPABASE_URL}/rest/v1/glossario_termos", headers=_H, params=params)
+    r.raise_for_status()
+    return r.json()
+
+
 async def baixar_pdf_storage(filename: str) -> bytes:
     async with httpx.AsyncClient(timeout=60) as client:
         r = await client.get(f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(filename)}", headers=_H)
@@ -523,7 +555,20 @@ async def glossario(req: GlossarioReq):
         if termos:
             break
 
+    if termos:
+        try:
+            await salvar_termos_glossario(termos, origem=texto_usuario[:200])
+        except httpx.HTTPStatusError:
+            pass  # não bloqueia a resposta ao usuário se o salvamento falhar
+
     return {"termos": termos, "provider": req.provider, "modelo": modelo}
+
+
+@app.get("/api/glossario/termos")
+async def listar_termos_glossario(q: str = ""):
+    """Busca termos já salvos no banco (gerados em sumários anteriores)."""
+    termos = await buscar_termos_glossario(q)
+    return {"termos": termos}
 
 
 class ResolverReq(BaseModel):
