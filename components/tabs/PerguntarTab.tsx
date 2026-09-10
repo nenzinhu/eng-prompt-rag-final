@@ -10,7 +10,7 @@ import WarnBanner from '../WarnBanner'
 import Markdown from '../Markdown'
 
 export default function PerguntarTab({ providers }: { providers: ProvidersResp }) {
-  const { provider, modelo, trocarProvider, setModelo, pronto } = useProviderModel(providers)
+  const { provider, modelo, trocarProvider, setModelo, pronto, nenhumConfigurado } = useProviderModel(providers)
   const [pergunta, setPergunta] = useState('')
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
@@ -122,6 +122,7 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
         modelo={modelo}
         onProviderChange={trocarProvider}
         onModeloChange={setModelo}
+        nenhumConfigurado={nenhumConfigurado}
       />
       <textarea
         value={pergunta}

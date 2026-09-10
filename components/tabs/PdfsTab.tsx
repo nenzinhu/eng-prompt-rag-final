@@ -118,7 +118,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
         logLine(
           'info',
           `🔎 "${nome}": ${a.chunks_existentes} chunks hoje → ${a.chunks_novos} depois` +
-            (a.perda_texto_percentual > 0 ? ` (perda de ${a.perda_texto_percentual}% do texto)` : ''),
+            (a.perda_texto_percentual > 0 ? ` · texto −${a.perda_texto_percentual}%` : ' · texto preservado'),
         )
         for (const aviso of a.avisos) logLine('alert', `   ⚠ ${aviso}`)
       }
@@ -302,7 +302,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
 
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <button
-              onClick={enviar}
+              onClick={() => enviar()}
               disabled={!pending.length || uploading}
               className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
             >
@@ -370,11 +370,11 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
                 {analises.map((a) => (
                   <div key={a.arquivo} className="flex flex-wrap items-center justify-between gap-2">
                     <span className="truncate text-text">{a.arquivo}</span>
-                    <span className={a.perda_texto_percentual > 0 ? 'text-amber-300' : 'text-muted'}>
+                    <span className={a.ok ? 'text-muted' : 'text-amber-300'}>
                       {a.chunks_existentes} → {a.chunks_novos} chunks
                       {a.perda_texto_percentual > 0
-                        ? ` (−${a.perda_texto_percentual}% do texto)`
-                        : ` (${a.chars_novos.toLocaleString('pt-BR')} caracteres)`}
+                        ? ` · texto −${a.perda_texto_percentual}%`
+                        : ' · texto preservado'}
                     </span>
                   </div>
                 ))}

@@ -11,6 +11,8 @@ export interface ProviderModel {
   setModelo: (m: string) => void
   /** true quando há provedor e modelo escolhidos — use para habilitar os botões. */
   pronto: boolean
+  /** true quando nenhum provedor tem chave no servidor: nada vai funcionar ainda. */
+  nenhumConfigurado: boolean
 }
 
 /** Primeiro provedor que tem chave configurada; cai no primeiro da lista se nenhum tiver. */
@@ -68,6 +70,9 @@ export function useProviderModel(
     modelo,
     trocarProvider,
     setModelo,
-    pronto: Boolean(provider && modelo),
+    // Sem chave no servidor, a chamada falharia com 500: o botão fica desabilitado
+    // e a interface avisa por quê.
+    pronto: Boolean(provider && modelo && providers[provider]?.configurado),
+    nenhumConfigurado: chaves.length > 0 && !chaves.some((k) => providers[k]?.configurado),
   }
 }

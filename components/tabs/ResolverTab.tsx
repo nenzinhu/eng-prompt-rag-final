@@ -23,7 +23,7 @@ export default function ResolverTab({
   providers: ProvidersResp
   onEnviarGlossario?: (texto: string) => void
 }) {
-  const { provider, modelo, trocarProvider, setModelo, pronto } = useProviderModel(providers)
+  const { provider, modelo, trocarProvider, setModelo, pronto, nenhumConfigurado } = useProviderModel(providers)
   const [texto, setTexto] = useState('')
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
@@ -190,6 +190,7 @@ export default function ResolverTab({
         modelo={modelo}
         onProviderChange={trocarProvider}
         onModeloChange={setModelo}
+        nenhumConfigurado={nenhumConfigurado}
       />
 
       <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={onImagemSelecionada} />

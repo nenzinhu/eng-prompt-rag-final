@@ -13,7 +13,7 @@ export default function GlossarioTab({
   providers: ProvidersResp
   seed?: { texto: string; tick: number }
 }) {
-  const { provider, modelo, trocarProvider, setModelo, pronto } = useProviderModel(providers)
+  const { provider, modelo, trocarProvider, setModelo, pronto, nenhumConfigurado } = useProviderModel(providers)
   const [tema, setTema] = useState('')
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
@@ -118,6 +118,7 @@ export default function GlossarioTab({
         modelo={modelo}
         onProviderChange={trocarProvider}
         onModeloChange={setModelo}
+        nenhumConfigurado={nenhumConfigurado}
       />
       <textarea
         value={tema}

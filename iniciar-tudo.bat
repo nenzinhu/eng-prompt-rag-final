@@ -24,15 +24,30 @@ if not exist ".env" (
     ) else (
         echo.
         echo  ERRO: arquivo .env nao encontrado.
-        echo  Crie um .env com as chaves SUPABASE_URL, SUPABASE_ANON_KEY e as
-        echo  chaves dos provedores de IA ^(GROQ_API_KEY, OPENROUTER_API_KEY,
-        echo  NVIDIA_API_KEY^). Veja o README-BACKUP.md.
+        echo  Copie .env.example para .env e preencha:
+        echo    SUPABASE_URL, SUPABASE_ANON_KEY      ^(leitura^)
+        echo    SUPABASE_SERVICE_ROLE_KEY             ^(escrita e Storage^)
+        echo    ADMIN_TOKEN                           ^(protege upload/ingestao^)
+        echo    NOUS_API_KEY / GROQ_API_KEY / ...     ^(geracao de texto^)
+        echo.
+        echo  Detalhes em CORRECOES-2026-09-10.md.
         echo.
         pause
         exit /b 1
     )
 ) else (
     echo       .env encontrado
+)
+
+REM ---------------------------------------------------------------
+REM [1b/6] Avisos de configuracao que quebram funcionalidades
+REM ---------------------------------------------------------------
+findstr /b /c:"ADMIN_TOKEN=" ".env" | findstr /r /c:"ADMIN_TOKEN=$" >nul && (
+    echo       AVISO: ADMIN_TOKEN vazio - upload e ingestao responderao 503
+)
+findstr /b /c:"SUPABASE_SERVICE_ROLE_KEY=" ".env" | findstr /r /c:"SERVICE_ROLE_KEY=$" >nul && (
+    echo       AVISO: SUPABASE_SERVICE_ROLE_KEY vazia - escrita usando a chave publica
+    echo              ^(rode a migracao de RLS so depois de preencher esta chave^)
 )
 
 REM ---------------------------------------------------------------
