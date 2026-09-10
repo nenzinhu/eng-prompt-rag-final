@@ -308,6 +308,16 @@ SYSTEM_PROMPT_VERIFICAR = (
 )
 
 
+SYSTEM_PROMPT_GLOSSARIO = (
+    "Você é um assistente do curso de Engenharia de Prompt. A partir dos TRECHOS de apostila "
+    "abaixo, identifique os termos técnicos e conceitos importantes (jargão da área, siglas, "
+    "nomes de técnicas) e explique cada um em 1-2 frases simples, sem jargão adicional, como se "
+    "estivesse explicando para um iniciante. Ignore palavras comuns que não são termos técnicos. "
+    'Responda SEMPRE em JSON: {"termos": [{"termo": "...", "explicacao": "..."}]}, ordenado '
+    "alfabeticamente pelo termo, sem nenhum texto fora do JSON."
+)
+
+
 def contexto_para_texto(evidencias: list[dict]) -> str:
     return "\n\n".join(
         f"[Fonte: {e.get('fonte', '?')}, página {e.get('pagina', '?')}]\n{e.get('conteudo', '')}"
@@ -454,6 +464,40 @@ async def verificar(req: VerificarReq):
     if not perguntas:
         perguntas = [l.strip("-•* ").strip() for l in bruto.splitlines() if l.strip()][:2]
     return {"perguntas": perguntas[:2], "provider": req.provider, "modelo": modelo}
+
+
+class GlossarioReq(BaseModel):
+    tema: str = ""  # opcional: foca o glossário num assunto específico
+    provider: str = "groq"
+    modelo: Optional[str] = None
+
+
+@app.post("/api/glossario")
+async def glossario(req: GlossarioReq):
+    query = req.tema.strip() or "principais conceitos, termos técnicos e siglas do curso"
+    emb = (await gerar_embeddings([query]))[0]
+    chunks = await buscar_chunks(emb, n=25)
+    if not chunks:
+        raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
+
+    contexto, _ = montar_contexto(chunks)
+    modelo = req.modelo or PROVIDERS[req.provider]["models"][0]
+    bruto = await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_GLOSSARIO, f"TRECHOS:\n{contexto}")
+
+    termos: list[dict] = []
+    match = re.search(r"\{.*\}", bruto, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            termos = [
+                {"termo": t.get("termo", "").strip(), "explicacao": t.get("explicacao", "").strip()}
+                for t in parsed.get("termos", [])
+                if isinstance(t, dict) and t.get("termo") and t.get("explicacao")
+            ]
+        except json.JSONDecodeError:
+            pass
+
+    return {"termos": termos, "provider": req.provider, "modelo": modelo}
 
 
 class ResolverReq(BaseModel):

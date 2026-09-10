@@ -12,6 +12,7 @@ import type {
   Evidencia,
   SimplificarResp,
   VerificarResp,
+  GlossarioResp,
 } from './types'
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -43,6 +44,8 @@ export const api = {
     postJson<VerificarResp>('/api/verificar', { pergunta, resposta, contexto, provider, modelo }),
   resolver: (texto: string, provider: string, modelo: string) =>
     postJson<ResolverResp>('/api/resolver', { texto, provider, modelo }),
+  glossario: (tema: string, provider: string, modelo: string) =>
+    postJson<GlossarioResp>('/api/glossario', { tema, provider, modelo }),
   comparar: (pergunta: string, modelos: CompararAlvo[]) =>
     postJson<CompararResp>('/api/comparar', { pergunta, modelos }),
   pdfs: async (): Promise<PdfsResp> => {

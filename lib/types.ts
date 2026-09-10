@@ -63,6 +63,17 @@ export interface VerificarResp {
   modelo: string
 }
 
+export interface TermoGlossario {
+  termo: string
+  explicacao: string
+}
+
+export interface GlossarioResp {
+  termos: TermoGlossario[]
+  provider: string
+  modelo: string
+}
+
 export interface PdfsResp {
   arquivos: string[]
 }

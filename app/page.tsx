@@ -11,12 +11,14 @@ import BuscarTab from '@/components/tabs/BuscarTab'
 import ResolverTab from '@/components/tabs/ResolverTab'
 import CompararTab from '@/components/tabs/CompararTab'
 import PdfsTab from '@/components/tabs/PdfsTab'
+import GlossarioTab from '@/components/tabs/GlossarioTab'
 
 const TABS: TabDef[] = [
   { id: 'perguntar', label: 'Perguntar', labelShort: 'Perguntar', icon: '💬' },
   { id: 'comparar', label: 'Comparar Modelos', labelShort: 'Comparar', icon: '⚖️' },
   { id: 'buscar', label: 'Buscar', labelShort: 'Busca', icon: '🔍' },
   { id: 'resolver', label: 'Resolver Questão', labelShort: 'Resolver', icon: '🎯' },
+  { id: 'glossario', label: 'Glossário', labelShort: 'Glossário', icon: '📖' },
   { id: 'pdfs', label: 'PDFs', labelShort: 'PDFs', icon: '📚' },
 ]
 
@@ -49,6 +51,9 @@ export default function Home() {
           </TabPanel>
           <TabPanel active={active === 'resolver'}>
             <ResolverTab providers={providers} />
+          </TabPanel>
+          <TabPanel active={active === 'glossario'}>
+            <GlossarioTab providers={providers} />
           </TabPanel>
           <TabPanel active={active === 'pdfs'}>
             <PdfsTab onStatusChange={() => setStatusTick((t) => t + 1)} />
