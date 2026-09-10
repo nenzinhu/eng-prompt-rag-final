@@ -489,24 +489,32 @@ async def glossario(req: GlossarioReq):
     partes = [f"CONTEXTO DAS APOSTILAS:\n{contexto}"]
     if texto_usuario:
         partes.append(f"TEXTO/QUESTÃO FORNECIDO PELO ALUNO (priorize os termos daqui):\n{texto_usuario}")
-    bruto = await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_GLOSSARIO, "\n\n".join(partes))
+    user_prompt = "\n\n".join(partes)
 
-    termos: list[dict] = []
-    match = re.search(r"\{.*\}", bruto, re.DOTALL)
-    if match:
+    def extrair_termos(bruto: str) -> list[dict]:
+        match = re.search(r"\{.*\}", bruto, re.DOTALL)
+        if not match:
+            return []
         try:
             parsed = json.loads(match.group(0))
-            termos = [
-                {
-                    "termo": t.get("termo", "").strip(),
-                    "explicacao": t.get("explicacao", "").strip(),
-                    "exemplo": (t.get("exemplo") or "").strip(),
-                }
-                for t in parsed.get("termos", [])
-                if isinstance(t, dict) and t.get("termo") and t.get("explicacao")
-            ]
         except json.JSONDecodeError:
-            pass
+            return []
+        return [
+            {
+                "termo": t.get("termo", "").strip(),
+                "explicacao": t.get("explicacao", "").strip(),
+                "exemplo": (t.get("exemplo") or "").strip(),
+            }
+            for t in parsed.get("termos", [])
+            if isinstance(t, dict) and t.get("termo") and t.get("explicacao")
+        ]
+
+    termos: list[dict] = []
+    for _ in range(2):  # o modelo às vezes foge do formato JSON — uma retentativa resolve a maioria
+        bruto = await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_GLOSSARIO, user_prompt)
+        termos = extrair_termos(bruto)
+        if termos:
+            break
 
     return {"termos": termos, "provider": req.provider, "modelo": modelo}
 
