@@ -26,6 +26,12 @@ export default function Home() {
   const [active, setActive] = useState('perguntar')
   const [providers, setProviders] = useState<ProvidersResp>({})
   const [statusTick, setStatusTick] = useState(0)
+  const [glossarioSeed, setGlossarioSeed] = useState({ texto: '', tick: 0 })
+
+  function enviarParaGlossario(texto: string) {
+    setGlossarioSeed((s) => ({ texto, tick: s.tick + 1 }))
+    setActive('glossario')
+  }
 
   useEffect(() => {
     api
@@ -50,10 +56,10 @@ export default function Home() {
             <CompararTab providers={providers} />
           </TabPanel>
           <TabPanel active={active === 'resolver'}>
-            <ResolverTab providers={providers} />
+            <ResolverTab providers={providers} onEnviarGlossario={enviarParaGlossario} />
           </TabPanel>
           <TabPanel active={active === 'glossario'}>
-            <GlossarioTab providers={providers} />
+            <GlossarioTab providers={providers} seed={glossarioSeed} />
           </TabPanel>
           <TabPanel active={active === 'pdfs'}>
             <PdfsTab onStatusChange={() => setStatusTick((t) => t + 1)} />

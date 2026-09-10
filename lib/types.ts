@@ -66,6 +66,7 @@ export interface VerificarResp {
 export interface TermoGlossario {
   termo: string
   explicacao: string
+  exemplo?: string
 }
 
 export interface GlossarioResp {

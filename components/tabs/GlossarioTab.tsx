@@ -1,11 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import type { ProvidersResp, TermoGlossario } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
 
-export default function GlossarioTab({ providers }: { providers: ProvidersResp }) {
+export default function GlossarioTab({
+  providers,
+  seed,
+}: {
+  providers: ProvidersResp
+  seed?: { texto: string; tick: number }
+}) {
   const firstProvider = Object.keys(providers)[0] ?? ''
   const [provider, setProvider] = useState(firstProvider)
   const [modelo, setModelo] = useState(providers[firstProvider]?.models?.[0] ?? '')
@@ -14,11 +20,11 @@ export default function GlossarioTab({ providers }: { providers: ProvidersResp }
   const [erro, setErro] = useState('')
   const [termos, setTermos] = useState<TermoGlossario[] | null>(null)
 
-  async function gerar() {
+  async function gerar(temaForcado?: string) {
     setLoading(true)
     setErro('')
     try {
-      const d = await api.glossario(tema, provider, modelo)
+      const d = await api.glossario(temaForcado ?? tema, provider, modelo)
       setTermos(d.termos)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao gerar glossário')
@@ -27,6 +33,13 @@ export default function GlossarioTab({ providers }: { providers: ProvidersResp }
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!seed || !seed.texto.trim()) return
+    setTema(seed.texto)
+    gerar(seed.texto)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed?.tick])
 
   return (
     <div>
@@ -40,15 +53,17 @@ export default function GlossarioTab({ providers }: { providers: ProvidersResp }
         onProviderChange={setProvider}
         onModeloChange={setModelo}
       />
-      <input
+      <textarea
         value={tema}
         onChange={(e) => setTema(e.target.value)}
-        placeholder="Opcional: foque num assunto (ex: few-shot prompting, RAG, embeddings...)"
-        className="glass w-full rounded-xl p-3.5 font-mono text-[0.82rem] text-text outline-none placeholder:text-muted focus:border-violet/40"
+        placeholder={
+          'Opcional: foque num assunto (ex: few-shot prompting, RAG, embeddings...) ou cole uma questão completa — os termos técnicos dela entram no sumário'
+        }
+        className="glass min-h-[90px] w-full rounded-xl p-3.5 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
       />
       <div className="mt-3 flex gap-2">
         <button
-          onClick={gerar}
+          onClick={() => gerar()}
           disabled={loading}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
@@ -91,6 +106,12 @@ export default function GlossarioTab({ providers }: { providers: ProvidersResp }
               <div key={i} className="glass rounded-xl p-4">
                 <div className="mb-1 font-mono text-[0.8rem] font-semibold text-cyan">{t.termo}</div>
                 <div className="text-[0.85rem] leading-relaxed text-text">{t.explicacao}</div>
+                {t.exemplo && (
+                  <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[0.8rem] leading-relaxed text-muted">
+                    <span className="font-mono text-[0.68rem] uppercase tracking-wider text-violet">Exemplo: </span>
+                    {t.exemplo}
+                  </div>
+                )}
               </div>
             ))}
           </div>

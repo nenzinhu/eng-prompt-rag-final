@@ -9,7 +9,13 @@ import EvidenceList from '../EvidenceList'
 import WarnBanner from '../WarnBanner'
 import Markdown from '../Markdown'
 
-export default function ResolverTab({ providers }: { providers: ProvidersResp }) {
+export default function ResolverTab({
+  providers,
+  onEnviarGlossario,
+}: {
+  providers: ProvidersResp
+  onEnviarGlossario?: (texto: string) => void
+}) {
   const firstProvider = Object.keys(providers)[0] ?? ''
   const [provider, setProvider] = useState(firstProvider)
   const [modelo, setModelo] = useState(providers[firstProvider]?.models?.[0] ?? '')
@@ -179,6 +185,15 @@ export default function ResolverTab({ providers }: { providers: ProvidersResp })
                 <div className="mb-4">
                   <Markdown>{resultado.explicacao}</Markdown>
                 </div>
+
+                {onEnviarGlossario && (
+                  <button
+                    onClick={() => onEnviarGlossario(texto)}
+                    className="mb-4 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06]"
+                  >
+                    📖 Extrair termos técnicos desta questão
+                  </button>
+                )}
 
                 <div className="mb-4 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3.5">
                   {!avaliado ? (

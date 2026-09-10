@@ -309,12 +309,15 @@ SYSTEM_PROMPT_VERIFICAR = (
 
 
 SYSTEM_PROMPT_GLOSSARIO = (
-    "Você é um assistente do curso de Engenharia de Prompt. A partir dos TRECHOS de apostila "
-    "abaixo, identifique os termos técnicos e conceitos importantes (jargão da área, siglas, "
-    "nomes de técnicas) e explique cada um em 1-2 frases simples, sem jargão adicional, como se "
-    "estivesse explicando para um iniciante. Ignore palavras comuns que não são termos técnicos. "
-    'Responda SEMPRE em JSON: {"termos": [{"termo": "...", "explicacao": "..."}]}, ordenado '
-    "alfabeticamente pelo termo, sem nenhum texto fora do JSON."
+    "Você é um assistente do curso de Engenharia de Prompt. Identifique os termos técnicos, "
+    "siglas e conceitos importantes no material abaixo (se houver um TEXTO/QUESTÃO fornecido "
+    "pelo aluno, priorize os termos que aparecem nele — inclusive nas alternativas — mesmo que "
+    "o CONTEXTO das apostilas só cite alguns deles) e explique cada um em 1-2 frases simples, "
+    "sem jargão adicional, como se fosse para um iniciante. Quando ajudar a fixar o conceito, "
+    "inclua um exemplo curto e concreto. Ignore palavras comuns que não são termos técnicos. "
+    'Responda SEMPRE em JSON: {"termos": [{"termo": "...", "explicacao": "...", "exemplo": "..."}]}, '
+    'com "exemplo" como string vazia quando não for necessário. Ordene alfabeticamente pelo termo. '
+    "Sem nenhum texto fora do JSON."
 )
 
 
@@ -467,14 +470,15 @@ async def verificar(req: VerificarReq):
 
 
 class GlossarioReq(BaseModel):
-    tema: str = ""  # opcional: foca o glossário num assunto específico
+    tema: str = ""  # opcional: assunto pra focar, ou uma questão/texto colado para extrair termos dele
     provider: str = "groq"
     modelo: Optional[str] = None
 
 
 @app.post("/api/glossario")
 async def glossario(req: GlossarioReq):
-    query = req.tema.strip() or "principais conceitos, termos técnicos e siglas do curso"
+    texto_usuario = req.tema.strip()
+    query = texto_usuario or "principais conceitos, termos técnicos e siglas do curso"
     emb = (await gerar_embeddings([query]))[0]
     chunks = await buscar_chunks(emb, n=25)
     if not chunks:
@@ -482,7 +486,10 @@ async def glossario(req: GlossarioReq):
 
     contexto, _ = montar_contexto(chunks)
     modelo = req.modelo or PROVIDERS[req.provider]["models"][0]
-    bruto = await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_GLOSSARIO, f"TRECHOS:\n{contexto}")
+    partes = [f"CONTEXTO DAS APOSTILAS:\n{contexto}"]
+    if texto_usuario:
+        partes.append(f"TEXTO/QUESTÃO FORNECIDO PELO ALUNO (priorize os termos daqui):\n{texto_usuario}")
+    bruto = await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_GLOSSARIO, "\n\n".join(partes))
 
     termos: list[dict] = []
     match = re.search(r"\{.*\}", bruto, re.DOTALL)
@@ -490,7 +497,11 @@ async def glossario(req: GlossarioReq):
         try:
             parsed = json.loads(match.group(0))
             termos = [
-                {"termo": t.get("termo", "").strip(), "explicacao": t.get("explicacao", "").strip()}
+                {
+                    "termo": t.get("termo", "").strip(),
+                    "explicacao": t.get("explicacao", "").strip(),
+                    "exemplo": (t.get("exemplo") or "").strip(),
+                }
                 for t in parsed.get("termos", [])
                 if isinstance(t, dict) and t.get("termo") and t.get("explicacao")
             ]
