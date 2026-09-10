@@ -1,0 +1,35 @@
+# O que NÃO vai para o deploy.
+#
+# O deploy original tinha apenas os arquivos de código. Sem este arquivo, a pasta
+# de backup (com as apostilas em PDF e os dumps do banco) subiria inteira como
+# parte do bundle — peso desnecessário e conteúdo do curso publicado sem motivo.
+#
+# As variáveis de ambiente vêm das configurações do projeto na Vercel, não do
+# .env local — por isso os arquivos de ambiente ficam de fora.
+
+# Ambiente local e artefatos de build
+.venv/
+venv/
+node_modules/
+.next/
+out/
+dist/
+.vercel/
+__pycache__/
+*.pyc
+*.tsbuildinfo
+
+# Segredos locais
+.env
+.env.*
+.env*
+!.env.example
+
+# Material de apoio — não é usado em tempo de execução
+supabase-backup/
+tests/
+scripts/
+
+# Controle de versão
+.git/
+.gitignore
