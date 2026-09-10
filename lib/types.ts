@@ -1,6 +1,17 @@
 export interface StatusResp {
   status: 'ready' | 'empty'
   total: number
+  /** 'anon' significa que a escrita ainda usa a chave pública — estado inseguro. */
+  escrita_via?: 'service_role' | 'anon'
+  cache?: boolean
+}
+
+export interface ConfigResp {
+  admin_necessario: boolean
+  escrita_via: 'service_role' | 'anon'
+  inseguro: boolean
+  extensoes: string[]
+  max_upload_mb: number
 }
 
 export interface ProviderInfo {
@@ -76,6 +87,8 @@ export interface GlossarioResp {
   termos: TermoGlossario[]
   provider: string
   modelo: string
+  /** Presente quando os termos foram exibidos mas não puderam ser salvos. */
+  aviso_salvamento?: string
 }
 
 export interface PdfsResp {
@@ -85,11 +98,29 @@ export interface PdfsResp {
 export interface IngerirResp {
   ok: boolean
   arquivo?: string
+  /** Quantidade processada NESTA chamada. */
   processado?: number
   total?: number
   proximo_offset?: number
   done?: boolean
+  avisos?: string[]
   erro?: string
+}
+
+export interface PreviaIngestaoResp {
+  arquivo: string
+  paginas: number
+  paginas_com_texto: number
+  chunks_existentes: number
+  chunks_novos: number
+  /** Texto já indexado, em caracteres — é isso que mede perda de conteúdo. */
+  chars_existentes: number
+  chars_novos: number
+  /** Quantos chunks a reindexação removeria do índice atual. */
+  perda: number
+  perda_texto_percentual: number
+  avisos: string[]
+  ok: boolean
 }
 
 export interface UploadSubstituicao {

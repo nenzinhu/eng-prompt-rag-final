@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
+import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp, TermoGlossario } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
 
@@ -12,13 +13,12 @@ export default function GlossarioTab({
   providers: ProvidersResp
   seed?: { texto: string; tick: number }
 }) {
-  const firstProvider = Object.keys(providers)[0] ?? ''
-  const [provider, setProvider] = useState(firstProvider)
-  const [modelo, setModelo] = useState(providers[firstProvider]?.models?.[0] ?? '')
+  const { provider, modelo, trocarProvider, setModelo, pronto } = useProviderModel(providers)
   const [tema, setTema] = useState('')
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
   const [termos, setTermos] = useState<TermoGlossario[] | null>(null)
+  const [aviso, setAviso] = useState('')
 
   const [busca, setBusca] = useState('')
   const [buscando, setBuscando] = useState(false)
@@ -46,11 +46,14 @@ export default function GlossarioTab({
   }, [busca])
 
   async function gerar(temaForcado?: string) {
+    if (!pronto) return
     setLoading(true)
     setErro('')
+    setAviso('')
     try {
       const d = await api.glossario(temaForcado ?? tema, provider, modelo)
       setTermos(d.termos)
+      setAviso(d.aviso_salvamento ?? '')
       buscarSalvos(busca)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao gerar glossário')
@@ -113,7 +116,7 @@ export default function GlossarioTab({
         providers={providers}
         provider={provider}
         modelo={modelo}
-        onProviderChange={setProvider}
+        onProviderChange={trocarProvider}
         onModeloChange={setModelo}
       />
       <textarea
@@ -127,7 +130,7 @@ export default function GlossarioTab({
       <div className="mt-3 flex gap-2">
         <button
           onClick={() => gerar()}
-          disabled={loading}
+          disabled={loading || !pronto}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {loading ? 'Gerando…' : 'Gerar sumário'}
@@ -147,6 +150,11 @@ export default function GlossarioTab({
       </div>
 
       <div className="mt-6">
+        {aviso && (
+          <div className="mb-4 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.8rem] text-amber-300">
+            ⚠️ {aviso}
+          </div>
+        )}
         {loading && (
           <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-muted">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet/30 border-t-violet" />

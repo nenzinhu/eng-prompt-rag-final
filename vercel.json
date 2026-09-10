@@ -2,7 +2,8 @@
   "framework": "nextjs",
   "functions": {
     "api/index.py": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "api/rag_core.py"
     }
   },
   "rewrites": [

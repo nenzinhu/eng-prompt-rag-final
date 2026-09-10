@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 export default function Header() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'offline'>('loading')
   const [total, setTotal] = useState(0)
+  const [inseguro, setInseguro] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -15,6 +16,7 @@ export default function Header() {
         if (!mounted) return
         setStatus(d.status)
         setTotal(d.total)
+        setInseguro(d.escrita_via === 'anon')
       } catch {
         if (mounted) setStatus('offline')
       }
@@ -65,11 +67,21 @@ export default function Header() {
           <div className="font-mono text-[0.65rem] tracking-wide text-muted">RAG CLOUD · VERCEL + SUPABASE</div>
         </div>
       </div>
-      <div
-        className={`flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[0.68rem] font-medium transition-colors ${styles[status]}`}
-      >
-        <span className={`h-1.5 w-1.5 rounded-full bg-current ${status === 'loading' ? 'animate-pulse' : ''}`} />
-        {label}
+      <div className="flex items-center gap-2">
+        {inseguro && (
+          <div
+            className="hidden items-center gap-2 rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 font-mono text-[0.68rem] font-medium text-amber-300 sm:flex"
+            title="O backend ainda escreve no banco com a chave pública. Defina SUPABASE_SERVICE_ROLE_KEY e ligue o RLS."
+          >
+            ⚠ escrita insegura
+          </div>
+        )}
+        <div
+          className={`flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[0.68rem] font-medium transition-colors ${styles[status]}`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full bg-current ${status === 'loading' ? 'animate-pulse' : ''}`} />
+          {label}
+        </div>
       </div>
     </header>
   )

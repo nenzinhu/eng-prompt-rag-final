@@ -3,3 +3,8 @@ uvicorn[standard]>=0.30.0
 httpx>=0.27.0
 pypdf>=4.0.0
 python-multipart>=0.0.9
+# exigido por `uvicorn --env-file .env`, usado pelo iniciar-tudo.bat e pelo README
+python-dotenv>=1.0.0
+# melhora a extração de texto de PDFs com fontes CFF Type1 embutidas
+# (medido nos PDFs do projeto: +1,3% de texto em Praticas_Gerenciais)
+fonttools>=4.0.0

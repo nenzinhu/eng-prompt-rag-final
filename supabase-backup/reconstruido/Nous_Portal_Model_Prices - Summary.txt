@@ -1,0 +1,14 @@
+======================================================================
+PÁGINA 1
+======================================================================
+Nous Portal - Model Pricing Summary Snapshot taken 2026-09-02. Prices update every minute on the live portal; all paid models carry at least a 20% discount off list price. Please provide a question or instruction to get an answer. Totals Text models 336 Embedding models 34 Other models 10 Total models 380 Free text models 6 Free models (Text) Model Ling 3.0 Flash Fin (free) Meituan: LongCat 2.0 (free tier) Poolside: Laguna S 2.1 (free tier) Poolside: Laguna XS 2.1 (free tier) StepFun: Step 3.7 F lash (free tier) Upstage: Solar Pro 4 (free tier) Cheapest paid Text models (by input $/1M) Model Input $/1M Output $/1M Portal Price Mistral: Mistral Nemo 0,02 0,02 IN $0.02/OUT $0.02 Ling-3.0-flash 0,02 0,05 IN $0.02/OUT $0.05 Nex AGI: Nex-N2-Mini 0,02 0,08 IN $0.02/OUT $0.08 OpenAI: gpt-oss-20b 0,02 0,1 IN $0.02/OUT $0.10 Qwen: Qwen3.7 Flash 0,02 0,1 IN $0.02/OUT $0.10 Upstage: Solar Pro 4 0,02 0,1 IN $0.02/OUT $0.10 OpenAI: GPT-5 Nano (batch) 0,02 0,16 IN $0.02/OUT $0.16 Amazon: Nova Micro 1.0 0,03 0,11 IN $0.03/OUT $0.11
+
+======================================================================
+PÁGINA 2
+======================================================================
+Inception: Mercury 2.5 Preview 0,03 0,12 IN $0.03/OUT $0.12 OpenAI: gpt-oss-120b 0,03 0,14 IN $0.03/OUT $0.14 Meta: Llama 3.1 8B Instruct 0,04 0,06 IN $0.04/OUT $0.06 IBM: Granite 4.1 8B 0,04 0,08 IN $0.04/OUT $0.08 Google: Gemma 3 12B 0,04 0,12 IN $0.04/OUT $0.12 DeepSeek V4 Flash Latest 0,04 0,13 IN $0.04/OUT $0.13 Qwen: Qwen3 30B A3B Instruct 2507 0,04 0,15 IN $0.04/OUT $0.15 Cheapest Embedding models (by input $/1M) Model Input $/1M Portal Price Perplexity: Embed V1 0.6B 0 $0.00/1M INPUT BAA I: bge-base-en-v1.5 0 $0.00/1M INPUT Intfloat: E5-Base-v2 0 $0.00/1M INPUT Sentence Transformers: all-MiniLM-L6-v2 0 $0.00/1M INPUT Sentence Transformers: all-MiniLM-L12-v2 0 $0.00/1M INPUT Sentence Transformers: all-mpnet-base-v2 0 $0.00/1M INPUT Sentence Transformers: multi-qa-mpnet-base-dot-v1 0 $0.00/1M INPUT Sentence Transformers: paraphrase-MiniLM-L6-v2 0 $0.00/1M INPUT Thenlper: GTE-Base 0 $0.00/1M INPUT BAAI: bge-large-en-v1.5 0,01 $0.01/ 1M INPUT
+
+======================================================================
+PÁGINA 3
+======================================================================
+Please provide a question or instruction to get an answer.

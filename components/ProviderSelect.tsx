@@ -29,7 +29,7 @@ export default function ProviderSelect({
         className="glass rounded-lg px-3 py-2 font-mono text-[0.8rem] text-text outline-none"
       >
         {Object.entries(providers).map(([key, v]) => (
-          <option key={key} value={key} className="bg-surface">
+          <option key={key} value={key} disabled={!v.configurado} className="bg-surface">
             {v.label}
             {v.configurado ? '' : ' (sem chave)'}
           </option>
@@ -38,8 +38,10 @@ export default function ProviderSelect({
       <select
         value={modelo}
         onChange={(e) => onModeloChange(e.target.value)}
-        className="glass rounded-lg px-3 py-2 font-mono text-[0.8rem] text-text outline-none"
+        disabled={!models.length}
+        className="glass rounded-lg px-3 py-2 font-mono text-[0.8rem] text-text outline-none disabled:opacity-50"
       >
+        {models.length === 0 && <option value="">— escolha um provedor —</option>}
         {models.map((m) => (
           <option key={m} value={m} className="bg-surface">
             {m}

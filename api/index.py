@@ -2,43 +2,82 @@
 Engenharia de Prompt — RAG API (cloud)
 
 Roda como Vercel Serverless Function (Python/ASGI). Sem backend local:
-- Banco vetorial + storage dos PDFs: Supabase (Postgres/pgvector + Storage)
+- Banco vetorial + storage dos documentos: Supabase (Postgres/pgvector + Storage)
 - Embeddings: Supabase Edge Function "embeddings" (modelo gte-small, gratuito)
 - Geração de resposta: provedor de IA escolhido no dropdown do frontend
-  (OpenRouter, Groq, NVIDIA NIM, AIHubMix, ...) via API OpenAI-compatible
+  (OpenRouter, Groq, NVIDIA NIM, Nous Portal, ...) via API OpenAI-compatible
+
+Segurança (10/09/2026):
+- Leitura usa a chave pública (anon); ESCRITA usa a service_role, que só existe
+  no servidor. Com RLS ligado, a chave pública não grava mais nada no banco.
+- Rotas de escrita exigem o header `X-Admin-Token`.
+- CORS restrito pelas origens em ALLOWED_ORIGINS.
+
+O núcleo de texto (chunking, heurísticas de comparação) vive em `rag_core.py`,
+que não faz I/O e é coberto pelos testes em `tests/test_rag_core.py`.
 """
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import io
 import json
 import os
 import re
+import secrets
+import sys
 import time
 import unicodedata
+from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
 import httpx
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pypdf import PdfReader
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+# `rag_core.py` fica ao lado deste arquivo. O sys.path garante o import tanto
+# rodando local (`uvicorn api.index:app`) quanto no bundle da Vercel.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from rag_core import (  # noqa: E402
+    calcular_concordancia,
+    chunk_texto,
+    extrair_alternativas,
+    extrair_bloco_json,
+    extrair_resposta_direta,
+    formatar_alternativas,
+    limpar_resposta,
+    remover_linha_resposta_direta,
+)
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 
-
-def _checar_config_supabase():
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        raise HTTPException(
-            500,
-            "SUPABASE_URL/SUPABASE_ANON_KEY não configuradas nas variáveis de ambiente do Vercel.",
-        )
+# Origens liberadas no CORS. Sem configuração, só o desenvolvimento local.
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",") if o.strip()
+]
 
 LIMIAR_CONFIANCA = 0.35  # abaixo disso, avisamos que a resposta é pouco embasada na apostila
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB por arquivo
+MAX_RESULTADOS_BUSCA = 20
+CACHE_STATUS_SEGUNDOS = 30
+LIMITE_LLM_POR_MINUTO = 20  # por IP, por instância (ver observação em _limitar_llm)
+
+EXTENSOES_DOCUMENTO = (".pdf", ".txt", ".md")
 
 app = FastAPI(title="Engenharia de Prompt — RAG API (cloud)")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ── Provedores de IA (todos com API "OpenAI-compatible") ───────────────────
 # Lista verificada em 10/09/2026: cada modelo abaixo respondeu de fato a uma
@@ -111,23 +150,112 @@ PROVIDERS = {
     },
 }
 
-_H = {"Authorization": f"Bearer {SUPABASE_ANON_KEY}", "apikey": SUPABASE_ANON_KEY}
+
+# ── Configuração e credenciais ─────────────────────────────────────────────
+
+
+def _checar_config_supabase():
+    if not SUPABASE_URL or not (SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY):
+        raise HTTPException(
+            500,
+            "SUPABASE_URL/SUPABASE_ANON_KEY não configuradas nas variáveis de ambiente.",
+        )
+
+
+def _checar_config_escrita():
+    """Escrita no banco: prefere a service_role; avisa quando cai na anon."""
+    _checar_config_supabase()
+    if not SUPABASE_SERVICE_ROLE_KEY and not SUPABASE_ANON_KEY:
+        raise HTTPException(500, "Nenhuma chave do Supabase configurada para escrita.")
+
+
+def _chave_leitura() -> str:
+    return SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY
+
+
+def _chave_escrita() -> str:
+    """A service_role ignora RLS; a anon só escreve enquanto o RLS estiver desligado."""
+    return SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY
+
+
+def _h_leitura() -> dict:
+    """Chave pública: usada na busca vetorial, no glossário e nos embeddings.
+
+    Com RLS ligado, esta chave lê (política de select) e não escreve nada.
+    """
+    chave = _chave_leitura()
+    return {"Authorization": f"Bearer {chave}", "apikey": chave}
+
+
+def _h_escrita() -> dict:
+    chave = _chave_escrita()
+    return {"Authorization": f"Bearer {chave}", "apikey": chave}
+
+
+def _h_documentos() -> dict:
+    """Storage: sempre pela service_role quando disponível.
+
+    O bucket 'ementas' é privado e não tem política para anon — os documentos
+    são lidos e gravados pelo servidor, nunca pelo navegador.
+    """
+    chave = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY
+    return {"Authorization": f"Bearer {chave}", "apikey": chave}
+
+
+
+def escrita_via_service_role() -> bool:
+    return bool(SUPABASE_SERVICE_ROLE_KEY)
+
+
+async def exigir_admin(x_admin_token: str = Header(default="")):
+    """Protege as rotas de escrita e as que gastam chave de IA.
+
+    Falha fechada: sem ADMIN_TOKEN configurado no ambiente, as rotas ficam
+    indisponíveis (503) em vez de abertas.
+    """
+    if not ADMIN_TOKEN:
+        raise HTTPException(
+            503,
+            "ADMIN_TOKEN não configurado no servidor. Defina a variável de ambiente "
+            "ADMIN_TOKEN para habilitar as rotas de escrita.",
+        )
+    if not secrets.compare_digest(x_admin_token, ADMIN_TOKEN):
+        raise HTTPException(401, "Token de admin ausente ou inválido (header X-Admin-Token).")
+
+
+# ── Limite de uso das rotas que gastam chave de IA ─────────────────────────
+#
+# Observação honesta: em serverless cada instância tem seu próprio contador, então
+# isto barra abuso trivial, não substitui autenticação. Para limite confiável use
+# o Firewall/Vercel KV ou um contador externo.
+_uso_por_ip: dict[str, list[float]] = {}
+
+
+def _limitar_llm(request: Request):
+    ip = (request.client.host if request.client else "?") or "?"
+    agora = time.time()
+    usos = [t for t in _uso_por_ip.get(ip, []) if agora - t < 60]
+    if len(usos) >= LIMITE_LLM_POR_MINUTO:
+        raise HTTPException(429, f"Muitas requisições em sequência. Tente de novo em instantes.")
+    usos.append(agora)
+    _uso_por_ip[ip] = usos
 
 
 # ── Supabase: embeddings, busca vetorial, chunks, storage ──────────────────
 
 EMBEDDINGS_LOTE = 8  # a Edge Function estoura WORKER_RESOURCE_LIMIT acima de ~10-12 textos por chamada
+_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 
 async def gerar_embeddings(textos: list[str]) -> list[list[float]]:
     _checar_config_supabase()
     resultado: list[list[float]] = []
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         for i in range(0, len(textos), EMBEDDINGS_LOTE):
             lote = textos[i : i + EMBEDDINGS_LOTE]
             r = await client.post(
                 f"{SUPABASE_URL}/functions/v1/embeddings",
-                headers={**_H, "Content-Type": "application/json"},
+                headers={**_h_leitura(), "Content-Type": "application/json"},
                 json={"texts": lote},
             )
             r.raise_for_status()
@@ -136,10 +264,10 @@ async def gerar_embeddings(textos: list[str]) -> list[list[float]]:
 
 
 async def buscar_chunks(query_embedding: list[float], n: int = 6) -> list[dict]:
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         r = await client.post(
             f"{SUPABASE_URL}/rest/v1/rpc/match_ementas",
-            headers={**_H, "Content-Type": "application/json"},
+            headers={**_h_leitura(), "Content-Type": "application/json"},
             json={"query_embedding": query_embedding, "match_count": n},
         )
     r.raise_for_status()
@@ -147,48 +275,105 @@ async def buscar_chunks(query_embedding: list[float], n: int = 6) -> list[dict]:
 
 
 async def inserir_chunks(rows: list[dict]):
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         r = await client.post(
             f"{SUPABASE_URL}/rest/v1/ementas_chunks",
-            headers={**_H, "Content-Type": "application/json", "Prefer": "return=minimal"},
+            headers={**_h_escrita(), "Content-Type": "application/json", "Prefer": "return=minimal"},
             json=rows,
         )
     r.raise_for_status()
 
 
+async def contar_chunks_por_fonte(nome: str) -> int:
+    """Quantos chunks já existem para esta fonte (usa o count exato do PostgREST)."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        r = await client.head(
+            f"{SUPABASE_URL}/rest/v1/ementas_chunks",
+            headers={**_h_leitura(), "Prefer": "count=exact"},
+            params={"select": "id", "source": f"eq.{nome}"},
+        )
+    if r.status_code >= 400:
+        return 0
+    cr = r.headers.get("content-range") or ""
+    if "/" in cr:
+        try:
+            return int(cr.split("/")[-1])
+        except ValueError:
+            return 0
+    return 0
+
+
+async def medir_indice_atual(nome: str) -> tuple[int, int]:
+    """(quantidade de chunks, total de caracteres indexados) para uma fonte.
+
+    Pede só a coluna `content` — trazer os vetores de 384 dimensões seria 20x mais
+    dados para nada. O total de caracteres é o que mede perda de conteúdo de
+    verdade: o chunker novo gera chunks maiores, então contar chunks engana.
+    """
+    total_chars = 0
+    quantidade = 0
+    inicio = 0
+    while True:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(
+                f"{SUPABASE_URL}/rest/v1/ementas_chunks",
+                headers={**_h_leitura(), "Range": f"{inicio}-{inicio + 999}", "Range-Unit": "items"},
+                params={"select": "content", "source": f"eq.{nome}"},
+            )
+        if r.status_code >= 400:
+            break
+        lote = r.json()
+        if not lote:
+            break
+        quantidade += len(lote)
+        total_chars += sum(len(c.get("content") or "") for c in lote)
+        if len(lote) < 1000:
+            break
+        inicio += 1000
+    return quantidade, total_chars
+
+
 async def apagar_chunks_por_fonte(nome: str):
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         r = await client.delete(
             f"{SUPABASE_URL}/rest/v1/ementas_chunks",
-            headers=_H,
+            headers=_h_escrita(),
             params={"source": f"eq.{nome}"},
         )
     r.raise_for_status()
 
 
-async def upload_pdf_storage(filename: str, data: bytes):
+async def upload_documento_storage(filename: str, data: bytes, mimetype: str = "application/pdf"):
     _checar_config_supabase()
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
         r = await client.post(
             f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(filename)}",
-            headers={**_H, "Content-Type": "application/pdf", "x-upsert": "true"},
+            headers={**_h_documentos(), "Content-Type": mimetype, "x-upsert": "true"},
             content=data,
         )
     r.raise_for_status()
 
 
+def _mimetype(nome: str) -> str:
+    if nome.lower().endswith(".pdf"):
+        return "application/pdf"
+    if nome.lower().endswith(".md"):
+        return "text/markdown; charset=utf-8"
+    return "text/plain; charset=utf-8"
+
+
 async def listar_arquivos_storage() -> list[dict]:
-    """PDFs do bucket, com o MD5 do conteúdo (eTag) para detectar duplicatas."""
-    async with httpx.AsyncClient(timeout=30) as client:
+    """Documentos do bucket, com o MD5 do conteúdo (eTag) para detectar duplicatas."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         r = await client.post(
             f"{SUPABASE_URL}/storage/v1/object/list/ementas",
-            headers={**_H, "Content-Type": "application/json"},
+            headers={**_h_documentos(), "Content-Type": "application/json"},
             json={"prefix": ""},
         )
     r.raise_for_status()
     arquivos = []
     for f in r.json():
-        if not f["name"].lower().endswith(".pdf"):
+        if not f["name"].lower().endswith(EXTENSOES_DOCUMENTO):
             continue
         meta = f.get("metadata") or {}
         arquivos.append({
@@ -201,39 +386,56 @@ async def listar_arquivos_storage() -> list[dict]:
     return arquivos
 
 
-async def listar_pdfs_storage() -> list[str]:
+async def listar_documentos_storage() -> list[str]:
     return [a["nome"] for a in await listar_arquivos_storage()]
 
 
-async def remover_pdf_storage(filename: str):
-    async with httpx.AsyncClient(timeout=30) as client:
+async def remover_documento_storage(filename: str):
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         r = await client.request(
             "DELETE",
             f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(filename)}",
-            headers=_H,
+            headers=_h_documentos(),
         )
     r.raise_for_status()
 
 
-async def salvar_termos_glossario(termos: list[dict], origem: str = ""):
+async def baixar_documento_storage(filename: str) -> bytes:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+        r = await client.get(f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(filename)}", headers=_h_documentos())
+    r.raise_for_status()
+    return r.content
+
+
+async def salvar_termos_glossario(termos: list[dict], origem: str = "") -> Optional[str]:
+    """Grava os termos. Devolve None em caso de sucesso, ou o motivo da falha.
+
+    Antes o erro era engolido em silêncio: a gravação falhava e ninguém sabia.
+    """
     if not termos:
-        return
+        return None
     rows = [
         {"termo": t["termo"], "explicacao": t["explicacao"], "exemplo": t.get("exemplo") or None, "origem": origem}
         for t in termos
     ]
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(
-            f"{SUPABASE_URL}/rest/v1/glossario_termos",
-            headers={
-                **_H,
-                "Content-Type": "application/json",
-                "Prefer": "resolution=merge-duplicates,return=minimal",
-            },
-            params={"on_conflict": "termo_normalizado"},
-            json=rows,
-        )
-    r.raise_for_status()
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.post(
+                f"{SUPABASE_URL}/rest/v1/glossario_termos",
+                headers={
+                    **_h_escrita(),
+                    "Content-Type": "application/json",
+                    "Prefer": "resolution=merge-duplicates,return=minimal",
+                },
+                params={"on_conflict": "termo_normalizado"},
+                json=rows,
+            )
+        r.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        return f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+    except Exception as e:  # rede/timeout
+        return f"{type(e).__name__}: {e}"[:200]
+    return None
 
 
 async def buscar_termos_glossario(q: str = "", limite: int = 200) -> list[dict]:
@@ -241,51 +443,57 @@ async def buscar_termos_glossario(q: str = "", limite: int = 200) -> list[dict]:
     if q.strip():
         termo_like = f"*{q.strip()}*"
         params["or"] = f"(termo.ilike.{termo_like},explicacao.ilike.{termo_like})"
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.get(f"{SUPABASE_URL}/rest/v1/glossario_termos", headers=_H, params=params)
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        r = await client.get(f"{SUPABASE_URL}/rest/v1/glossario_termos", headers=_h_leitura(), params=params)
     r.raise_for_status()
     return r.json()
 
 
-async def baixar_pdf_storage(filename: str) -> bytes:
-    async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.get(f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(filename)}", headers=_H)
-    r.raise_for_status()
-    return r.content
+# ── Extração de texto ───────────────────────────────────────────────────────
 
 
-# ── Chunking + extração de PDF ──────────────────────────────────────────────
-
-def chunk_texto(texto: str, tamanho: int = 500, sobreposicao: int = 50) -> list[str]:
-    texto = texto.strip()
-    if not texto:
-        return []
-    chunks, inicio = [], 0
-    while inicio < len(texto):
-        chunks.append(texto[inicio: inicio + tamanho])
-        inicio += tamanho - sobreposicao
-    return chunks
-
-
-def extrair_paginas(pdf_bytes: bytes) -> list[tuple[int, str]]:
+def extrair_paginas(pdf_bytes: bytes, nome: str = "") -> list[tuple[int, str]]:
+    """Devolve [(numero_da_pagina, texto)]. Aceita PDF, TXT e MD."""
+    if nome.lower().endswith((".txt", ".md")):
+        try:
+            texto = pdf_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            texto = pdf_bytes.decode("latin-1", "replace")
+        return [(1, texto)]
     reader = PdfReader(io.BytesIO(pdf_bytes))
     return [(i + 1, page.extract_text() or "") for i, page in enumerate(reader.pages)]
 
 
+def montar_contexto(chunks: list[dict]) -> tuple[str, float]:
+    contexto = "\n\n".join(f"[Fonte: {c['source']}, página {c['page']}]\n{c['content']}" for c in chunks)
+    media = sum(c["similarity"] for c in chunks) / len(chunks) if chunks else 0.0
+    return contexto, media
+
+
+def contexto_para_texto(evidencias: list[dict]) -> str:
+    return "\n\n".join(
+        f"[Fonte: {e.get('fonte', '?')}, página {e.get('pagina', '?')}]\n{e.get('conteudo', '')}"
+        for e in evidencias
+    )
+
+
 # ── Chamada ao provedor de IA escolhido (dropdown) ──────────────────────────
+
 
 async def chamar_llm(provider: str, modelo: str, system_prompt: str, user_prompt: str) -> str:
     cfg = PROVIDERS.get(provider)
     if not cfg:
         raise HTTPException(400, f"Provedor desconhecido: {provider}")
+    if not modelo:
+        raise HTTPException(400, f"Nenhum modelo informado para o provedor '{provider}'.")
     api_key = os.environ.get(cfg["env_key"])
     if not api_key:
         raise HTTPException(
             500,
             f"Chave de API não configurada para '{provider}' "
-            f"(defina {cfg['env_key']} nas variáveis de ambiente do Vercel).",
+            f"(defina {cfg['env_key']} nas variáveis de ambiente).",
         )
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=10.0)) as client:
         r = await client.post(
             f"{cfg['base_url']}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -303,10 +511,14 @@ async def chamar_llm(provider: str, modelo: str, system_prompt: str, user_prompt
     return r.json()["choices"][0]["message"]["content"]
 
 
-def montar_contexto(chunks: list[dict]) -> tuple[str, float]:
-    contexto = "\n\n".join(f"[Fonte: {c['source']}, página {c['page']}]\n{c['content']}" for c in chunks)
-    media = sum(c["similarity"] for c in chunks) / len(chunks) if chunks else 0.0
-    return contexto, media
+def resolver_modelo(provider: str, modelo: Optional[str]) -> str:
+    cfg = PROVIDERS.get(provider)
+    if not cfg:
+        raise HTTPException(
+            400,
+            f"Provedor desconhecido: '{provider}'. Recarregue a página para atualizar a lista.",
+        )
+    return modelo or cfg["models"][0]
 
 
 SYSTEM_PROMPT_PERGUNTA = (
@@ -346,7 +558,6 @@ SYSTEM_PROMPT_VERIFICAR = (
     'Responda SEMPRE em JSON: {"perguntas": ["...", "..."]}, sem nenhum texto fora do JSON.'
 )
 
-
 SYSTEM_PROMPT_GLOSSARIO = (
     "Você é um assistente do curso de Engenharia de Prompt. Identifique os termos técnicos, "
     "siglas e conceitos importantes no material abaixo (se houver um TEXTO/QUESTÃO fornecido "
@@ -359,30 +570,69 @@ SYSTEM_PROMPT_GLOSSARIO = (
     "Sem nenhum texto fora do JSON."
 )
 
-
-def contexto_para_texto(evidencias: list[dict]) -> str:
-    return "\n\n".join(
-        f"[Fonte: {e.get('fonte', '?')}, página {e.get('pagina', '?')}]\n{e.get('conteudo', '')}"
-        for e in evidencias
-    )
+SYSTEM_PROMPT_COMPARAR = (
+    "Você é um assistente do curso de Engenharia de Prompt. Responda à pergunta do aluno "
+    "usando principalmente o CONTEXTO fornecido (trechos das apostilas). Cite a fonte e a página "
+    "quando possível. Complemente com conhecimento geral se o contexto não bastar.\n\n"
+    "Ao final, escreva OBRIGATORIAMENTE uma última linha, sozinha, no formato exato:\n"
+    "RESPOSTA DIRETA: <a resposta essencial em no máximo 20 palavras, sem markdown>"
+)
 
 
 # ── Rotas ────────────────────────────────────────────────────────────────────
 
+_cache_status: dict = {"em": 0.0, "total": -1, "status": "empty"}
+
+
 @app.get("/api/status")
 async def status():
+    """Estado do índice. Cacheado por 30 s: o front consulta isso a cada 30 s por aba."""
     _checar_config_supabase()
-    async with httpx.AsyncClient(timeout=15) as client:
+    agora = time.time()
+    if agora - _cache_status["em"] < CACHE_STATUS_SEGUNDOS and _cache_status["total"] >= 0:
+        return {
+            "status": _cache_status["status"],
+            "total": _cache_status["total"],
+            "escrita_via": "service_role" if escrita_via_service_role() else "anon",
+            "cache": True,
+        }
+    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=8.0)) as client:
         r = await client.head(
             f"{SUPABASE_URL}/rest/v1/ementas_chunks",
-            headers={**_H, "Prefer": "count=exact"},
+            headers={**_h_leitura(), "Prefer": "count=exact"},
             params={"select": "id"},
         )
     total = 0
     cr = r.headers.get("content-range")
     if cr and "/" in cr:
-        total = int(cr.split("/")[-1])
-    return {"status": "ready" if total > 0 else "empty", "total": total}
+        try:
+            total = int(cr.split("/")[-1])
+        except ValueError:
+            total = 0
+    _cache_status.update({"em": agora, "total": total, "status": "ready" if total > 0 else "empty"})
+    return {
+        "status": _cache_status["status"],
+        "total": total,
+        "escrita_via": "service_role" if escrita_via_service_role() else "anon",
+        "cache": False,
+    }
+
+
+@app.get("/api/config")
+def config_publica():
+    """O que o front precisa saber antes de mostrar os botões de escrita."""
+    return {
+        "admin_necessario": bool(ADMIN_TOKEN),
+        "escrita_via": "service_role" if escrita_via_service_role() else "anon",
+        "inseguro": not escrita_via_service_role(),
+        "extensoes": list(EXTENSOES_DOCUMENTO),
+        "max_upload_mb": MAX_UPLOAD_BYTES // (1024 * 1024),
+    }
+
+
+@app.get("/api/admin/verificar")
+async def admin_verificar(_: None = Depends(exigir_admin)):
+    return {"ok": True}
 
 
 @app.get("/api/providers")
@@ -403,14 +653,23 @@ class BuscarReq(BaseModel):
 
 
 @app.post("/api/buscar")
-async def buscar(req: BuscarReq):
+async def buscar(req: BuscarReq, request: Request):
+    _limitar_llm(request)
+    if not req.query.strip():
+        raise HTTPException(400, "Informe um termo de busca.")
+    n = max(1, min(req.n, MAX_RESULTADOS_BUSCA))
     emb = (await gerar_embeddings([req.query]))[0]
-    chunks = await buscar_chunks(emb, n=req.n)
+    chunks = await buscar_chunks(emb, n=n)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
     return {
         "resultados": [
-            {"conteudo": c["content"], "fonte": c["source"], "pagina": c["page"], "relevancia": round(c["similarity"], 3)}
+            {
+                "conteudo": c["content"],
+                "fonte": c["source"],
+                "pagina": c["page"],
+                "relevancia": round(c["similarity"], 3),
+            }
             for c in chunks
         ]
     }
@@ -418,19 +677,22 @@ async def buscar(req: BuscarReq):
 
 class PerguntaReq(BaseModel):
     pergunta: str
-    provider: str = "groq"
+    provider: str = "nous"
     modelo: Optional[str] = None
 
 
 @app.post("/api/perguntar")
-async def perguntar(req: PerguntaReq):
+async def perguntar(req: PerguntaReq, request: Request):
+    _limitar_llm(request)
+    if not req.pergunta.strip():
+        raise HTTPException(400, "Pergunta vazia.")
     emb = (await gerar_embeddings([req.pergunta]))[0]
     chunks = await buscar_chunks(emb, n=6)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
 
     contexto, media = montar_contexto(chunks)
-    modelo = req.modelo or PROVIDERS[req.provider]["models"][0]
+    modelo = resolver_modelo(req.provider, req.modelo)
     resposta = await chamar_llm(
         req.provider, modelo, SYSTEM_PROMPT_PERGUNTA, f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
     )
@@ -459,14 +721,15 @@ class SimplificarReq(BaseModel):
     pergunta: str
     resposta: str
     contexto: list[EvidenciaIn] = []
-    provider: str = "groq"
+    provider: str = "nous"
     modelo: Optional[str] = None
 
 
 @app.post("/api/simplificar")
-async def simplificar(req: SimplificarReq):
+async def simplificar(req: SimplificarReq, request: Request):
+    _limitar_llm(request)
     contexto = contexto_para_texto([e.model_dump() for e in req.contexto])
-    modelo = req.modelo or PROVIDERS[req.provider]["models"][0]
+    modelo = resolver_modelo(req.provider, req.modelo)
     resposta = await chamar_llm(
         req.provider,
         modelo,
@@ -474,32 +737,35 @@ async def simplificar(req: SimplificarReq):
         f"CONTEXTO:\n{contexto}\n\nPERGUNTA ORIGINAL: {req.pergunta}\n\n"
         f"RESPOSTA ORIGINAL:\n{req.resposta}\n\nReescreva a resposta de forma bem mais simples.",
     )
-    return {"resposta": resposta, "provider": req.provider, "modelo": modelo}
+    return {"resposta": limpar_resposta(resposta), "provider": req.provider, "modelo": modelo}
 
 
 class VerificarReq(BaseModel):
     pergunta: str
     resposta: str
     contexto: list[EvidenciaIn] = []
-    provider: str = "groq"
+    provider: str = "nous"
     modelo: Optional[str] = None
 
 
 @app.post("/api/verificar")
-async def verificar(req: VerificarReq):
+async def verificar(req: VerificarReq, request: Request):
+    _limitar_llm(request)
     contexto = contexto_para_texto([e.model_dump() for e in req.contexto])
-    modelo = req.modelo or PROVIDERS[req.provider]["models"][0]
-    bruto = await chamar_llm(
-        req.provider,
-        modelo,
-        SYSTEM_PROMPT_VERIFICAR,
-        f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}\n\nRESPOSTA DADA:\n{req.resposta}",
+    modelo = resolver_modelo(req.provider, req.modelo)
+    bruto = limpar_resposta(
+        await chamar_llm(
+            req.provider,
+            modelo,
+            SYSTEM_PROMPT_VERIFICAR,
+            f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}\n\nRESPOSTA DADA:\n{req.resposta}",
+        )
     )
     perguntas: list[str] = []
-    match = re.search(r"\{.*\}", bruto, re.DOTALL)
-    if match:
+    bloco = extrair_bloco_json(bruto)
+    if bloco:
         try:
-            parsed = json.loads(match.group(0))
+            parsed = json.loads(bloco)
             perguntas = [p for p in parsed.get("perguntas", []) if isinstance(p, str) and p.strip()]
         except json.JSONDecodeError:
             pass
@@ -510,12 +776,13 @@ async def verificar(req: VerificarReq):
 
 class GlossarioReq(BaseModel):
     tema: str = ""  # opcional: assunto pra focar, ou uma questão/texto colado para extrair termos dele
-    provider: str = "groq"
+    provider: str = "nous"
     modelo: Optional[str] = None
 
 
 @app.post("/api/glossario")
-async def glossario(req: GlossarioReq):
+async def glossario(req: GlossarioReq, request: Request):
+    _limitar_llm(request)
     texto_usuario = req.tema.strip()
     query = texto_usuario or "principais conceitos, termos técnicos e siglas do curso"
     emb = (await gerar_embeddings([query]))[0]
@@ -524,18 +791,18 @@ async def glossario(req: GlossarioReq):
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
 
     contexto, _ = montar_contexto(chunks)
-    modelo = req.modelo or PROVIDERS[req.provider]["models"][0]
+    modelo = resolver_modelo(req.provider, req.modelo)
     partes = [f"CONTEXTO DAS APOSTILAS:\n{contexto}"]
     if texto_usuario:
         partes.append(f"TEXTO/QUESTÃO FORNECIDO PELO ALUNO (priorize os termos daqui):\n{texto_usuario}")
     user_prompt = "\n\n".join(partes)
 
     def extrair_termos(bruto: str) -> list[dict]:
-        match = re.search(r"\{.*\}", bruto, re.DOTALL)
-        if not match:
+        bloco = extrair_bloco_json(bruto)
+        if not bloco:
             return []
         try:
-            parsed = json.loads(match.group(0))
+            parsed = json.loads(bloco)
         except json.JSONDecodeError:
             return []
         return [
@@ -550,42 +817,39 @@ async def glossario(req: GlossarioReq):
 
     termos: list[dict] = []
     for _ in range(2):  # o modelo às vezes foge do formato JSON — uma retentativa resolve a maioria
-        bruto = await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_GLOSSARIO, user_prompt)
+        bruto = limpar_resposta(await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_GLOSSARIO, user_prompt))
         termos = extrair_termos(bruto)
         if termos:
             break
 
+    aviso = None
     if termos:
-        try:
-            await salvar_termos_glossario(termos, origem=texto_usuario[:200])
-        except httpx.HTTPStatusError:
-            pass  # não bloqueia a resposta ao usuário se o salvamento falhar
+        aviso = await salvar_termos_glossario(termos, origem=texto_usuario[:200])
 
-    return {"termos": termos, "provider": req.provider, "modelo": modelo}
+    resposta = {"termos": termos, "provider": req.provider, "modelo": modelo}
+    if aviso:
+        # Não bloqueia a resposta ao aluno, mas deixa de falhar em silêncio.
+        resposta["aviso_salvamento"] = f"Termos exibidos, mas não foram salvos no banco — {aviso}"
+    return resposta
 
 
 @app.get("/api/glossario/termos")
 async def listar_termos_glossario(q: str = ""):
     """Busca termos já salvos no banco (gerados em sumários anteriores)."""
-    termos = await buscar_termos_glossario(q)
-    return {"termos": termos}
+    return {"termos": await buscar_termos_glossario(q)}
 
 
 class ResolverReq(BaseModel):
     texto: str
-    provider: str = "groq"
+    provider: str = "nous"
     modelo: Optional[str] = None
 
 
 @app.post("/api/resolver")
-async def resolver(req: ResolverReq):
+async def resolver(req: ResolverReq, request: Request):
+    _limitar_llm(request)
     texto = req.texto.strip()
-    raw_alts = re.findall(
-        r"(?:^|\n)\s*([A-Ea-e])\s*[).\-]\s*(.+?)(?=(?:\n\s*[A-Ea-e]\s*[).\-])|\Z)", texto, re.DOTALL
-    )
-    alternativas = {l.upper(): c.strip() for l, c in raw_alts}
-    primeiro = re.search(r"\n?\s*[A-Ea-e]\s*[).\-]", texto)
-    questao = texto[: primeiro.start()].strip() if primeiro else texto
+    questao, alternativas = extrair_alternativas(texto)
 
     if not alternativas:
         raise HTTPException(400, "Não foi possível identificar alternativas (A, B, C...) no texto.")
@@ -596,23 +860,24 @@ async def resolver(req: ResolverReq):
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
 
     contexto, media = montar_contexto(chunks)
-    modelo = req.modelo or PROVIDERS[req.provider]["models"][0]
-    alternativas_fmt = "\n".join(f"{l}) {c}" for l, c in alternativas.items())
-    resposta_bruta = await chamar_llm(
-        req.provider,
-        modelo,
-        SYSTEM_PROMPT_RESOLVER,
-        f"CONTEXTO:\n{contexto}\n\nQUESTÃO:\n{questao}\n\nALTERNATIVAS:\n{alternativas_fmt}",
+    modelo = resolver_modelo(req.provider, req.modelo)
+    resposta_bruta = limpar_resposta(
+        await chamar_llm(
+            req.provider,
+            modelo,
+            SYSTEM_PROMPT_RESOLVER,
+            f"CONTEXTO:\n{contexto}\n\nQUESTÃO:\n{questao}\n\nALTERNATIVAS:\n{formatar_alternativas(alternativas)}",
+        )
     )
 
     letra = None
     explicacao_rapida = resposta_bruta
     explicacao_detalhada = ""
     alternativas_erradas: dict[str, str] = {}
-    match = re.search(r"\{.*\}", resposta_bruta, re.DOTALL)
-    if match:
+    bloco = extrair_bloco_json(resposta_bruta)
+    if bloco:
         try:
-            parsed = json.loads(match.group(0))
+            parsed = json.loads(bloco)
             letra = (parsed.get("letra") or "").strip().upper() or None
             explicacao_rapida = parsed.get("explicacao_rapida") or parsed.get("explicacao") or resposta_bruta
             explicacao_detalhada = parsed.get("explicacao_detalhada") or ""
@@ -643,124 +908,8 @@ async def resolver(req: ResolverReq):
 
 # ── Comparar a mesma pergunta entre vários modelos ─────────────────────────
 #
-# Sobre a métrica: similaridade de vocabulário NÃO mede concordância. Medições
-# reais mostraram que respostas divergentes ("26 milhões" vs "450 mil
-# habitantes") pontuavam MAIS que respostas concordantes, porque falar do mesmo
-# assunto já compartilha vocabulário. A comparação abaixo é feita sobre FATOS
-# concretos (números e nomes próprios), que é onde a discordância aparece.
-
-_STOPWORDS = {
-    "que", "qual", "quais", "para", "por", "com", "uma", "dos", "das", "the", "and",
-    "sao", "ser", "esta", "estao", "como", "mais", "menos", "seu", "sua", "seus",
-    "suas", "nao", "sim", "tambem", "onde", "quando", "porque", "pode", "podem",
-    "deve", "devem", "esse", "essa", "isso", "este", "aquele", "aquela",
-    "um", "uma", "uns", "umas", "de", "do", "da", "em", "no", "na", "nos", "nas",
-    "ao", "aos", "as", "os", "e", "ou", "se", "ele", "ela", "eles", "elas",
-}
-
-# Palavras capitalizadas por início de frase / uso comum — não são nomes próprios.
-_NAO_SAO_NOMES = {
-    "essa", "esse", "este", "esta", "isso", "aquilo", "aquele", "aquela", "alem",
-    "portanto", "entao", "assim", "quando", "onde", "qual", "quais", "para", "com",
-    "nao", "sim", "tambem", "porem", "contudo", "logo", "segundo", "durante",
-    "apos", "antes", "depois", "aqui", "ali", "exemplo", "fonte", "fonte", "pagina",
-    "nota", "observacao", "resposta", "resumo", "conclusao", "introducao",
-    "de", "da", "do", "das", "dos", "em", "no", "na", "nos", "nas", "ao", "aos",
-    "um", "uma", "uns", "umas", "se", "ou", "e", "mas", "que", "como", "quando",
-}
-
-
-def _limpar_resposta(texto: str) -> str:
-    """Remove blocos de raciocínio (<think>...</think>) que alguns modelos emitem."""
-    limpo = re.sub(r"<think>.*?</think>", "", texto, flags=re.DOTALL | re.IGNORECASE)
-    limpo = re.sub(r"</?think>", "", limpo, flags=re.IGNORECASE)
-    return limpo.strip()
-
-
-def _normalizar_numero(tok: str) -> str:
-    """'1.000' e '1000' viram o mesmo fato; '26,3' vira '26.3'."""
-    t = tok.strip().rstrip(".,")
-    if re.fullmatch(r"\d{1,3}(\.\d{3})+", t):      # separador de milhar brasileiro
-        t = t.replace(".", "")
-    elif re.fullmatch(r"\d{1,3}(,\d{3})+", t):    # separador de milhar americano
-        t = t.replace(",", "")
-    else:
-        t = t.replace(",", ".")
-    return t
-
-
-def _extrair_numeros(texto: str) -> set[str]:
-    """Números citados no texto, normalizados ('1.000' == '1000', '26,3' == '26.3')."""
-    nums = set()
-    for tok in re.findall(r"\d[\d.,]*", texto):
-        n = _normalizar_numero(tok)
-        if n and re.search(r"\d", n):
-            nums.add(n)
-    return nums
-
-
-def _extrair_nomes(texto: str) -> set[str]:
-    """Nomes próprios citados no texto (informativo — mais ruidoso que números).
-
-    Descarta palavras capitalizadas que abrem frase/linha/item de lista ou que
-    são rótulos seguidos de dois-pontos ("**Conecta:**", "Defina:") — são verbos
-    que os modelos capitalizam por formatação, não nomes de coisa alguma.
-    """
-    nomes = set()
-    terminadores = ".!?:\n"
-    for m in re.finditer(r"\b[A-ZÀ-Ý][a-zà-ÿ]{2,}\b", texto):
-        # é rótulo? ("Palavra:" ou "**Palavra:**")
-        j = m.end()
-        while j < len(texto) and texto[j] in "*_` \t":
-            j += 1
-        if j < len(texto) and texto[j] == ":":
-            continue
-
-        # abre frase/linha/item de lista?
-        i = m.start() - 1
-        while i >= 0 and texto[i] in " \t*_`-–—>#•|\"'([{":
-            i -= 1
-        if i < 0 or texto[i] in terminadores:
-            continue
-
-        norm = unicodedata.normalize("NFKD", m.group(0).lower())
-        norm = "".join(c for c in norm if not unicodedata.combining(c))
-        if norm in _NAO_SAO_NOMES or len(norm) < 3:
-            continue
-        nomes.add(norm)
-    return nomes
-
-
-def _palavras_conteudo(texto: str) -> set[str]:
-    """Vocabulário significativo — métrica AUXILIAR de semelhança de texto."""
-    t = unicodedata.normalize("NFKD", texto.lower())
-    t = "".join(c for c in t if not unicodedata.combining(c))
-    return {p for p in re.findall(r"[a-z0-9]{4,}", t) if p not in _STOPWORDS}
-
-
-def _jaccard(a: set[str], b: set[str]) -> float:
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
-
-
-SYSTEM_PROMPT_COMPARAR = (
-    "Você é um assistente do curso de Engenharia de Prompt. Responda à pergunta do aluno "
-    "usando principalmente o CONTEXTO fornecido (trechos das apostilas). Cite a fonte e a página "
-    "quando possível. Complemente com conhecimento geral se o contexto não bastar.\n\n"
-    "Ao final, escreva OBRIGATORIAMENTE uma última linha, sozinha, no formato exato:\n"
-    "RESPOSTA DIRETA: <a resposta essencial em no máximo 20 palavras, sem markdown>"
-)
-
-
-def _extrair_resposta_direta(texto: str) -> str:
-    """Pega a linha 'RESPOSTA DIRETA: ...' que o modelo foi instruído a emitir."""
-    m = re.findall(r"RESPOSTA\s*DIRETA\s*:?\**\s*(.+)", texto, flags=re.IGNORECASE)
-    if not m:
-        return ""
-    linha = m[-1]
-    linha = linha.replace("*", "").strip()
-    return linha[:400]
+# A comparação roda sobre FATOS concretos (números e nomes próprios) — ver a
+# explicação em `rag_core.calcular_concordancia`.
 
 
 class CompararItem(BaseModel):
@@ -774,7 +923,7 @@ class CompararReq(BaseModel):
 
 
 @app.post("/api/comparar")
-async def comparar(req: CompararReq):
+async def comparar(req: CompararReq, request: Request):
     """Consulta a MESMA pergunta em vários modelos e aponta onde eles divergem.
 
     Todos recebem o mesmo contexto do RAG, então qualquer diferença vem do
@@ -782,6 +931,7 @@ async def comparar(req: CompararReq):
     que dá uma conclusão curta e comparável — comparar o texto completo seria
     comparar formatação, não conteúdo.
     """
+    _limitar_llm(request)
     pergunta = req.pergunta.strip()
     if not pergunta:
         raise HTTPException(400, "Pergunta vazia.")
@@ -797,23 +947,33 @@ async def comparar(req: CompararReq):
     user_prompt = f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {pergunta}"
 
     async def responder(item: CompararItem) -> dict:
-        cfg = PROVIDERS.get(item.provider)
-        modelo = item.modelo or (cfg["models"][0] if cfg else "")
+        try:
+            modelo = resolver_modelo(item.provider, item.modelo)
+        except HTTPException as e:
+            return {
+                "provider": item.provider,
+                "modelo": item.modelo or "",
+                "rotulo": f"{item.provider}/{item.modelo or '?'}",
+                "resposta": "",
+                "resposta_direta": "",
+                "segundos": 0.0,
+                "erro": str(e.detail),
+            }
         nome = f"{item.provider}/{modelo}"
         inicio = time.perf_counter()
         try:
             bruto = await chamar_llm(item.provider, modelo, SYSTEM_PROMPT_COMPARAR, user_prompt)
-            resposta = _limpar_resposta(bruto)
+            resposta = limpar_resposta(bruto)
             erro = None
         except HTTPException as e:
             resposta, erro = "", str(e.detail)
         except Exception as e:  # rede, timeout, formato inesperado
             resposta, erro = "", f"{type(e).__name__}: {e}"[:300]
-        direta, resto = _extrair_resposta_direta(resposta), resposta
+        direta = extrair_resposta_direta(resposta)
+        resto = resposta
         if direta:
             # remove a linha da resposta direta do corpo exibido (fica no campo próprio)
-            resto = re.sub(r"\**\s*RESPOSTA\s*DIRETA\s*:?\**.*$", "", resposta,
-                           flags=re.IGNORECASE | re.DOTALL).strip()
+            resto = remover_linha_resposta_direta(resposta)
         return {
             "provider": item.provider,
             "modelo": modelo,
@@ -830,67 +990,12 @@ async def comparar(req: CompararReq):
     # ── Comparação sobre a RESPOSTA DIRETA (curta e comparável) ────────────
     boas = [r for r in respostas if not r["erro"] and r["resposta_direta"]]
     diretas = {r["rotulo"]: r["resposta_direta"] for r in boas}
-
-    numeros_por_modelo = {rot: _extrair_numeros(d) for rot, d in diretas.items()}
-    nomes_por_modelo = {rot: _extrair_nomes(d) for rot, d in diretas.items()}
-
-    def dividir(por_modelo: dict[str, set[str]]) -> tuple[list[str], list[dict]]:
-        onde: dict[str, list[str]] = {}
-        for rotulo, itens in por_modelo.items():
-            for it in itens:
-                onde.setdefault(it, []).append(rotulo)
-        comuns = sorted(i for i, ms in onde.items() if len(ms) >= 2)
-        exclusivos = sorted(
-            ({"fato": i, "modelo": ms[0]} for i, ms in onde.items() if len(ms) == 1),
-            key=lambda d: d["fato"],
-        )
-        return comuns, exclusivos
-
-    def vazio(por_modelo):
-        """Nenhum fato para comparar (todos os modelos não citam fatos)."""
-        return not any(por_modelo.values())
-
-    numeros_comuns, numeros_exclusivos = dividir(numeros_por_modelo)
-    nomes_comuns, nomes_exclusivos = dividir(nomes_por_modelo)
-
-    # Similaridade entre as conclusões (curtas, então aqui vocabulário diz algo).
-    conj = [_palavras_conteudo(d) for d in diretas.values()]
-    vocab, pares = [], 0
-    for i in range(len(conj)):
-        for j in range(i + 1, len(conj)):
-            vocab.append(_jaccard(conj[i], conj[j]))
-            pares += 1
-    similaridade = round(sum(vocab) / pares, 3) if pares else 0.0
-
-    # Divergência em número na conclusão = conflito concreto (26 mi vs 460 mil).
-    divergencia_numerica = len(boas) >= 2 and bool(numeros_exclusivos)
-
-    # Calibrado com medições reais: conclusões equivalentes escritas por modelos
-    # diferentes ficam em ~0,28-0,36 de Jaccard (a redação difere), então o
-    # limiar de "alta" não pode ser alto. Nomes compartilhados (os modelos
-    # citam as mesmas entidades) reforçam o acordo.
-    if len(boas) < 2:
-        nivel = "indefinida"
-    elif divergencia_numerica:
-        nivel = "baixa"                      # conflito verificável
-    elif len(nomes_comuns) >= 2 or similaridade >= 0.30:
-        nivel = "alta"
-    elif similaridade >= 0.20:
-        nivel = "media"
-    else:
-        nivel = "baixa"
+    comparacao = calcular_concordancia(diretas)
 
     return {
         "pergunta": pergunta,
         "respostas": respostas,
-        "nivel_concordancia": nivel,
-        "divergencia_numerica": divergencia_numerica,
-        "similaridade_conclusoes": similaridade,
-        "numeros_comuns": numeros_comuns,
-        "numeros_exclusivos": numeros_exclusivos,
-        "nomes_comuns": nomes_comuns,
-        "nomes_exclusivos": nomes_exclusivos,
-        "sem_fatos": vazio(numeros_por_modelo) and vazio(nomes_por_modelo),
+        **comparacao,
         "modelos_ok": len(boas),
         "modelos_total": len(req.modelos),
         "pouco_embasado": media < LIMIAR_CONFIANCA,
@@ -902,106 +1007,171 @@ async def comparar(req: CompararReq):
     }
 
 
-@app.post("/api/upload")
-async def upload(files: list[UploadFile] = File(...)):
-    """Envia PDFs ao Storage sem permitir duplicatas.
-
-    Regras (evitam indexar o mesmo documento duas vezes):
-    - mesmo conteúdo + mesmo nome  → ignora (já está lá)
-    - mesmo conteúdo + outro nome  → SOBRESCREVE: apaga o antigo (arquivo e
-      chunks) e mantém só o novo nome, para não haver dois iguais no índice
-    - mesmo nome + conteúdo novo   → versão atualizada: apaga os chunks antigos
-      (senão sobrariam chunks das duas versões)
-    - arquivo novo                 → salva
-    """
-    existentes = await listar_arquivos_storage()
-    por_md5 = {a["md5"]: a for a in existentes if a["md5"]}
-    por_nome = {a["nome"]: a for a in existentes}
-
-    salvos: list[str] = []
-    substituidos: list[dict] = []
-    ignorados: list[dict] = []
-
-    for f in files:
-        nome = f.filename or ""
-        if not nome.lower().endswith(".pdf"):
-            ignorados.append({"arquivo": nome, "motivo": "não é PDF"})
-            continue
-
-        data = await f.read()
-        if not data:
-            ignorados.append({"arquivo": nome, "motivo": "arquivo vazio"})
-            continue
-        md5 = hashlib.md5(data).hexdigest()
-
-        igual = por_md5.get(md5)
-        if igual and igual["nome"] == nome:
-            ignorados.append({"arquivo": nome, "motivo": "conteúdo idêntico já indexado"})
-            continue
-
-        if igual:
-            # Mesmo documento com nome diferente → substitui o existente.
-            await apagar_chunks_por_fonte(igual["nome"])
-            await remover_pdf_storage(igual["nome"])
-            por_nome.pop(igual["nome"], None)
-            substituidos.append({"arquivo": nome, "substituiu": igual["nome"],
-                                 "motivo": "mesmo conteúdo, nome diferente"})
-        elif nome in por_nome:
-            # Mesmo nome, conteúdo novo → versão atualizada.
-            await apagar_chunks_por_fonte(nome)
-            substituidos.append({"arquivo": nome, "substituiu": nome,
-                                 "motivo": "versão atualizada do mesmo arquivo"})
-        else:
-            salvos.append(nome)
-
-        await upload_pdf_storage(nome, data)
-        por_md5[md5] = {"nome": nome, "md5": md5}
-        por_nome[nome] = {"nome": nome, "md5": md5}
-
-    return {"salvos": salvos, "substituidos": substituidos, "ignorados": ignorados}
-
-
-@app.get("/api/duplicatas")
-async def duplicatas():
-    """Diagnóstico: arquivos no Storage com o mesmo conteúdo (MD5)."""
-    arquivos = await listar_arquivos_storage()
-    agrupado: dict[str, list[str]] = {}
-    for a in arquivos:
-        if a["md5"]:
-            agrupado.setdefault(a["md5"], []).append(a["nome"])
-    grupos = [nomes for nomes in agrupado.values() if len(nomes) > 1]
-    return {"total_arquivos": len(arquivos), "grupos_duplicados": grupos}
-
-
-@app.get("/api/pdfs")
-async def pdfs():
-    return {"arquivos": await listar_pdfs_storage()}
-
+# ── Ingestão ────────────────────────────────────────────────────────────────
 
 LOTE_INGESTAO = 24  # chunks por chamada (evita estourar o timeout da function serverless)
+QUEDA_MAXIMA_TEXTO = 0.4  # reindexar pode perder no máximo 40% do TEXTO indexado
 
 
-class IngerirReq(BaseModel):
-    arquivo: str
-    offset: int = 0
-
-
-@app.post("/api/ingerir")
-async def ingerir(req: IngerirReq):
-    todos = await listar_pdfs_storage()
-    if req.arquivo not in todos:
-        raise HTTPException(404, f"Arquivo '{req.arquivo}' não encontrado no Storage.")
-
-    pdf_bytes = await baixar_pdf_storage(req.arquivo)
-    paginas = extrair_paginas(pdf_bytes)
+def preparar_linhas(paginas: list[tuple[int, str]]) -> list[dict]:
     linhas = []
     for num_pagina, texto_pagina in paginas:
         for pedaco in chunk_texto(texto_pagina):
             if pedaco.strip():
                 linhas.append({"pagina": num_pagina, "texto": pedaco})
+    return linhas
+
+
+async def _analisar_ingestao(arquivo: str) -> dict:
+    """Prepara a ingestão sem gravar nada: quanto existe hoje × quanto viria.
+
+    A comparação é feita sobre o TOTAL DE CARACTERES indexados, não sobre a
+    quantidade de chunks. O chunker atual produz trechos de ~900 caracteres
+    (antes: cortes de 500), então uma reindexação sadia costuma gerar MENOS
+    chunks com o mesmo conteúdo — comparar contagem acusaria perda falsa e
+    ensinaria o usuário a confirmar sem ler.
+    """
+    todos = await listar_documentos_storage()
+    if arquivo not in todos:
+        raise HTTPException(404, f"Arquivo '{arquivo}' não encontrado no Storage.")
+
+    dados = await baixar_documento_storage(arquivo)
+    paginas = extrair_paginas(dados, arquivo)
+    linhas = preparar_linhas(paginas)
+    existentes, chars_existentes = await medir_indice_atual(arquivo)
+
+    chars_novos = sum(len(l["texto"]) for l in linhas)
+    paginas_com_texto = sum(1 for _, t in paginas if (t or "").strip())
+    avisos: list[str] = []
 
     if not linhas:
-        return {"ok": True, "arquivo": req.arquivo, "processado": 0, "total": 0, "done": True}
+        if paginas_com_texto == 0:
+            avisos.append(
+                "Nenhum texto extraído das páginas. Se o PDF for digitalizado (imagem), "
+                "o texto precisa de OCR antes de indexar."
+            )
+        else:
+            avisos.append("O material tem texto, mas nenhum trecho atingiu o tamanho mínimo para indexação.")
+    elif chars_existentes and chars_novos < chars_existentes * (1 - QUEDA_MAXIMA_TEXTO):
+        perdido = round(100 - 100 * chars_novos / chars_existentes)
+        avisos.append(
+            f"A reindexação cobriria {chars_novos} caracteres contra {chars_existentes} já indexados "
+            f"(perda de {perdido}% do texto). Confirme se é mesmo isso."
+        )
+
+    return {
+        "arquivo": arquivo,
+        "paginas": len(paginas),
+        "paginas_com_texto": paginas_com_texto,
+        "chunks_existentes": existentes,
+        "chunks_novos": len(linhas),
+        "chars_existentes": chars_existentes,
+        "chars_novos": chars_novos,
+        "perda": max(0, existentes - len(linhas)),
+        "perda_texto_percentual": (
+            round(100 - 100 * chars_novos / chars_existentes) if chars_existentes else 0
+        ),
+        "avisos": avisos,
+        "ok": bool(linhas) and not avisos,
+    }
+
+
+class IngerirReq(BaseModel):
+    arquivo: str
+    offset: int = 0
+    forcar: bool = False
+
+
+async def _risco_de_perda(fonte: str, data: bytes, nome_arquivo: str) -> Optional[dict]:
+    """O upload substituiria um documento indexado por outro que rende menos texto?
+
+    Devolve o corpo do 409 (com os números e os avisos) ou None quando é seguro.
+    Cobre o caso em que o arquivo novo não extrai texto nenhum — um PDF
+    digitalizado subindo no lugar de um indexado apagaria o material.
+    """
+    existentes, chars_existentes = await medir_indice_atual(fonte)
+    if not chars_existentes:
+        return None  # nada indexado nesta fonte: não há o que perder
+
+    avisos: list[str] = []
+    try:
+        linhas = preparar_linhas(extrair_paginas(data, nome_arquivo))
+        chars_novos = sum(len(l["texto"]) for l in linhas)
+    except Exception as e:  # PDF corrompido, formato inesperado
+        linhas, chars_novos = [], 0
+        avisos.append(f"Não foi possível extrair texto do arquivo enviado ({type(e).__name__}: {e})"[:200])
+
+    if not linhas:
+        avisos.append(
+            "O arquivo enviado não rendeu nenhum trecho indexável — substituir deixaria "
+            "este documento sem conteúdo no índice."
+        )
+    elif chars_novos < chars_existentes * (1 - QUEDA_MAXIMA_TEXTO):
+        perdido = round(100 - 100 * chars_novos / chars_existentes)
+        avisos.append(
+            f"O arquivo enviado cobre {chars_novos} caracteres contra {chars_existentes} já indexados "
+            f"(perda de {perdido}% do texto)."
+        )
+
+    if not avisos:
+        return None
+
+    return {
+        "mensagem": (
+            f"Substituir '{fonte}' apaga os chunks atuais antes de indexar o arquivo novo. "
+            "Reenvie com forcar=true se for mesmo isso."
+        ),
+        "arquivo": nome_arquivo,
+        "fonte_afetada": fonte,
+        "chunks_existentes": existentes,
+        "chars_existentes": chars_existentes,
+        "chars_novos": chars_novos,
+        "perda_texto_percentual": (
+            round(100 - 100 * chars_novos / chars_existentes) if chars_existentes else 0
+        ),
+        "avisos": avisos,
+    }
+
+
+@app.post("/api/ingerir/previa")
+async def ingerir_previa(req: IngerirReq, _: None = Depends(exigir_admin)):
+    """Dry-run: o que a reindexação faria, sem tocar em nada."""
+    return await _analisar_ingestao(req.arquivo)
+
+
+@app.post("/api/ingerir")
+async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
+    """Indexa um documento do Storage em lotes.
+
+    A versão anterior apagava os chunks da fonte ANTES de saber se a extração
+    produzia algo — um clique em "reindexar" apagava 384 chunks de um PDF que
+    não existe mais no Storage. Agora a queda de conteúdo precisa ser
+    confirmada com `forcar: true`.
+    """
+    analise = await _analisar_ingestao(req.arquivo)
+
+    if req.offset == 0 and not req.forcar and (not analise["ok"]):
+        raise HTTPException(
+            409,
+            {
+                "mensagem": "Reindexação bloqueada para não perder conteúdo. Use /api/ingerir/previa para ver os números.",
+                **analise,
+            },
+        )
+
+    dados = await baixar_documento_storage(req.arquivo)
+    linhas = preparar_linhas(extrair_paginas(dados, req.arquivo))
+
+    if not linhas:
+        return {
+            "ok": True,
+            "arquivo": req.arquivo,
+            "processado": 0,
+            "total": 0,
+            "proximo_offset": 0,
+            "done": True,
+            "avisos": analise["avisos"],
+        }
 
     if req.offset == 0:
         await apagar_chunks_por_fonte(req.arquivo)  # evita duplicar ao reindexar
@@ -1019,8 +1189,106 @@ async def ingerir(req: IngerirReq):
     return {
         "ok": True,
         "arquivo": req.arquivo,
-        "processado": proximo,
+        "processado": len(fatia),
         "total": len(linhas),
         "proximo_offset": proximo,
         "done": proximo >= len(linhas),
     }
+
+
+# ── Upload ──────────────────────────────────────────────────────────────────
+
+
+@app.post("/api/upload")
+async def upload(
+    files: list[UploadFile] = File(...),
+    forcar: bool = Form(False),
+    _: None = Depends(exigir_admin),
+):
+    """Envia documentos ao Storage sem permitir duplicatas.
+
+    Regras (evitam indexar o mesmo documento duas vezes):
+    - mesmo conteúdo + mesmo nome  → ignora (já está lá)
+    - mesmo conteúdo + outro nome  → SOBRESCREVE: apaga o antigo (arquivo e
+      chunks) e mantém só o novo nome, para não haver dois iguais no índice
+    - mesmo nome + conteúdo novo   → versão atualizada: apaga os chunks antigos
+      (senão sobrariam chunks das duas versões)
+    - arquivo novo                 → salva
+
+    Antes de apagar chunks de uma fonte que já está indexada, compara quanto
+    texto o arquivo novo renderia com o que está indexado hoje. Se cobrir menos
+    de 60% do texto, exige `forcar=true` — é este o caminho em que o material
+    de um documento pode ser destruído por um upload mal extraído.
+    """
+    existentes = await listar_arquivos_storage()
+    por_md5 = {a["md5"]: a for a in existentes if a["md5"]}
+    por_nome = {a["nome"]: a for a in existentes}
+
+    salvos: list[str] = []
+    substituidos: list[dict] = []
+    ignorados: list[dict] = []
+
+    for f in files:
+        nome = Path(f.filename or "").name  # descarta caminhos vindos do cliente
+        if not nome.lower().endswith(EXTENSOES_DOCUMENTO):
+            ignorados.append({"arquivo": nome, "motivo": f"formato não suportado (aceito: {', '.join(EXTENSOES_DOCUMENTO)})"})
+            continue
+
+        data = await f.read()
+        if not data:
+            ignorados.append({"arquivo": nome, "motivo": "arquivo vazio"})
+            continue
+        if len(data) > MAX_UPLOAD_BYTES:
+            ignorados.append({"arquivo": nome, "motivo": f"maior que {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"})
+            continue
+        md5 = hashlib.md5(data).hexdigest()
+
+        igual = por_md5.get(md5)
+        if igual and igual["nome"] == nome:
+            ignorados.append({"arquivo": nome, "motivo": "conteúdo idêntico já indexado"})
+            continue
+
+        # Qual fonte teria os chunks apagados, e o que o arquivo novo oferece.
+        fonte_afetada = igual["nome"] if igual else (nome if nome in por_nome else None)
+        if fonte_afetada and not forcar:
+            bloqueio = await _risco_de_perda(fonte_afetada, data, nome)
+            if bloqueio:
+                raise HTTPException(409, bloqueio)
+
+        if igual:
+            # Mesmo documento com nome diferente → substitui o existente.
+            await apagar_chunks_por_fonte(igual["nome"])
+            await remover_documento_storage(igual["nome"])
+            por_nome.pop(igual["nome"], None)
+            substituidos.append({"arquivo": nome, "substituiu": igual["nome"],
+                                 "motivo": "mesmo conteúdo, nome diferente"})
+        elif nome in por_nome:
+            # Mesmo nome, conteúdo novo → versão atualizada.
+            await apagar_chunks_por_fonte(nome)
+            substituidos.append({"arquivo": nome, "substituiu": nome,
+                                 "motivo": "versão atualizada do mesmo arquivo"})
+        else:
+            salvos.append(nome)
+
+        await upload_documento_storage(nome, data, _mimetype(nome))
+        por_md5[md5] = {"nome": nome, "md5": md5}
+        por_nome[nome] = {"nome": nome, "md5": md5}
+
+    return {"salvos": salvos, "substituidos": substituidos, "ignorados": ignorados}
+
+
+@app.get("/api/duplicatas")
+async def duplicatas(_: None = Depends(exigir_admin)):
+    """Diagnóstico: arquivos no Storage com o mesmo conteúdo (MD5)."""
+    arquivos = await listar_arquivos_storage()
+    agrupado: dict[str, list[str]] = {}
+    for a in arquivos:
+        if a["md5"]:
+            agrupado.setdefault(a["md5"], []).append(a["nome"])
+    grupos = [nomes for nomes in agrupado.values() if len(nomes) > 1]
+    return {"total_arquivos": len(arquivos), "grupos_duplicados": grupos}
+
+
+@app.get("/api/pdfs")
+async def pdfs():
+    return {"arquivos": await listar_documentos_storage()}

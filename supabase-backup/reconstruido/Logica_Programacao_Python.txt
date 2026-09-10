@@ -1,0 +1,4 @@
+======================================================================
+PÁGINA 1
+======================================================================
+Algoritmos e Lógica de Programação é utilizado de forma importante para se ter uma visão geral do processo de desenvolvimento de programas (softwares), visto que o objetivo final é ter um bom embasamento para a prática da programação de computadores. Conteúdos teóricos com exemplos e exercícios que também são executados na prática utilizando a Linguagem de Programação Python.

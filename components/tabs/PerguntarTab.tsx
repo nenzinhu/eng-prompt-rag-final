@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { api } from '@/lib/api'
+import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp, PerguntarResp } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
 import EvidenceList from '../EvidenceList'
@@ -9,9 +10,7 @@ import WarnBanner from '../WarnBanner'
 import Markdown from '../Markdown'
 
 export default function PerguntarTab({ providers }: { providers: ProvidersResp }) {
-  const firstProvider = Object.keys(providers)[0] ?? ''
-  const [provider, setProvider] = useState(firstProvider)
-  const [modelo, setModelo] = useState(providers[firstProvider]?.models?.[0] ?? '')
+  const { provider, modelo, trocarProvider, setModelo, pronto } = useProviderModel(providers)
   const [pergunta, setPergunta] = useState('')
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
@@ -121,7 +120,7 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
         providers={providers}
         provider={provider}
         modelo={modelo}
-        onProviderChange={setProvider}
+        onProviderChange={trocarProvider}
         onModeloChange={setModelo}
       />
       <textarea
@@ -133,7 +132,7 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
       <div className="mt-3 flex gap-2">
         <button
           onClick={enviar}
-          disabled={loading}
+          disabled={loading || !pronto}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {loading ? 'Pensando…' : 'Perguntar'}

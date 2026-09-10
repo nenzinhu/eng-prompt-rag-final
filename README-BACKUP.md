@@ -52,9 +52,19 @@ eng-prompt-rag-final-fonte/
 
 ```bash
 npm install
+cp .env.example .env   # e preencha as chaves (veja abaixo)
 npm run dev
 ```
-O `.env` já está preenchido com as credenciais de produção.
+
+O `.env` **não vem preenchido** neste backup: as chaves de IA e a service_role
+foram removidas por segurança. Preencha `SUPABASE_SERVICE_ROLE_KEY` (escrita e
+Storage) e a chave do provedor de IA que for usar.
+
+O `ADMIN_TOKEN` protege as rotas de escrita (`/api/upload`, `/api/ingerir`,
+`/api/duplicatas`) — sem ele, essas rotas respondem 503.
+
+> Correções de 10/09/2026 (RLS, guarda de perda de material, testes): veja
+> **CORRECOES-2026-09-10.md** antes de mexer no banco.
 
 ## Restaurar o banco do zero
 
@@ -67,11 +77,17 @@ O `.env` já está preenchido com as credenciais de produção.
 
 1. **Documento faltando no Storage**: 384 dos 526 chunks (73% do material) vêm
    de `Empreendedorismo_Inovacao_Tecnologia_completo.pdf`, que **não está** no
-   bucket `ementas` — só os chunks ficaram salvos. O conteúdo em texto está
-   preservado no JSONL/CSV, mas o PDF original desse documento não foi
-   localizado.
+   bucket `ementas` — só os chunks ficaram salvos. Em 10/09/2026 o material foi
+   remontado a partir do JSONL em `supabase-backup/reconstruido/` (`.txt` de
+   referência + `.pdf` reindexável, com as páginas originais preservadas).
+   O PDF original continua não localizado.
 2. **Repositório GitHub desatualizado**: `nenzinhu/curso-eng-prompt` (privado)
    está atrás da versão publicada — esta foi enviada por upload, sem commit.
    Clone de segurança em `D:\PROJETOS\eng-prompt-rag-final-backup`.
-3. **Segredos**: este backup contém chaves de API em texto claro. Se algum dia
-   for compartilhar a pasta, remova `.env*` antes.
+3. **Segredos**: a chave pública (publishable) está no `.env`, que é ignorado
+   pelo git. A **service_role** nunca deve ser versionada nem chegada ao
+   navegador. Dumps de banco ficam em `supabase-backup/dumps/` e contêm o
+   conteúdo das apostilas.
+4. **Cópia de segurança**: a pasta passou a ser um repositório git em
+   10/09/2026 (commit inicial = estado recebido) e há um zip datado em
+   `Downloads/eng-prompt-rag-final-backup-2026-09-10.zip`.

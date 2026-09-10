@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
+import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp, ResolverResp } from '@/lib/types'
 import { lerAcuracia, registrarResultado, resetarAcuracia, type AcuraciaStats } from '@/lib/accuracy'
 import ProviderSelect from '../ProviderSelect'
@@ -22,9 +23,7 @@ export default function ResolverTab({
   providers: ProvidersResp
   onEnviarGlossario?: (texto: string) => void
 }) {
-  const firstProvider = Object.keys(providers)[0] ?? ''
-  const [provider, setProvider] = useState(firstProvider)
-  const [modelo, setModelo] = useState(providers[firstProvider]?.models?.[0] ?? '')
+  const { provider, modelo, trocarProvider, setModelo, pronto } = useProviderModel(providers)
   const [texto, setTexto] = useState('')
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
@@ -189,7 +188,7 @@ export default function ResolverTab({
         providers={providers}
         provider={provider}
         modelo={modelo}
-        onProviderChange={setProvider}
+        onProviderChange={trocarProvider}
         onModeloChange={setModelo}
       />
 
@@ -215,7 +214,7 @@ export default function ResolverTab({
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={analisar}
-                disabled={loading}
+                disabled={loading || !pronto}
                 className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 {loading ? 'Analisando…' : 'Analisar Questão'}
@@ -400,7 +399,7 @@ export default function ResolverTab({
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               onClick={analisarLote}
-              disabled={processandoLote || ocrLoading}
+              disabled={processandoLote || ocrLoading || !pronto}
               className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {processandoLote
