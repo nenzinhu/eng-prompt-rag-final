@@ -362,6 +362,15 @@ def test_quebrar_frases_ignora_vazio():
     assert quebrar_frases("  \n  ") == []
 
 
+def test_quebrar_frases_nao_parte_lista_ou_tabela():
+    """Regressão: quebras de linha em listas/tabelas viravam frases-lixo."""
+    # Tabela markdown: quebras por \n sem pontuação final não devem separar.
+    texto = "| Objetivo | Avaliar a viabilidade do negocio |\n| Quem | Empreendedores |\n\nDepois vem um paragrafo novo que tambem explica."
+    frases = quebrar_frases(texto, tamanho_minimo=20)
+    assert any("Objetivo" in f and "Empreendedores" in f for f in frases), f"tabela deveria estar junta: {frases}"
+    assert any(f.startswith("Depois vem") for f in frases)
+
+
 def test_classificar_fidelidade_niveis():
     assert classificar_fidelidade(0.8) == "apoiada"
     assert classificar_fidelidade(0.6) == "apoiada"

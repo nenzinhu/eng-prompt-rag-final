@@ -184,20 +184,27 @@ def quebrar_frases(texto: str, tamanho_minimo: int = 40) -> list[str]:
 
     Usado pela auditoria de fidelidade (frase por frase): a resposta do modelo é
     quebrada em frases, e cada uma é verificada contra o material. Cortes no meio
-    de palavra e fragmentos de formatação (negrito, listas) ficam de fora para
-    não poluir a verificação.
+    de palavra e fragmentos de formatação (negrito, listas, tabelas) ficam de fora
+    para não poluir a verificação.
 
-    Descarta frases mais curtas que `tamanho_minimo` — fragmentos curtos não dão
-    sinal confiável de similaridade com o material.
+    Regras:
+    - A quebra só acontece após pontuação final (.!?) ou fim de parágrafo.
+    - Quebras de linha soltas (`\n` sem parágrafo) NÃO separam frases: itens de
+      lista e linhas de tabela ("- Item", "| coluna |") são juntados no resto do
+      texto, senão virariam fragmentos-lixo.
+    - Frases mais curtas que `tamanho_minimo` são descartadas.
     """
     if not texto:
         return []
-    # Limpa marcadores de formatação que sobrariam como frases-lixo.
-    limpo = re.sub(r"[*_`>#]+", " ", texto)
-    # Divide em parágrafos e, dentro deles, em frases por pontuação final.
+    # Marca quebras de linha que NÃO são de parágrafo (não-finais) como espaço,
+    # para não partir listas/tabelas. Parágrafo (duas quebras) continua separando.
+    paragrafos = re.split(r"\n\s*\n", texto)
     frases: list[str] = []
-    for paragrafo in re.split(r"\n\s*\n", limpo):
-        for frase in re.split(r"(?<=[.!?])\s+|\n", paragrafo):
+    for paragrafo in paragrafos:
+        # Dentro do parágrafo, troca quebras simples por espaço e quebra só por pontuação.
+        paragrafo = re.sub(r"\n", " ", paragrafo)
+        for frase in re.split(r"(?<=[.!?])\s+", paragrafo):
+            frase = re.sub(r"[*_`>#]+", " ", frase)
             frase = re.sub(r"\s+", " ", frase).strip()
             if len(frase) >= tamanho_minimo:
                 frases.append(frase)
