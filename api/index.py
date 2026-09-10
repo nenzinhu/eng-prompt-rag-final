@@ -52,6 +52,7 @@ from rag_core import (  # noqa: E402
     formatar_alternativas,
     limpar_resposta,
     remover_linha_resposta_direta,
+    rotulos_unicos,
 )
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
@@ -1049,7 +1050,9 @@ async def comparar(req: CompararReq, request: Request):
 
     # ── Comparação sobre a RESPOSTA DIRETA (curta e comparável) ────────────
     boas = [r for r in respostas if not r["erro"] and r["resposta_direta"]]
-    diretas = {r["rotulo"]: r["resposta_direta"] for r in boas}
+    # Rótulos repetidos (mesmo provedor+modelo duas vezes) são desambiguados, senão
+    # o dicionário perderia uma das respostas e o veredito sairia "indefinida".
+    diretas = dict(zip(rotulos_unicos([r["rotulo"] for r in boas]), [r["resposta_direta"] for r in boas]))
     comparacao = calcular_concordancia(diretas)
 
     return {

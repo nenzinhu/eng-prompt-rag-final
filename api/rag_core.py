@@ -330,6 +330,26 @@ def jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+def rotulos_unicos(rotulos: list[str]) -> list[str]:
+    """Desambigua rótulos repetidos, preservando a ordem.
+
+    O rótulo é "provider/modelo". Quando o usuário compara o MESMO modelo duas
+    vezes (checagem de autoconsistência), os rótulos colidem e um dicionário
+    indexado por eles perderia uma das respostas — era o que fazia o veredito
+    sair "indefinida" mesmo com as duas respostas válidas.
+
+    >>> rotulos_unicos(["a/b", "a/b", "c/d"])
+    ['a/b', 'a/b #2', 'c/d']
+    """
+    vistos: dict[str, int] = {}
+    saida: list[str] = []
+    for rotulo in rotulos:
+        vistos[rotulo] = vistos.get(rotulo, 0) + 1
+        n = vistos[rotulo]
+        saida.append(rotulo if n == 1 else f"{rotulo} #{n}")
+    return saida
+
+
 def dividir_fatos(por_modelo: dict[str, set[str]]) -> tuple[list[str], list[dict]]:
     """Separa fatos citados por 2+ modelos (comuns) dos citados por só um (exclusivos)."""
     onde: dict[str, list[str]] = {}

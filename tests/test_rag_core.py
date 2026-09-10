@@ -32,6 +32,7 @@ from api.rag_core import (  # noqa: E402
     normalizar_numero,
     palavras_conteudo,
     remover_linha_resposta_direta,
+    rotulos_unicos,
 )
 
 # ── chunk_texto ─────────────────────────────────────────────────────────────
@@ -304,3 +305,29 @@ def test_concordancia_nomes_comuns_reforcam_acordo():
         "b/y": "NEOSA enfatiza liderança e gestão segundo a apostila.",
     })
     assert "neosa" in r["nomes_comuns"]
+
+
+# ── rótulos repetidos (mesmo modelo comparado consigo mesmo) ────────────────
+
+
+def test_rotulos_unicos_desambigua_repetidos():
+    """Regressão: o mesmo modelo em dois slots zerava a comparação em produção."""
+    assert rotulos_unicos(["a/b", "a/b", "c/d"]) == ["a/b", "a/b #2", "c/d"]
+
+
+def test_rotulos_unicos_preserva_ordem_e_nao_altera_unicos():
+    assert rotulos_unicos(["x", "y", "z"]) == ["x", "y", "z"]
+    assert rotulos_unicos([]) == []
+
+
+def test_rotulos_unicos_tres_iguais():
+    assert rotulos_unicos(["a", "a", "a"]) == ["a", "a #2", "a #3"]
+
+
+def test_mesmo_modelo_duas_vezes_ainda_compara():
+    """O caso real: duas respostas do mesmo modelo não podem virar 'indefinida'."""
+    respostas = ["O bit é a menor unidade de armazenamento.", "O bit é a menor unidade de armazenamento."]
+    diretas = dict(zip(rotulos_unicos(["nous/x:free", "nous/x:free"]), respostas))
+    r = calcular_concordancia(diretas)
+    assert len(diretas) == 2, "as duas respostas precisam sobreviver"
+    assert r["nivel_concordancia"] == "alta"
