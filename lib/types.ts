@@ -51,6 +51,18 @@ export interface ResolverResp {
   modelo: string
 }
 
+export interface SimplificarResp {
+  resposta: string
+  provider: string
+  modelo: string
+}
+
+export interface VerificarResp {
+  perguntas: string[]
+  provider: string
+  modelo: string
+}
+
 export interface PdfsResp {
   arquivos: string[]
 }

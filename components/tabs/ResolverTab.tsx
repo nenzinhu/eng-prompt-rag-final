@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import type { ProvidersResp, ResolverResp } from '@/lib/types'
+import { lerAcuracia, registrarResultado, resetarAcuracia, type AcuraciaStats } from '@/lib/accuracy'
 import ProviderSelect from '../ProviderSelect'
 import EvidenceList from '../EvidenceList'
 import WarnBanner from '../WarnBanner'
@@ -16,6 +17,17 @@ export default function ResolverTab({ providers }: { providers: ProvidersResp })
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
   const [resultado, setResultado] = useState<ResolverResp | null>(null)
+  const [avaliado, setAvaliado] = useState(false)
+  const [acuracia, setAcuracia] = useState<AcuraciaStats>({ acertos: 0, total: 0 })
+
+  useEffect(() => {
+    setAcuracia(lerAcuracia())
+  }, [])
+
+  function marcarResultado(acertou: boolean) {
+    setAcuracia(registrarResultado(acertou))
+    setAvaliado(true)
+  }
 
   function formatarAlternativas(texto: string): string {
     return texto
@@ -42,6 +54,7 @@ export default function ResolverTab({ providers }: { providers: ProvidersResp })
     if (!texto.trim()) return
     setLoading(true)
     setErro('')
+    setAvaliado(false)
     try {
       const d = await api.resolver(texto, provider, modelo)
       setResultado(d)
@@ -58,6 +71,25 @@ export default function ResolverTab({ providers }: { providers: ProvidersResp })
       <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
         Análise de questões de múltipla escolha (IA + RAG)
       </p>
+      <div className="mb-4 flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+        <div className="font-mono text-[0.72rem] text-muted">
+          🎯 Acurácia da IA:{' '}
+          <span className="font-semibold text-text">
+            {acuracia.total > 0 ? `${Math.round((acuracia.acertos / acuracia.total) * 100)}%` : '—'}
+          </span>{' '}
+          <span className="text-muted">
+            ({acuracia.acertos}/{acuracia.total} questões)
+          </span>
+        </div>
+        {acuracia.total > 0 && (
+          <button
+            onClick={() => setAcuracia(resetarAcuracia())}
+            className="font-mono text-[0.68rem] text-muted underline-offset-2 hover:text-text hover:underline"
+          >
+            zerar
+          </button>
+        )}
+      </div>
       <ProviderSelect
         providers={providers}
         provider={provider}
@@ -147,6 +179,33 @@ export default function ResolverTab({ providers }: { providers: ProvidersResp })
                 <div className="mb-4">
                   <Markdown>{resultado.explicacao}</Markdown>
                 </div>
+
+                <div className="mb-4 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3.5">
+                  {!avaliado ? (
+                    <>
+                      <div className="mb-2 text-[0.78rem] text-muted">
+                        A IA acertou? (compare com o gabarito da questão)
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => marcarResultado(true)}
+                          className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-1.5 text-[0.78rem] font-medium text-emerald-300 transition-colors hover:bg-emerald-400/20"
+                        >
+                          ✅ Acertou
+                        </button>
+                        <button
+                          onClick={() => marcarResultado(false)}
+                          className="rounded-lg border border-rose-400/25 bg-rose-400/10 px-3.5 py-1.5 text-[0.78rem] font-medium text-rose-300 transition-colors hover:bg-rose-400/20"
+                        >
+                          ❌ Errou
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-[0.78rem] text-muted">✓ Resultado registrado na acurácia acima.</div>
+                  )}
+                </div>
+
                 <EvidenceList items={resultado.contexto} />
               </div>
             </div>

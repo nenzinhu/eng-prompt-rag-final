@@ -243,6 +243,27 @@ SYSTEM_PROMPT_RESOLVER = (
     "complemente com conhecimento geral."
 )
 
+SYSTEM_PROMPT_SIMPLIFICAR = (
+    "Você é um assistente do curso de Engenharia de Prompt. Você já respondeu a pergunta do aluno "
+    "e agora ele pediu para explicar de novo, de um jeito bem mais simples (estilo ELI5: frases "
+    "curtas, sem jargão, com uma analogia do dia a dia se ajudar). Use o CONTEXTO e a RESPOSTA "
+    "ORIGINAL como base — não invente informação nova, só reformule de forma mais simples e direta."
+)
+
+SYSTEM_PROMPT_VERIFICAR = (
+    "Você é um professor cético do curso de Engenharia de Prompt. Você acabou de responder a "
+    "pergunta de um aluno. Sua tarefa agora é testar se ele realmente entendeu, gerando 1 a 2 "
+    "perguntas curtas de verificação sobre o conteúdo da resposta (não repita a pergunta original). "
+    'Responda SEMPRE em JSON: {"perguntas": ["...", "..."]}, sem nenhum texto fora do JSON.'
+)
+
+
+def contexto_para_texto(evidencias: list[dict]) -> str:
+    return "\n\n".join(
+        f"[Fonte: {e.get('fonte', '?')}, página {e.get('pagina', '?')}]\n{e.get('conteudo', '')}"
+        for e in evidencias
+    )
+
 
 # ── Rotas ────────────────────────────────────────────────────────────────────
 
@@ -323,6 +344,66 @@ async def perguntar(req: PerguntaReq):
         "provider": req.provider,
         "modelo": modelo,
     }
+
+
+class EvidenciaIn(BaseModel):
+    conteudo: str
+    fonte: str
+    pagina: Optional[int] = None
+    relevancia: Optional[float] = None
+
+
+class SimplificarReq(BaseModel):
+    pergunta: str
+    resposta: str
+    contexto: list[EvidenciaIn] = []
+    provider: str = "groq"
+    modelo: Optional[str] = None
+
+
+@app.post("/api/simplificar")
+async def simplificar(req: SimplificarReq):
+    contexto = contexto_para_texto([e.model_dump() for e in req.contexto])
+    modelo = req.modelo or PROVIDERS[req.provider]["models"][0]
+    resposta = await chamar_llm(
+        req.provider,
+        modelo,
+        SYSTEM_PROMPT_SIMPLIFICAR,
+        f"CONTEXTO:\n{contexto}\n\nPERGUNTA ORIGINAL: {req.pergunta}\n\n"
+        f"RESPOSTA ORIGINAL:\n{req.resposta}\n\nReescreva a resposta de forma bem mais simples.",
+    )
+    return {"resposta": resposta, "provider": req.provider, "modelo": modelo}
+
+
+class VerificarReq(BaseModel):
+    pergunta: str
+    resposta: str
+    contexto: list[EvidenciaIn] = []
+    provider: str = "groq"
+    modelo: Optional[str] = None
+
+
+@app.post("/api/verificar")
+async def verificar(req: VerificarReq):
+    contexto = contexto_para_texto([e.model_dump() for e in req.contexto])
+    modelo = req.modelo or PROVIDERS[req.provider]["models"][0]
+    bruto = await chamar_llm(
+        req.provider,
+        modelo,
+        SYSTEM_PROMPT_VERIFICAR,
+        f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}\n\nRESPOSTA DADA:\n{req.resposta}",
+    )
+    perguntas: list[str] = []
+    match = re.search(r"\{.*\}", bruto, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            perguntas = [p for p in parsed.get("perguntas", []) if isinstance(p, str) and p.strip()]
+        except json.JSONDecodeError:
+            pass
+    if not perguntas:
+        perguntas = [l.strip("-•* ").strip() for l in bruto.splitlines() if l.strip()][:2]
+    return {"perguntas": perguntas[:2], "provider": req.provider, "modelo": modelo}
 
 
 class ResolverReq(BaseModel):

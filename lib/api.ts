@@ -9,6 +9,9 @@ import type {
   UploadResp,
   CompararAlvo,
   CompararResp,
+  Evidencia,
+  SimplificarResp,
+  VerificarResp,
 } from './types'
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -34,6 +37,10 @@ export const api = {
   buscar: (query: string, n = 6) => postJson<BuscarResp>('/api/buscar', { query, n }),
   perguntar: (pergunta: string, provider: string, modelo: string) =>
     postJson<PerguntarResp>('/api/perguntar', { pergunta, provider, modelo }),
+  simplificar: (pergunta: string, resposta: string, contexto: Evidencia[], provider: string, modelo: string) =>
+    postJson<SimplificarResp>('/api/simplificar', { pergunta, resposta, contexto, provider, modelo }),
+  verificar: (pergunta: string, resposta: string, contexto: Evidencia[], provider: string, modelo: string) =>
+    postJson<VerificarResp>('/api/verificar', { pergunta, resposta, contexto, provider, modelo }),
   resolver: (texto: string, provider: string, modelo: string) =>
     postJson<ResolverResp>('/api/resolver', { texto, provider, modelo }),
   comparar: (pergunta: string, modelos: CompararAlvo[]) =>

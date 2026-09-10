@@ -17,10 +17,18 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
   const [erro, setErro] = useState('')
   const [resultado, setResultado] = useState<PerguntarResp | null>(null)
 
+  const [simplificando, setSimplificando] = useState(false)
+  const [respostaSimples, setRespostaSimples] = useState('')
+
+  const [verificando, setVerificando] = useState(false)
+  const [perguntasVerificacao, setPerguntasVerificacao] = useState<string[]>([])
+
   async function enviar() {
     if (!pergunta.trim()) return
     setLoading(true)
     setErro('')
+    setRespostaSimples('')
+    setPerguntasVerificacao([])
     try {
       const d = await api.perguntar(pergunta, provider, modelo)
       setResultado(d)
@@ -30,6 +38,58 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
     } finally {
       setLoading(false)
     }
+  }
+
+  async function explicarMaisSimples() {
+    if (!resultado) return
+    setSimplificando(true)
+    try {
+      const d = await api.simplificar(pergunta, resultado.resposta, resultado.contexto, provider, modelo)
+      setRespostaSimples(d.resposta)
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro ao simplificar resposta')
+    } finally {
+      setSimplificando(false)
+    }
+  }
+
+  async function testarEntendimento() {
+    if (!resultado) return
+    setVerificando(true)
+    try {
+      const d = await api.verificar(pergunta, resultado.resposta, resultado.contexto, provider, modelo)
+      setPerguntasVerificacao(d.perguntas)
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro ao gerar perguntas de verificação')
+    } finally {
+      setVerificando(false)
+    }
+  }
+
+  function exportarMarkdown() {
+    if (!resultado) return
+    const linhas = [
+      `# Pergunta`,
+      '',
+      pergunta,
+      '',
+      `# Resposta (${resultado.provider} / ${resultado.modelo})`,
+      '',
+      resultado.resposta,
+      '',
+      `# Fontes`,
+      '',
+      ...resultado.contexto.map(
+        (c) => `- **${c.fonte}**${c.pagina ? ` (pág. ${c.pagina})` : ''}: ${c.conteudo}`
+      ),
+    ]
+    const blob = new Blob([linhas.join('\n')], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `resposta-${Date.now()}.md`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -92,6 +152,52 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
               <div className="mb-4">
                 <Markdown>{resultado.resposta}</Markdown>
               </div>
+
+              <div className="mb-4 flex flex-wrap gap-2">
+                <button
+                  onClick={explicarMaisSimples}
+                  disabled={simplificando}
+                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+                >
+                  {simplificando ? 'Simplificando…' : '🧩 Explica de novo, mais simples'}
+                </button>
+                <button
+                  onClick={testarEntendimento}
+                  disabled={verificando}
+                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+                >
+                  {verificando ? 'Gerando perguntas…' : '🎓 Testar meu entendimento'}
+                </button>
+                <button
+                  onClick={exportarMarkdown}
+                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06]"
+                >
+                  ⬇️ Exportar .md
+                </button>
+              </div>
+
+              {respostaSimples && (
+                <div className="mb-4 rounded-lg border border-cyan/20 bg-cyan/[0.05] p-4">
+                  <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-cyan">
+                    Versão mais simples
+                  </div>
+                  <Markdown>{respostaSimples}</Markdown>
+                </div>
+              )}
+
+              {perguntasVerificacao.length > 0 && (
+                <div className="mb-4 rounded-lg border border-violet/20 bg-violet/[0.05] p-4">
+                  <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-violet">
+                    Perguntas para testar seu entendimento
+                  </div>
+                  <ul className="list-disc space-y-1.5 pl-5 text-[0.85rem] text-text">
+                    {perguntasVerificacao.map((p, i) => (
+                      <li key={i}>{p}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <EvidenceList items={resultado.contexto} />
             </div>
           </div>
