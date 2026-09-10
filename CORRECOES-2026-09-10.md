@@ -132,7 +132,39 @@ chunks com os embeddings originais — nada é re-embedado.
 
 ---
 
+## 8. O que só a verificação em produção revelou
+
+Com o deploy publicado e as chaves reais ativas, o smoke test apontou defeitos que
+os testes locais não podiam pegar:
+
+| Achado | Evidência | Correção |
+|---|---|---|
+| `/api/glossario` respondia **504** | estourava os 60 s da função | timeouts derivados do orçamento da função + contexto de 25 → 12 chunks + retentativa só se houver tempo |
+| O modelo **padrão era o mais lento** de todos | `meituan/longcat-2.0:free` 16,6 s contra 1,9 s do mais rápido, numa pergunta trivial | listas reordenadas por latência medida, gratuitos e rápidos primeiro |
+| `/api/comparar` dava "indefinida" com respostas válidas | o modelo ignorava a linha `RESPOSTA DIRETA:` exigida pelo prompt | conclusão de reserva (última linha útil) |
+| Mesmo modelo em dois slots zerava a comparação | dois rótulos iguais colapsavam num só | rótulos desambiguados (`x #2`) |
+| **OpenRouter estava quebrado** | 429 em todos os modelos: cota diária gratuita esgotada (0/50) | não é bug de código — documentado; a mensagem do provedor chega ao usuário |
+| Chave do Groq **funciona** | `gpt-oss-120b` 1,2 s, `compound-mini` 1,8 s | provedor reincluído como padrão da interface |
+| Qualidade varia muito com contexto grande | glossário: Groq/compound-mini **34 termos em 15,8 s** vs laguna-xs 2 termos em 43,5 s | documentado; Groq é o padrão |
+
+`scripts/medir_latencia.sh` refaz a medição de latência de um provedor inteiro
+quando as listas de modelos forem atualizadas — a ordenação é dado, não palpite.
+
+> **Limite honesto da reordenação:** a latência foi medida com pergunta trivial.
+> Ela **não prevê** o comportamento com contexto grande (o laguna-xs é o mais
+> rápido no trivial e o mais lento no glossário). Para o glossário, prefira Groq.
+
 ## Como aplicar
+
+### Estado em 10/09/2026
+
+| Item | Situação |
+|---|---|
+| Código | ✅ publicado — GitHub `nenzinhu/eng-prompt-rag-final` (privado) e Vercel produção |
+| `ADMIN_TOKEN` | ✅ configurado na Vercel (produção) |
+| `SUPABASE_SERVICE_ROLE_KEY` | ⏳ **pendente** — sem ela o backend escreve com a chave pública |
+| Migração de RLS | ⏳ **pendente** — aplicar só depois da service_role |
+| Material reconstruído | ⏳ pendente — subir o PDF reconstruído e reindexar |
 
 ### 1. Credenciais (`.env`, já no `.gitignore`)
 
@@ -165,17 +197,23 @@ pelo painel PDFs (passa pelo guarda de perda) e reindexar.
 ## Verificação
 
 ```bash
-.venv/Scripts/python.exe -m pytest tests/ -q          # 50 testes, sem rede
+.venv/Scripts/python.exe -m pytest tests/ -q          # 58 testes, sem rede
 .venv/Scripts/python.exe -m uvicorn api.index:app --port 8000 --env-file .env
 .venv/Scripts/python.exe scripts/smoke.py             # bate nas rotas reais
+.venv/Scripts/python.exe scripts/smoke.py --url https://eng-prompt-rag-final-nenzinhus-projects.vercel.app
 ```
 
-`scripts/smoke.py` cobre leitura, proteção das rotas de escrita (401 sem token),
-prévia de ingestão e as rotas de IA. Estado em 10/09/2026, antes de aplicar a
-migração: 15 de 17 verificações passando — as duas falhas eram
-`escrita_via=anon` (service_role ainda não configurada) e nenhum provedor com
-chave, ambas de configuração, não de código.
+Resultado em produção (10/09/2026, após o deploy): **19 de 20** verificações
+passando com o provedor Nous e **16 de 17** com o Groq. A única falha é
+`escrita_via=anon`, que é exatamente a service_role pendente — não é defeito de
+código.
 
-Arquivos auxiliares: `scripts/backup_dump.py` (dump datado do banco),
-`scripts/comparar_extracao.py` (efeito do fontTools na extração),
-`scripts/verificar-guarda-upload.sh` (guarda de upload contra produção).
+Cobertura do `smoke.py`: leitura (`status`, `config`, `providers`, `pdfs`),
+proteção das rotas de escrita (401 sem token / 503 sem `ADMIN_TOKEN`), prévia de
+ingestão sem alterar nada, busca vetorial com limite de `n`, e as quatro rotas de
+IA (`perguntar`, `resolver`, `glossario`, `comparar`).
+
+Outros scripts: `backup_dump.py` (dump datado do banco),
+`comparar_extracao.py` (efeito do fontTools na extração),
+`verificar-guarda-upload.sh` (guarda de upload contra produção),
+`medir_latencia.sh` (latência dos modelos de um provedor).
