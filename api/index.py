@@ -166,6 +166,25 @@ PROVIDERS = {
             "dots-studio/dots-3-note-preview:free",                # ~2-4 s
         ],
     },
+    "orcarouter": {
+        "label": "Orca Router",
+        "base_url": "https://api.orcarouter.ai/v1",
+        "env_key": "ORCAROUTER_API_KEY",
+        # Testados com CHAMADA REAL em 10/09/2026 via /v1/chat/completions.
+        # A chave lista 196 modelos no /v1/models, mas a maioria é paga. Os três
+        # abaixo responderam de fato com `content` preenchido:
+        #   deepseek-v4-flash-free  ~3 s  (o mais rápido e limpo)
+        #   glm-5.3-flash-free      ~6 s  (devolve a resposta num bloco ```json)
+        #   tencent/hy3-free        ~7,5 s (raciocínio longo no reasoning_content;
+        #                                   a resposta vem no content)
+        # Os `orca/fusion-*`, `orca/free` e `orca/auto` listam no /models mas
+        # devolvem 404 ("No available capacity") — ficam de fora.
+        "models": [
+            "deepseek/deepseek-v4-flash-free",
+            "z-ai/glm-5.3-flash-free",
+            "tencent/hy3-free",
+        ],
+    },
     "openrouter": {
         "label": "OpenRouter",
         "base_url": "https://openrouter.ai/api/v1",
