@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { gsap } from 'gsap'
 import { api } from '@/lib/api'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { AuditarResp, ProvidersResp, PerguntarResp } from '@/lib/types'
@@ -42,6 +43,19 @@ export default function PerguntarTab({
   const [carregandoVerificacaoIdx, setCarregandoVerificacaoIdx] = useState<number | null>(null)
   const [ocrLoading, setOcrLoading] = useState(false)
   const [anexoReset, setAnexoReset] = useState(0)
+
+  const resultCardRef = useRef<HTMLDivElement>(null)
+  const enviarBtnRef = useRef<HTMLButtonElement>(null)
+
+  // Entrada suave do card de resposta sempre que um novo resultado chega.
+  useLayoutEffect(() => {
+    if (!resultado || !resultCardRef.current) return
+    gsap.fromTo(
+      resultCardRef.current,
+      { autoAlpha: 0, y: 16 },
+      { autoAlpha: 1, y: 0, duration: 0.5, ease: 'power2.out' }
+    )
+  }, [resultado])
 
   async function enviar() {
     if (!pergunta.trim()) return
@@ -176,7 +190,12 @@ export default function PerguntarTab({
       />
       <div className="mt-3 flex gap-2">
         <button
+          ref={enviarBtnRef}
           onClick={enviar}
+          onMouseEnter={() => gsap.to(enviarBtnRef.current, { scale: 1.03, duration: 0.2, ease: 'power2.out' })}
+          onMouseLeave={() => gsap.to(enviarBtnRef.current, { scale: 1, duration: 0.25, ease: 'power2.out' })}
+          onMouseDown={() => gsap.to(enviarBtnRef.current, { scale: 0.96, duration: 0.1 })}
+          onMouseUp={() => gsap.to(enviarBtnRef.current, { scale: 1.03, duration: 0.15 })}
           disabled={loading || ocrLoading || !pronto}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
@@ -208,7 +227,7 @@ export default function PerguntarTab({
           </div>
         )}
         {!loading && !erro && resultado && (
-          <div className="glass grad-border rounded-xl overflow-hidden">
+          <div ref={resultCardRef} className="glass grad-border rounded-xl overflow-hidden">
             <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-3 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
               Resposta — {resultado.provider} / {resultado.modelo}
             </div>

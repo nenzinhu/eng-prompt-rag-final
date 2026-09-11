@@ -1,30 +1,62 @@
 'use client'
 
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { gsap } from 'gsap'
 import type { Evidencia } from '@/lib/types'
 
 export default function EvidenceList({ items }: { items: Evidencia[] }) {
   const [open, setOpen] = useState(false)
+  const [rendered, setRendered] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const arrowRef = useRef<HTMLSpanElement>(null)
+
+  useLayoutEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    if (open) {
+      setRendered(true)
+      gsap.set(el, { height: 0, autoAlpha: 0 })
+      requestAnimationFrame(() => {
+        gsap.to(el, { height: 'auto', autoAlpha: 1, duration: 0.4, ease: 'power2.out' })
+      })
+      gsap.to(arrowRef.current, { rotate: 90, duration: 0.3, ease: 'power2.out' })
+    } else if (rendered) {
+      gsap.to(el, {
+        height: 0,
+        autoAlpha: 0,
+        duration: 0.3,
+        ease: 'power2.in',
+        onComplete: () => setRendered(false),
+      })
+      gsap.to(arrowRef.current, { rotate: 0, duration: 0.25, ease: 'power2.out' })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
   if (!items.length) return null
+
   return (
     <div>
       <button
         onClick={() => setOpen((o) => !o)}
         className="mb-2 flex items-center gap-1.5 font-mono text-[0.78rem] text-muted transition-colors hover:text-text"
       >
-        {open ? '▼ Ocultar trechos' : '▶ Mostrar trechos da apostila'}
+        <span ref={arrowRef} className="inline-block">▶</span>
+        {open ? 'Ocultar trechos' : 'Mostrar trechos da apostila'}
       </button>
-      {open && (
-        <div className="flex flex-col gap-2">
-          {items.map((c, i) => (
-            <div key={i} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
-              <div className="mb-1 font-mono text-[0.67rem] text-cyan">
-                📄 {c.fonte}
-                {c.pagina ? ` · pág. ${c.pagina}` : ''}
+      {rendered && (
+        <div ref={wrapRef} className="overflow-hidden">
+          <div className="flex flex-col gap-2">
+            {items.map((c, i) => (
+              <div key={i} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+                <div className="mb-1 font-mono text-[0.67rem] text-cyan">
+                  📄 {c.fonte}
+                  {c.pagina ? ` · pág. ${c.pagina}` : ''}
+                </div>
+                <div className="line-clamp-3 text-[0.8rem] leading-relaxed text-muted">{c.conteudo}</div>
               </div>
-              <div className="line-clamp-3 text-[0.8rem] leading-relaxed text-muted">{c.conteudo}</div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>

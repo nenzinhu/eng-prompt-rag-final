@@ -38,6 +38,33 @@ export default function TabNav({
     })
   }, [active, tabs])
 
+  // Entrada em cascata dos botões da barra de abas, uma única vez ao montar.
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        Object.values(btnRefs.current).filter(Boolean),
+        { autoAlpha: 0, y: 10 },
+        { autoAlpha: 1, y: 0, duration: 0.4, ease: 'power2.out', stagger: 0.04, delay: 0.1 }
+      )
+    }, navRef)
+    return () => ctx.revert()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function onEnterBtn(id: string) {
+    if (id === active) return
+    gsap.to(btnRefs.current[id], { scale: 1.05, duration: 0.2, ease: 'power2.out' })
+  }
+  function onLeaveBtn(id: string) {
+    if (id === active) return
+    gsap.to(btnRefs.current[id], { scale: 1, duration: 0.25, ease: 'power2.out' })
+  }
+  function onClickBtn(id: string) {
+    const el = btnRefs.current[id]
+    if (el) gsap.fromTo(el, { scale: 0.92 }, { scale: 1, duration: 0.35, ease: 'back.out(3)' })
+    onChange(id)
+  }
+
   return (
     <nav className="sticky top-[64px] z-40 flex justify-center px-4 py-3">
       <div
@@ -55,7 +82,9 @@ export default function TabNav({
             ref={(el) => {
               btnRefs.current[t.id] = el
             }}
-            onClick={() => onChange(t.id)}
+            onClick={() => onClickBtn(t.id)}
+            onMouseEnter={() => onEnterBtn(t.id)}
+            onMouseLeave={() => onLeaveBtn(t.id)}
             className={`relative z-10 flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
               active === t.id ? 'text-white' : 'text-muted hover:text-text'
             }`}

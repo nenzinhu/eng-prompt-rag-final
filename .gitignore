@@ -32,3 +32,6 @@ Thumbs.db
 # (para checar o OCR fora do navegador). O app baixa no cache do navegador, então
 # este arquivo nunca deve ser versionado.
 *.traineddata
+
+# Superdesign: artefatos locais de brainstorm/redesign, não fazem parte do app
+.superdesign/
