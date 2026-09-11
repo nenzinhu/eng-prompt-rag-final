@@ -6,11 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:js": "node --experimental-strip-types --import ./tests-js/registrar.mjs --test tests-js/predictor.test.ts tests-js/pdf.test.ts tests-js/dimensoes.test.ts"
   },
   "dependencies": {
     "gsap": "^3.12.5",
     "next": "^15.1.0",
+    "pdf-lib": "^1.17.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^9.1.0",
