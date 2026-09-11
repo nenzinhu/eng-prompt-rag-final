@@ -85,8 +85,8 @@ export const api = {
   config: () => pedir<ConfigResp>('/api/config'),
   providers: () => pedir<ProvidersResp>('/api/providers'),
   buscar: (query: string, n = 6) => postJson<BuscarResp>('/api/buscar', { query, n }),
-  perguntar: (pergunta: string, provider: string, modelo: string) =>
-    postJson<PerguntarResp>('/api/perguntar', { pergunta, provider, modelo }),
+  perguntar: (pergunta: string, provider: string, modelo: string, persona: 'padrao' | 'professor' = 'padrao') =>
+    postJson<PerguntarResp>('/api/perguntar', { pergunta, provider, modelo, persona }),
   simplificar: (pergunta: string, resposta: string, contexto: Evidencia[], provider: string, modelo: string) =>
     postJson<SimplificarResp>('/api/simplificar', { pergunta, resposta, contexto, provider, modelo }),
   verificar: (pergunta: string, resposta: string, contexto: Evidencia[], provider: string, modelo: string) =>

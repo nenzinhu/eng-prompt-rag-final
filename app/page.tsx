@@ -7,6 +7,7 @@ import Header from '@/components/Header'
 import TabNav, { type TabDef } from '@/components/TabNav'
 import TabPanel from '@/components/TabPanel'
 import PerguntarTab from '@/components/tabs/PerguntarTab'
+import ProfessorTab from '@/components/tabs/ProfessorTab'
 import BuscarTab from '@/components/tabs/BuscarTab'
 import ResolverTab from '@/components/tabs/ResolverTab'
 import CompararTab from '@/components/tabs/CompararTab'
@@ -16,6 +17,7 @@ import ComprimirTab from '@/components/tabs/ComprimirTab'
 
 const TABS: TabDef[] = [
   { id: 'perguntar', label: 'Perguntar', labelShort: 'Perguntar', icon: '💬' },
+  { id: 'professor', label: 'Professor Sabe Tudo', labelShort: 'Professor', icon: '🧙' },
   { id: 'comparar', label: 'Comparar Modelos', labelShort: 'Comparar', icon: '⚖️' },
   { id: 'buscar', label: 'Buscar', labelShort: 'Busca', icon: '🔍' },
   { id: 'resolver', label: 'Resolver Questão', labelShort: 'Resolver', icon: '🎯' },
@@ -50,6 +52,9 @@ export default function Home() {
         <div className="relative">
           <TabPanel active={active === 'perguntar'}>
             <PerguntarTab providers={providers} />
+          </TabPanel>
+          <TabPanel active={active === 'professor'}>
+            <ProfessorTab providers={providers} />
           </TabPanel>
           <TabPanel active={active === 'buscar'}>
             <BuscarTab />

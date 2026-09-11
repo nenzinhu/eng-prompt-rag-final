@@ -38,6 +38,8 @@ import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from docx import Document as DocxDocument
+from pptx import Presentation
 from pydantic import BaseModel
 from pypdf import PdfReader
 
@@ -142,7 +144,7 @@ TEMPO_MAX_FUNCAO = float(os.environ.get("MAX_DURACAO_FUNCAO", "60"))
 MARGEM_SEGURANCA = 8.0  # reserva para serializar a resposta antes do corte
 TIMEOUT_LLM = TEMPO_MAX_FUNCAO - MARGEM_SEGURANCA
 
-EXTENSOES_DOCUMENTO = (".pdf", ".txt", ".md")
+EXTENSOES_DOCUMENTO = (".pdf", ".txt", ".md", ".docx", ".pptx")
 
 app = FastAPI(title="Engenharia de Prompt — RAG API (cloud)")
 app.add_middleware(
@@ -580,6 +582,10 @@ def _mimetype(nome: str) -> str:
         return "application/pdf"
     if nome.lower().endswith(".md"):
         return "text/markdown; charset=utf-8"
+    if nome.lower().endswith(".docx"):
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if nome.lower().endswith(".pptx"):
+        return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     return "text/plain; charset=utf-8"
 
 
@@ -686,14 +692,50 @@ async def buscar_termos_glossario(q: str = "", limite: int = 200) -> list[dict]:
 # ── Extração de texto ───────────────────────────────────────────────────────
 
 
+def _extrair_paginas_docx(dados: bytes) -> list[tuple[int, str]]:
+    """Um .docx não tem conceito nativo de página — cada heading de nível 1 vira
+    uma "página" (mantém granularidade parecida com PDF para a citação de fonte).
+    Sem heading nenhum, o documento inteiro vira a página 1.
+    """
+    documento = DocxDocument(io.BytesIO(dados))
+    paginas: list[tuple[int, list[str]]] = [(1, [])]
+    for paragrafo in documento.paragraphs:
+        texto = paragrafo.text.strip()
+        if not texto:
+            continue
+        if paragrafo.style.name == "Heading 1" and paginas[-1][1]:
+            paginas.append((paginas[-1][0] + 1, []))
+        paginas[-1][1].append(texto)
+    return [(num, "\n".join(linhas)) for num, linhas in paginas]
+
+
+def _extrair_paginas_pptx(dados: bytes) -> list[tuple[int, str]]:
+    """Cada slide vira uma página — mapeamento natural, igual PDF."""
+    apresentacao = Presentation(io.BytesIO(dados))
+    paginas = []
+    for i, slide in enumerate(apresentacao.slides):
+        textos = [
+            forma.text_frame.text
+            for forma in slide.shapes
+            if forma.has_text_frame and forma.text_frame.text.strip()
+        ]
+        paginas.append((i + 1, "\n".join(textos)))
+    return paginas
+
+
 def extrair_paginas(pdf_bytes: bytes, nome: str = "") -> list[tuple[int, str]]:
-    """Devolve [(numero_da_pagina, texto)]. Aceita PDF, TXT e MD."""
-    if nome.lower().endswith((".txt", ".md")):
+    """Devolve [(numero_da_pagina, texto)]. Aceita PDF, TXT, MD, DOCX e PPTX."""
+    nome_lower = nome.lower()
+    if nome_lower.endswith((".txt", ".md")):
         try:
             texto = pdf_bytes.decode("utf-8")
         except UnicodeDecodeError:
             texto = pdf_bytes.decode("latin-1", "replace")
         return [(1, texto)]
+    if nome_lower.endswith(".docx"):
+        return _extrair_paginas_docx(pdf_bytes)
+    if nome_lower.endswith(".pptx"):
+        return _extrair_paginas_pptx(pdf_bytes)
     reader = PdfReader(io.BytesIO(pdf_bytes))
     return [(i + 1, page.extract_text() or "") for i, page in enumerate(reader.pages)]
 
@@ -777,6 +819,16 @@ SYSTEM_PROMPT_PERGUNTA = (
     "cálculo ou exemplo prático que não está literalmente no material), complemente com seu "
     "conhecimento geral para dar uma resposta completa e útil. Sempre que possível, cite a fonte "
     "e a página de onde tirou a informação."
+)
+
+SYSTEM_PROMPT_PROFESSOR = (
+    "Você é o PROFESSOR SABE TUDO — o mestre do conhecimento do curso de Engenharia de Prompt. "
+    "Aja como um professor paciente que nunca assume conhecimento prévio: comece pelo básico, use "
+    "sempre uma analogia do dia a dia antes de qualquer termo técnico, e explique passo a passo. "
+    "Use principalmente o CONTEXTO fornecido (trechos das apostilas do curso); complemente com "
+    "conhecimento geral quando o contexto não bastar para uma resposta completa. Cite a fonte e a "
+    "página quando possível. Feche a resposta com um mini-resumo de 1 frase, para fixar a ideia "
+    "principal."
 )
 
 SYSTEM_PROMPT_RESOLVER = (
@@ -968,6 +1020,7 @@ class PerguntaReq(BaseModel):
     pergunta: str
     provider: str = "nous"
     modelo: Optional[str] = None
+    persona: str = "padrao"  # "padrao" ou "professor" (tom mais didático, aba Professor Sabe Tudo)
 
 
 @app.post("/api/perguntar")
@@ -982,8 +1035,9 @@ async def perguntar(req: PerguntaReq, request: Request):
 
     contexto, media = montar_contexto(chunks)
     modelo = resolver_modelo(req.provider, req.modelo)
+    system_prompt = SYSTEM_PROMPT_PROFESSOR if req.persona == "professor" else SYSTEM_PROMPT_PERGUNTA
     resposta = await chamar_llm(
-        req.provider, modelo, SYSTEM_PROMPT_PERGUNTA, f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
+        req.provider, modelo, system_prompt, f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
     )
 
     return {

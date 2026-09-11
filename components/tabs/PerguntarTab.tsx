@@ -11,7 +11,17 @@ import Markdown from '../Markdown'
 import RespostaAuditada from '../RespostaAuditada'
 import AnexoImagem from '../AnexoImagem'
 
-export default function PerguntarTab({ providers }: { providers: ProvidersResp }) {
+export default function PerguntarTab({
+  providers,
+  persona = 'padrao',
+  titulo = 'Pergunta livre — resposta gerada pela IA com base nas apostilas',
+  placeholder = 'Ex: Como funciona few-shot prompting? Me mostra um exemplo em Python.',
+}: {
+  providers: ProvidersResp
+  persona?: 'padrao' | 'professor'
+  titulo?: string
+  placeholder?: string
+}) {
   const { provider, modelo, trocarProvider, setModelo, pronto, nenhumConfigurado } = useProviderModel(providers)
   const [pergunta, setPergunta] = useState('')
   const [loading, setLoading] = useState(false)
@@ -42,7 +52,7 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
     setRespostasVerificacao({})
     setAuditoria(null)
     try {
-      const d = await api.perguntar(pergunta, provider, modelo)
+      const d = await api.perguntar(pergunta, provider, modelo, persona)
       setResultado(d)
       // Dispara a auditoria frase por frase automaticamente, se ligada.
       if (auditarAuto && d.resposta) {
@@ -100,7 +110,7 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
     if (respostasVerificacao[idx] || carregandoVerificacaoIdx !== null) return
     setCarregandoVerificacaoIdx(idx)
     try {
-      const d = await api.perguntar(perguntaVerificacao, provider, modelo)
+      const d = await api.perguntar(perguntaVerificacao, provider, modelo, persona)
       setRespostasVerificacao((r) => ({ ...r, [idx]: d.resposta }))
     } catch (e) {
       setRespostasVerificacao((r) => ({
@@ -140,9 +150,7 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
 
   return (
     <div>
-      <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
-        Pergunta livre — resposta gerada pela IA com base nas apostilas
-      </p>
+      <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">{titulo}</p>
       <ProviderSelect
         providers={providers}
         provider={provider}
@@ -154,7 +162,7 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
       <textarea
         value={pergunta}
         onChange={(e) => setPergunta(e.target.value)}
-        placeholder="Ex: Como funciona few-shot prompting? Me mostra um exemplo em Python."
+        placeholder={placeholder}
         className="glass min-h-[120px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
       />
       <AnexoImagem
