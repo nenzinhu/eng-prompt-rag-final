@@ -32,15 +32,30 @@ export class ApiError extends Error {
   }
 }
 
-/** Extrai uma mensagem legível de um `detail` que pode ser string ou objeto. */
-function mensagemDe(data: unknown, status: number): string {
+/**
+ * Extrai uma mensagem legível de um `detail` que pode ser string ou objeto.
+ *
+ * Quando o corpo NÃO é JSON (erro da plataforma, HTML de proxy), mostrar o texto
+ * cru é melhor do que engolir tudo em "Erro N na requisição": era essa mensagem
+ * genérica que deixava um upload falho sem explicação nenhuma.
+ */
+function mensagemDe(data: unknown, status: number, texto: string): string {
   const detalhe = (data as { detail?: unknown } | null)?.detail
   if (typeof detalhe === 'string') return detalhe
   if (detalhe && typeof detalhe === 'object') {
     const obj = detalhe as { mensagem?: string; avisos?: string[] }
     if (obj.mensagem) return [obj.mensagem, ...(obj.avisos ?? [])].join(' ')
   }
-  return `Erro ${status} na requisição`
+
+  const cru = (texto || '').replace(/\s+/g, ' ').trim().slice(0, 200)
+  const pistas: Record<number, string> = {
+    413: 'O arquivo passou do limite da plataforma (4,5 MB por requisição na Vercel) — envie um arquivo menor ou rode o app localmente.',
+    504: 'A operação passou do tempo máximo do servidor. Tente de novo, com menos itens de uma vez.',
+    502: 'O provedor externo falhou ao responder.',
+  }
+  const pista = pistas[status]
+  if (pista) return cru ? `${pista} (detalhe: ${cru})` : pista
+  return cru ? `Erro ${status}: ${cru}` : `Erro ${status} na requisição`
 }
 
 async function pedir<T>(url: string, init?: RequestInit): Promise<T> {
@@ -52,7 +67,7 @@ async function pedir<T>(url: string, init?: RequestInit): Promise<T> {
   } catch {
     data = null
   }
-  if (!r.ok) throw new ApiError(mensagemDe(data, r.status), r.status, (data as { detail?: unknown })?.detail)
+  if (!r.ok) throw new ApiError(mensagemDe(data, r.status, texto), r.status, (data as { detail?: unknown })?.detail)
   return data as T
 }
 

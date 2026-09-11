@@ -37,6 +37,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pypdf import PdfReader
 
@@ -79,7 +80,51 @@ ALLOWED_ORIGINS = [
 ]
 
 LIMIAR_CONFIANCA = 0.35  # abaixo disso, avisamos que a resposta é pouco embasada na apostila
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB por arquivo
+
+# Teto de upload. NÃO é escolha do app: a função serverless da Vercel recusa
+# qualquer requisição acima de 4,5 MB ANTES do código rodar (413
+# FUNCTION_PAYLOAD_TOO_LARGE, em texto puro). O app anunciava 25 MB, então um
+# arquivo de 5 MB morria com "Erro 413 na requisição" e nenhuma explicação —
+# medido no navegador em 10/09/2026: 3 MB passa, 5 MB é cortado.
+#   - na Vercel: 4 MB (deixa margem para o cabeçalho do multipart);
+#   - local (uvicorn): 25 MB, que é o limite real do app;
+#   - MAX_UPLOAD_MB no ambiente sobrepõe os dois.
+LIMITE_UPLOAD_PLATAFORMA_MB = 4
+LIMITE_UPLOAD_LOCAL_MB = 25
+
+
+def limite_upload_mb() -> int:
+    explicito = os.environ.get("MAX_UPLOAD_MB")
+    if explicito:
+        try:
+            return max(1, int(float(explicito)))
+        except ValueError:
+            pass
+    return LIMITE_UPLOAD_PLATAFORMA_MB if os.environ.get("VERCEL") else LIMITE_UPLOAD_LOCAL_MB
+
+
+def motivo_limite_upload() -> str:
+    if os.environ.get("MAX_UPLOAD_MB"):
+        return "definido por MAX_UPLOAD_MB no servidor"
+    if os.environ.get("VERCEL"):
+        return (
+            "a função serverless da Vercel recusa corpos acima de 4,5 MB antes do código rodar — "
+            "para arquivos maiores, rode o app localmente (início rápido pelo iniciar-tudo.bat), "
+            "onde o limite é 25 MB"
+        )
+    return "limite do app rodando localmente"
+
+
+def limite_upload_bytes() -> int:
+    """Teto em bytes, calculado na hora (e não congelado no import).
+
+    A avaliação tardia importa: o limite depende de `VERCEL`/`MAX_UPLOAD_MB` no
+    ambiente, e um valor congelado no import deixaria `/api/config` anunciando um
+    teto diferente do que a rota de upload aplica.
+    """
+    return limite_upload_mb() * 1024 * 1024
+
+
 MAX_RESULTADOS_BUSCA = 20
 CACHE_STATUS_SEGUNDOS = 30
 LIMITE_LLM_POR_MINUTO = 20  # por IP, por instância (ver observação em _limitar_llm)
@@ -102,6 +147,43 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def falha_inesperada(request: Request, exc: Exception):
+    """Transforma qualquer falha não tratada numa resposta JSON legível.
+
+    Sem isto, o Starlette responde `Internal Server Error` em TEXTO PURO para
+    exceções inesperadas (httpx, pypdf, banco). O front não encontra o campo
+    `detail` no corpo, não tem o que mostrar, e a tela fica só com
+    "Erro 500 na requisição" — sem pista nenhuma do que quebrou. Foi assim que
+    um upload falho virou um mistério em 10/09/2026.
+
+    Aqui a falha vira uma mensagem que diz o que aconteceu e onde.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        # Falha do Supabase/Storage/provedor: o mais comum e o mais acionável.
+        alvo = f"{exc.request.url.host}{exc.request.url.path}"
+        detalhe = f"o serviço {alvo} respondeu {exc.response.status_code}: {exc.response.text[:200]}"
+        dica = "Isso é do Supabase/Storage, não da sua pergunta. Tente de novo; se persistir, confira as chaves e o RLS."
+    elif isinstance(exc, httpx.TimeoutException):
+        detalhe = f"o serviço externo não respondeu a tempo ({type(exc).__name__})"
+        dica = "Tente de novo — costuma ser lentidão momentânea do Supabase."
+    elif type(exc).__module__.startswith("pypdf"):
+        detalhe = f"o PDF não pôde ser lido ({type(exc).__name__}: {exc})"[:300]
+        dica = (
+            "O arquivo pode estar corrompido, protegido por senha, ou ser digitalizado "
+            "(imagem) sem camada de texto — nesse caso o OCR é necessário antes de indexar."
+        )
+    else:
+        detalhe = f"{type(exc).__name__}: {exc}"[:300]
+        dica = "Falha interna do servidor."
+
+    print(f"[falha_inesperada] {request.method} {request.url.path} -> {detalhe}", flush=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{detalhe} — {dica}"},
+    )
 
 # ── Provedores de IA (todos com API "OpenAI-compatible") ───────────────────
 # Listas verificadas com CHAMADA REAL em 10/09/2026, medindo latência via
@@ -476,7 +558,11 @@ async def apagar_chunks_por_fonte(nome: str):
 
 async def upload_documento_storage(filename: str, data: bytes, mimetype: str = "application/pdf"):
     _checar_config_supabase()
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+    # O timeout tem de caber no tempo que a função ainda tem de vida: esperar
+    # 120 s dentro de um orçamento de 60 s faz a plataforma matar o processo no
+    # meio do envio, e o aluno recebe uma falha genérica sem explicação.
+    limite = max(10.0, TIMEOUT_LLM)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(limite, connect=10.0)) as client:
         r = await client.post(
             f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(filename)}",
             headers={**_h_documentos(), "Content-Type": mimetype, "x-upsert": "true"},
@@ -772,7 +858,11 @@ def config_publica():
         "escrita_via": "service_role" if escrita_via_service_role() else "anon",
         "inseguro": not escrita_via_service_role(),
         "extensoes": list(EXTENSOES_DOCUMENTO),
-        "max_upload_mb": MAX_UPLOAD_BYTES // (1024 * 1024),
+        "max_upload_mb": limite_upload_mb(),
+        # Por que o teto é esse: na Vercel a plataforma corta em 4,5 MB antes do
+        # código rodar, então anunciar 25 MB fazia o aluno tomar um 413 sem
+        # entender. O front mostra este texto junto do campo de upload.
+        "limite_upload_motivo": motivo_limite_upload(),
     }
 
 
@@ -1294,7 +1384,17 @@ async def _analisar_ingestao(arquivo: str) -> dict:
         raise HTTPException(404, f"Arquivo '{arquivo}' não encontrado no Storage.")
 
     dados = await baixar_documento_storage(arquivo)
-    paginas = extrair_paginas(dados, arquivo)
+    try:
+        paginas = extrair_paginas(dados, arquivo)
+    except Exception as e:
+        # Um PDF ilegível não pode derrubar a rota com "Internal Server Error":
+        # o usuário precisa saber QUAL arquivo e POR QUÊ. Caso real: um
+        # certificado do curso faz o pypdf levantar PdfReadError.
+        raise HTTPException(
+            422,
+            f"Não consegui ler o PDF '{arquivo}' ({type(e).__name__}). O arquivo pode estar "
+            f"corrompido ou protegido por senha. Detalhe: {str(e)[:160]}",
+        )
     linhas = preparar_linhas(paginas)
     existentes, chars_existentes = await medir_indice_atual(arquivo)
 
@@ -1406,16 +1506,23 @@ async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
     não existe mais no Storage. Agora a queda de conteúdo precisa ser
     confirmada com `forcar: true`.
     """
-    analise = await _analisar_ingestao(req.arquivo)
-
-    if req.offset == 0 and not req.forcar and (not analise["ok"]):
-        raise HTTPException(
-            409,
-            {
-                "mensagem": "Reindexação bloqueada para não perder conteúdo. Use /api/ingerir/previa para ver os números.",
-                **analise,
-            },
-        )
+    # A análise (medir o índice atual contra o que viria) só decide algo no
+    # PRIMEIRO lote. Nos seguintes era trabalho jogado fora: um download do PDF
+    # inteiro mais uma varredura do índice a cada 24 chunks. Num documento de 123
+    # páginas isso são 11 análises completas dentro de um orçamento de 60 s por
+    # chamada — o que faz a indexação estourar o tempo no meio.
+    if req.offset == 0:
+        analise = await _analisar_ingestao(req.arquivo)
+        if not req.forcar and not analise["ok"]:
+            raise HTTPException(
+                409,
+                {
+                    "mensagem": "Reindexação bloqueada para não perder conteúdo. Use /api/ingerir/previa para ver os números.",
+                    **analise,
+                },
+            )
+    else:
+        analise = None
 
     dados = await baixar_documento_storage(req.arquivo)
     linhas = preparar_linhas(extrair_paginas(dados, req.arquivo))
@@ -1428,7 +1535,7 @@ async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
             "total": 0,
             "proximo_offset": 0,
             "done": True,
-            "avisos": analise["avisos"],
+            "avisos": (analise or {}).get("avisos", []),
         }
 
     if req.offset == 0:
@@ -1496,8 +1603,8 @@ async def upload(
         if not data:
             ignorados.append({"arquivo": nome, "motivo": "arquivo vazio"})
             continue
-        if len(data) > MAX_UPLOAD_BYTES:
-            ignorados.append({"arquivo": nome, "motivo": f"maior que {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"})
+        if len(data) > limite_upload_bytes():
+            ignorados.append({"arquivo": nome, "motivo": f"maior que {limite_upload_mb()} MB"})
             continue
         md5 = hashlib.md5(data).hexdigest()
 

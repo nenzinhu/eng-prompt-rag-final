@@ -36,6 +36,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
   const [erroToken, setErroToken] = useState('')
   const [valido, setValido] = useState(false)
   const [maxMb, setMaxMb] = useState(25)
+  const [motivoLimite, setMotivoLimite] = useState('')
   const [extensoes, setExtensoes] = useState<string[]>(['.pdf'])
 
   // Resultado da prévia: a reindexação só roda depois de o usuário ver os números.
@@ -48,6 +49,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
       .config()
       .then((c) => {
         setMaxMb(c.max_upload_mb)
+        setMotivoLimite(c.limite_upload_motivo ?? '')
         setExtensoes(c.extensoes)
       })
       .catch(() => undefined)
@@ -66,10 +68,29 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
   }, [])
 
   function addFiles(files: File[]) {
-    const valid = files.filter((f) => extensoes.some((e) => f.name.toLowerCase().endsWith(e)))
+    const aceitos: File[] = []
+    const recusas: string[] = []
+    for (const f of files) {
+      if (!extensoes.some((e) => f.name.toLowerCase().endsWith(e))) {
+        recusas.push(`⏭ ${f.name}: formato não aceito (use ${extensoes.join(', ')})`)
+        continue
+      }
+      // Recusar aqui, e não no servidor: acima do teto a requisição nem chega ao
+      // código (a plataforma corta antes), e o erro que voltava não dizia nada.
+      if (f.size > maxMb * 1024 * 1024) {
+        const tamanho = (f.size / 1024 / 1024).toFixed(1)
+        recusas.push(
+          `⛔ ${f.name}: ${tamanho} MB — o limite é ${maxMb} MB por arquivo. ${motivoLimite}`,
+        )
+        continue
+      }
+      aceitos.push(f)
+    }
+    for (const r of recusas) logLine('alert', r)
+    if (!aceitos.length) return
     setPending((prev) => {
       const names = new Set(prev.map((f) => f.name))
-      return [...prev, ...valid.filter((f) => !names.has(f.name))]
+      return [...prev, ...aceitos.filter((f) => !names.has(f.name))]
     })
   }
 
@@ -272,6 +293,12 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
               <span className="text-[0.78rem]">
                 Arquivo repetido é ignorado; mesmo conteúdo com nome diferente substitui o anterior.
               </span>
+              {motivoLimite && (
+                <>
+                  <br />
+                  <span className="text-[0.75rem] text-amber-300/90">Limite de {maxMb} MB porque {motivoLimite}.</span>
+                </>
+              )}
             </p>
             <input
               ref={fileInputRef}

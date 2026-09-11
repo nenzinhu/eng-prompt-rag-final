@@ -12,6 +12,8 @@ export interface ConfigResp {
   inseguro: boolean
   extensoes: string[]
   max_upload_mb: number
+  /** Por que o teto de upload é esse (ex.: limite da plataforma na Vercel). */
+  limite_upload_motivo?: string
 }
 
 export interface ProviderInfo {
