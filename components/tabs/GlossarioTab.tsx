@@ -6,6 +6,18 @@ import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp, TermoGlossario } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
 import AnexoImagem from '../AnexoImagem'
+import Exemplos from '../Exemplos'
+
+/**
+ * Exemplos de um termo, aceitando o formato antigo.
+ *
+ * Termos gravados antes desta mudança têm um único `exemplo` (texto); os novos
+ * vêm em `exemplos` (lista). Assim o glossário antigo continua renderizando.
+ */
+function exemplosDe(t: TermoGlossario): string[] {
+  if (t.exemplos?.length) return t.exemplos
+  return t.exemplo ? [t.exemplo] : []
+}
 
 export default function GlossarioTab({
   providers,
@@ -102,8 +114,15 @@ export default function GlossarioTab({
                 <div key={i} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
                   <div className="mb-0.5 font-mono text-[0.78rem] font-semibold text-cyan">{t.termo}</div>
                   <div className="text-[0.8rem] leading-relaxed text-muted">{t.explicacao}</div>
-                  {t.exemplo && (
-                    <div className="mt-1.5 text-[0.75rem] italic text-muted/80">Ex: {t.exemplo}</div>
+                  {exemplosDe(t).length > 0 && (
+                    <ol className="mt-1.5 flex flex-col gap-1">
+                      {exemplosDe(t).map((ex, j) => (
+                        <li key={j} className="text-[0.75rem] italic leading-relaxed text-muted/80">
+                          <span className="font-mono not-italic text-[0.65rem] text-violet">Ex {j + 1}: </span>
+                          {ex}
+                        </li>
+                      ))}
+                    </ol>
                   )}
                 </div>
               ))}
@@ -191,10 +210,9 @@ export default function GlossarioTab({
               <div key={i} className="glass rounded-xl p-4">
                 <div className="mb-1 font-mono text-[0.8rem] font-semibold text-cyan">{t.termo}</div>
                 <div className="text-[0.85rem] leading-relaxed text-text">{t.explicacao}</div>
-                {t.exemplo && (
-                  <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[0.8rem] leading-relaxed text-muted">
-                    <span className="font-mono text-[0.68rem] uppercase tracking-wider text-violet">Exemplo: </span>
-                    {t.exemplo}
+                {exemplosDe(t).length > 0 && (
+                  <div className="mt-3">
+                    <Exemplos itens={exemplosDe(t)} rotulo={`Exemplos de “${t.termo}”`} destaque="cyan" />
                   </div>
                 )}
               </div>

@@ -74,6 +74,10 @@ export interface ResolverResp {
   explicacao: string
   explicacao_rapida: string
   explicacao_detalhada: string
+  /** "Professor auxiliar": por que a alternativa escolhida é a correta. */
+  por_que_correta: string
+  /** 1-2 exemplos concretos que mostram o conceito funcionando. */
+  exemplos: string[]
   alternativas_erradas: Record<string, string>
   pouco_embasado: boolean
   confianca_media: number
@@ -97,7 +101,10 @@ export interface VerificarResp {
 export interface TermoGlossario {
   termo: string
   explicacao: string
+  /** Formato antigo: um exemplo só. Mantido para não quebrar o que já existe. */
   exemplo?: string
+  /** 1-2 exemplos concretos do termo (frase ou palavra). */
+  exemplos?: string[]
 }
 
 export interface GlossarioResp {

@@ -10,6 +10,7 @@ import EvidenceList from '../EvidenceList'
 import WarnBanner from '../WarnBanner'
 import Markdown from '../Markdown'
 import AnexoImagem from '../AnexoImagem'
+import Exemplos from '../Exemplos'
 import { formatarAlternativas } from '@/lib/texto'
 
 interface ResultadoLote {
@@ -252,6 +253,20 @@ export default function ResolverTab({
                     </div>
                   </div>
 
+                  {(resultado.por_que_correta || (resultado.exemplos?.length ?? 0) > 0) && (
+                    <div className="mb-4 rounded-xl border border-violet/25 bg-violet/[0.06] p-4">
+                      <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-violet">
+                        👨‍🏫 Professor auxiliar — por que a {resultado.resposta} está correta
+                      </div>
+                      {resultado.por_que_correta ? (
+                        <div className="mb-4">
+                          <Markdown>{resultado.por_que_correta}</Markdown>
+                        </div>
+                      ) : null}
+                      <Exemplos itens={resultado.exemplos} rotulo="Exemplos para fixar" />
+                    </div>
+                  )}
+
                   <div className="mb-2 flex gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider">
                     <button
                       onClick={() => setVerDetalhada(false)}
@@ -426,6 +441,19 @@ export default function ResolverTab({
                         <div className="text-[0.8rem] leading-relaxed text-muted">
                           {r.resp.explicacao_rapida || r.resp.explicacao}
                         </div>
+                        {r.resp.por_que_correta && (
+                          <div className="mt-2 text-[0.8rem] leading-relaxed text-text">
+                            <span className="font-mono text-[0.65rem] uppercase tracking-wider text-violet">
+                              👨‍🏫 Por que está correta:{' '}
+                            </span>
+                            {r.resp.por_que_correta}
+                          </div>
+                        )}
+                        {(r.resp.exemplos?.length ?? 0) > 0 && (
+                          <div className="mt-2">
+                            <Exemplos itens={r.resp.exemplos} rotulo="Exemplos" />
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

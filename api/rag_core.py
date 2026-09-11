@@ -11,6 +11,7 @@ O que vive aqui:
 """
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 
@@ -502,3 +503,138 @@ def calcular_concordancia(diretas: dict[str, str]) -> dict:
         "nomes_exclusivos": nomes_exclusivos,
         "sem_fatos": not any(numeros_por_modelo.values()) and not any(nomes_por_modelo.values()),
     }
+
+
+# ── Exemplos do "professor auxiliar" (questões e glossário) ──────────────────
+#
+# O aluno pediu explicação de professor: por que a alternativa está correta, com
+# 1-2 exemplos concretos, e no glossário cada palavra/frase explicada com 2
+# exemplos. Limitar a 2 é proposital: lista longa de exemplo não ensina, só
+# aumenta a leitura antes da prova.
+
+MAX_EXEMPLOS = 2
+
+
+def normalizar_exemplos(valor) -> list[str]:
+    """Aceita lista, texto único ou vazio e devolve no máximo `MAX_EXEMPLOS`.
+
+    Modelos às vezes devolvem `exemplos` como string única em vez de lista —
+    tratar os dois casos evita perder a explicação por detalhe de formato.
+    """
+    if valor is None:
+        return []
+    if isinstance(valor, str):
+        itens = [valor.strip()] if valor.strip() else []
+    elif isinstance(valor, (list, tuple)):
+        itens = []
+        for item in valor:
+            texto = str(item or "").strip()
+            # Um item com quebra de linha vira vários exemplos curtos.
+            itens.extend(p.strip() for p in texto.splitlines() if p.strip())
+    else:
+        return []
+    return itens[:MAX_EXEMPLOS]
+
+
+def formatar_exemplos_para_banco(exemplos) -> str | None:
+    """Grava os exemplos como texto numerado, legível no banco.
+
+    A tabela `glossario_termos` tem uma coluna de texto para UM exemplo, e mudar
+    o schema exigiria SQL manual no Supabase. Em vez disso, os exemplos são
+    gravados numerados ("1) ...\\n2) ...") e `separar_exemplos` os recupera — o
+    dado continua legível para quem abrir a tabela.
+    """
+    itens = normalizar_exemplos(exemplos)
+    if not itens:
+        return None
+    if len(itens) == 1:
+        return itens[0]
+    return "\n".join(f"{i}) {texto}" for i, texto in enumerate(itens, 1))
+
+
+def separar_exemplos(texto: str | None) -> list[str]:
+    """Recupera os exemplos gravados numerados (ou um texto antigo, sem número)."""
+    if not texto or not texto.strip():
+        return []
+    linhas = [l.strip() for l in texto.strip().splitlines() if l.strip()]
+    numeradas = [l for l in linhas if re.match(r"^\d+\)", l)]
+    if numeradas and len(numeradas) == len(linhas):
+        return [re.sub(r"^\d+\)\s*", "", l).strip() for l in numeradas][:MAX_EXEMPLOS]
+    return [texto.strip()]
+
+
+# ── Leitura das respostas do modelo (antes vivia dentro das rotas) ──────────
+
+
+def extrair_termos_glossario(bruto: str) -> list[dict]:
+    """Lê a resposta do glossário: `{"termos": [{"termo", "explicacao", "exemplos"}]}`.
+
+    Aceita `exemplo` (string, formato antigo) como apelido de `exemplos`, para não
+    descartar a explicação de um modelo que ignorou o formato novo.
+    """
+    bloco = extrair_bloco_json(bruto)
+    if not bloco:
+        return []
+    try:
+        parsed = json.loads(bloco)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, dict):
+        return []
+    termos: list[dict] = []
+    for item in parsed.get("termos", []):
+        if not isinstance(item, dict):
+            continue
+        termo = str(item.get("termo") or "").strip()
+        explicacao = str(item.get("explicacao") or "").strip()
+        if not termo or not explicacao:
+            continue
+        termos.append({
+            "termo": termo,
+            "explicacao": explicacao,
+            "exemplos": normalizar_exemplos(item.get("exemplos") or item.get("exemplo")),
+        })
+    return termos
+
+
+def extrair_resolucao(bruto: str) -> dict:
+    """Lê a resposta do resolver: letra, explicações, exemplos e distratores.
+
+    Devolve sempre as mesmas chaves; `explicacao_rapida` vazia significa que o
+    modelo não seguiu o formato, e quem chama decide o que mostrar no lugar.
+    """
+    resultado = {
+        "letra": None,
+        "explicacao_rapida": "",
+        "explicacao_detalhada": "",
+        "por_que_correta": "",
+        "exemplos": [],
+        "alternativas_erradas": {},
+    }
+    bloco = extrair_bloco_json(bruto)
+    if not bloco:
+        return resultado
+    try:
+        parsed = json.loads(bloco)
+    except json.JSONDecodeError:
+        return resultado
+    if not isinstance(parsed, dict):
+        return resultado
+
+    resultado["letra"] = str(parsed.get("letra") or "").strip().upper() or None
+    resultado["explicacao_rapida"] = str(
+        parsed.get("explicacao_rapida") or parsed.get("explicacao") or ""
+    ).strip()
+    resultado["explicacao_detalhada"] = str(parsed.get("explicacao_detalhada") or "").strip()
+    resultado["por_que_correta"] = str(parsed.get("por_que_correta") or "").strip()
+    resultado["exemplos"] = normalizar_exemplos(parsed.get("exemplos") or parsed.get("exemplo"))
+
+    letra = resultado["letra"]
+    erradas = parsed.get("alternativas_erradas") or {}
+    if isinstance(erradas, dict):
+        resultado["alternativas_erradas"] = {
+            str(k).strip().upper(): v.strip()
+            for k, v in erradas.items()
+            if isinstance(v, str) and v.strip() and str(k).strip().upper() != letra
+        }
+    return resultado

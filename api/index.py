@@ -52,13 +52,17 @@ from rag_core import (  # noqa: E402
     conclusao_fallback,
     extrair_alternativas,
     extrair_bloco_json,
+    extrair_resolucao,
     extrair_resposta_direta,
+    extrair_termos_glossario,
     formatar_alternativas,
+    formatar_exemplos_para_banco,
     frase_tem_apoio_textual,
     limpar_resposta,
     quebrar_frases,
     remover_linha_resposta_direta,
     rotulos_unicos,
+    separar_exemplos,
 )
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
@@ -632,7 +636,15 @@ async def salvar_termos_glossario(termos: list[dict], origem: str = "") -> Optio
     if not termos:
         return None
     rows = [
-        {"termo": t["termo"], "explicacao": t["explicacao"], "exemplo": t.get("exemplo") or None, "origem": origem}
+        {
+            "termo": t["termo"],
+            "explicacao": t["explicacao"],
+            # Os 1-2 exemplos vão numerados numa coluna de texto (ver
+            # `rag_core.formatar_exemplos_para_banco`): assim não é preciso mudar
+            # o schema, e o dado continua legível na tabela.
+            "exemplo": formatar_exemplos_para_banco(t.get("exemplos") or t.get("exemplo")),
+            "origem": origem,
+        }
         for t in termos
     ]
     try:
@@ -663,7 +675,12 @@ async def buscar_termos_glossario(q: str = "", limite: int = 200) -> list[dict]:
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         r = await client.get(f"{SUPABASE_URL}/rest/v1/glossario_termos", headers=_h_leitura(), params=params)
     r.raise_for_status()
-    return r.json()
+    termos = r.json()
+    # A coluna guarda os exemplos numerados num texto só; a interface recebe a
+    # lista pronta (e `exemplo` continua preenchido, para não quebrar quem já usa).
+    for t in termos:
+        t["exemplos"] = separar_exemplos(t.get("exemplo"))
+    return termos
 
 
 # ── Extração de texto ───────────────────────────────────────────────────────
@@ -763,17 +780,24 @@ SYSTEM_PROMPT_PERGUNTA = (
 )
 
 SYSTEM_PROMPT_RESOLVER = (
-    "Você é um assistente que resolve questões de múltipla escolha do curso de Engenharia de "
-    "Prompt, usando o CONTEXTO das apostilas e, se necessário, conhecimento geral. Para CADA "
-    "alternativa que NÃO for a correta, explique em 1 frase curta por que ela está errada "
-    "(o que a torna um distrator). Responda SEMPRE em JSON, sem nenhum texto fora dele:\n"
+    "Você é um PROFESSOR AUXILIAR do curso de Engenharia de Prompt. O aluno precisa ENTENDER a "
+    "questão, não só saber a letra certa. Ensine: explique o conceito com frases curtas, linguagem "
+    "do dia a dia e zero jargão sem explicação — como se ele nunca tivesse visto o assunto. Use o "
+    "CONTEXTO das apostilas e, se necessário, conhecimento geral. Responda SEMPRE em JSON, sem "
+    "nenhum texto fora dele:\n"
     "{\n"
     '  "letra": "A",\n'
-    '  "explicacao_rapida": "resumo de 1-2 frases, direto ao ponto, fácil de ler rápido",\n'
-    '  "explicacao_detalhada": "raciocínio completo, citando o contexto quando possível",\n'
+    '  "explicacao_rapida": "1-2 frases diretas, fáceis de ler rápido",\n'
+    '  "por_que_correta": "por que ESTA alternativa é a correta, em 2-4 frases simples, dizendo '
+    'onde isso aparece no material (cite a fonte e a página quando souber)",\n'
+    '  "exemplos": ["exemplo concreto e curto que mostra o conceito funcionando", '
+    '"segundo exemplo, de outro contexto, para fixar"],\n'
+    '  "explicacao_detalhada": "raciocínio completo, citando o contexto",\n'
     '  "alternativas_erradas": {"B": "motivo curto", "C": "motivo curto", "D": "motivo curto"}\n'
     "}\n"
-    "Não inclua a letra correta em \"alternativas_erradas\"."
+    "Regras dos exemplos: dê 1 ou 2 (nunca mais), concretos e diferentes entre si — um do próprio "
+    "curso e outro do dia a dia funciona bem; não repita o mesmo exemplo com outras palavras. "
+    'Não inclua a letra correta em "alternativas_erradas".'
 )
 
 SYSTEM_PROMPT_SIMPLIFICAR = (
@@ -791,15 +815,19 @@ SYSTEM_PROMPT_VERIFICAR = (
 )
 
 SYSTEM_PROMPT_GLOSSARIO = (
-    "Você é um assistente do curso de Engenharia de Prompt. Identifique os termos técnicos, "
-    "siglas e conceitos importantes no material abaixo (se houver um TEXTO/QUESTÃO fornecido "
-    "pelo aluno, priorize os termos que aparecem nele — inclusive nas alternativas — mesmo que "
-    "o CONTEXTO das apostilas só cite alguns deles) e explique cada um em 1-2 frases simples, "
-    "sem jargão adicional, como se fosse para um iniciante. Quando ajudar a fixar o conceito, "
-    "inclua um exemplo curto e concreto. Ignore palavras comuns que não são termos técnicos. "
-    'Responda SEMPRE em JSON: {"termos": [{"termo": "...", "explicacao": "...", "exemplo": "..."}]}, '
-    'com "exemplo" como string vazia quando não for necessário. Ordene alfabeticamente pelo termo. '
-    "Sem nenhum texto fora do JSON."
+    "Você é um PROFESSOR AUXILIAR do curso de Engenharia de Prompt. Explique o material abaixo "
+    "como se o aluno nunca tivesse visto o assunto: frases curtas, linguagem do dia a dia, zero "
+    "jargão que você não explique na hora.\n\n"
+    "Liste os termos técnicos, as siglas E as palavras ou frases curtas que precisam de explicação "
+    "para o texto fazer sentido. Se o aluno forneceu um TEXTO/QUESTÃO, explique primeiro o que "
+    "aparece nele — inclusive nas alternativas —, mesmo que o CONTEXTO das apostilas só cite "
+    "alguns.\n\n"
+    "Para CADA item, dê DOIS exemplos concretos e diferentes entre si (um do próprio curso e outro "
+    "do dia a dia funciona bem), mostrando o conceito em ação. Se não fizer sentido exemplo para "
+    "algum item, devolva apenas um.\n\n"
+    'Responda SEMPRE em JSON: {"termos": [{"termo": "palavra ou frase", '
+    '"explicacao": "1-2 frases bem simples", "exemplos": ["...", "..."]}]}\n'
+    "Ordene alfabeticamente pelo termo. Sem nenhum texto fora do JSON."
 )
 
 SYSTEM_PROMPT_COMPARAR = (
@@ -1124,24 +1152,6 @@ async def glossario(req: GlossarioReq, request: Request):
         partes.append(f"TEXTO/QUESTÃO FORNECIDO PELO ALUNO (priorize os termos daqui):\n{texto_usuario}")
     user_prompt = "\n\n".join(partes)
 
-    def extrair_termos(bruto: str) -> list[dict]:
-        bloco = extrair_bloco_json(bruto)
-        if not bloco:
-            return []
-        try:
-            parsed = json.loads(bloco)
-        except json.JSONDecodeError:
-            return []
-        return [
-            {
-                "termo": t.get("termo", "").strip(),
-                "explicacao": t.get("explicacao", "").strip(),
-                "exemplo": (t.get("exemplo") or "").strip(),
-            }
-            for t in parsed.get("termos", [])
-            if isinstance(t, dict) and t.get("termo") and t.get("explicacao")
-        ]
-
     # A retentativa resolve a maioria dos casos em que o modelo foge do formato
     # JSON, mas cada tentativa custa uma chamada inteira do modelo. Duas chamadas
     # não cabem no orçamento da função quando o modelo é lento — era essa a causa
@@ -1155,7 +1165,8 @@ async def glossario(req: GlossarioReq, request: Request):
         bruto = limpar_resposta(
             await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_GLOSSARIO, user_prompt, timeout=restante)
         )
-        termos = extrair_termos(bruto)
+        # A leitura do JSON vive no rag_core (função pura, coberta por testes).
+        termos = extrair_termos_glossario(bruto)
         if termos:
             break
 
@@ -1215,21 +1226,18 @@ async def resolver(req: ResolverReq, request: Request):
     letra = None
     explicacao_rapida = resposta_bruta
     explicacao_detalhada = ""
+    por_que_correta = ""
+    exemplos: list[str] = []
     alternativas_erradas: dict[str, str] = {}
-    bloco = extrair_bloco_json(resposta_bruta)
-    if bloco:
-        try:
-            parsed = json.loads(bloco)
-            letra = (parsed.get("letra") or "").strip().upper() or None
-            explicacao_rapida = parsed.get("explicacao_rapida") or parsed.get("explicacao") or resposta_bruta
-            explicacao_detalhada = parsed.get("explicacao_detalhada") or ""
-            alternativas_erradas = {
-                k.strip().upper(): v.strip()
-                for k, v in (parsed.get("alternativas_erradas") or {}).items()
-                if isinstance(v, str) and v.strip() and k.strip().upper() != letra
-            }
-        except json.JSONDecodeError:
-            pass
+    # Leitura do JSON no rag_core (função pura, coberta por testes).
+    resolucao = extrair_resolucao(resposta_bruta)
+    if resolucao["letra"] or resolucao["explicacao_rapida"]:
+        letra = resolucao["letra"]
+        explicacao_rapida = resolucao["explicacao_rapida"] or resposta_bruta
+        explicacao_detalhada = resolucao["explicacao_detalhada"]
+        por_que_correta = resolucao["por_que_correta"]
+        exemplos = resolucao["exemplos"]
+        alternativas_erradas = resolucao["alternativas_erradas"]
 
     return {
         "questao": questao,
@@ -1239,6 +1247,9 @@ async def resolver(req: ResolverReq, request: Request):
         "explicacao": explicacao_rapida,
         "explicacao_rapida": explicacao_rapida,
         "explicacao_detalhada": explicacao_detalhada,
+        # "Professor auxiliar": por que a correta é a correta, com 1-2 exemplos.
+        "por_que_correta": por_que_correta,
+        "exemplos": exemplos,
         "alternativas_erradas": alternativas_erradas,
         "pouco_embasado": media < LIMIAR_CONFIANCA,
         "confianca_media": round(media, 3),
