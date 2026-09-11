@@ -27,3 +27,8 @@ next-env.d.ts
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Modelo de idioma do OCR: baixado na raiz quando o tesseract.js roda no Node
+# (para checar o OCR fora do navegador). O app baixa no cache do navegador, então
+# este arquivo nunca deve ser versionado.
+*.traineddata

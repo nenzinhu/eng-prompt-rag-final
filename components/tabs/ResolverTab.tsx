@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp, ResolverResp } from '@/lib/types'
@@ -9,6 +9,8 @@ import ProviderSelect from '../ProviderSelect'
 import EvidenceList from '../EvidenceList'
 import WarnBanner from '../WarnBanner'
 import Markdown from '../Markdown'
+import AnexoImagem from '../AnexoImagem'
+import { formatarAlternativas } from '@/lib/texto'
 
 interface ResultadoLote {
   questao: string
@@ -33,7 +35,7 @@ export default function ResolverTab({
   const [acuracia, setAcuracia] = useState<AcuraciaStats>({ acertos: 0, total: 0 })
 
   const [ocrLoading, setOcrLoading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [anexoReset, setAnexoReset] = useState(0)
 
   const [modoLote, setModoLote] = useState(false)
   const [textoLote, setTextoLote] = useState('')
@@ -50,15 +52,6 @@ export default function ResolverTab({
     setAvaliado(true)
   }
 
-  function formatarAlternativas(texto: string): string {
-    return texto
-      .replace(/\s*\b([A-E])\)\s*/g, (_match, letra: string, offset: number) => {
-        const prefixo = offset === 0 ? '' : '\n\n'
-        return `${prefixo}${letra}) `
-      })
-      .trim()
-  }
-
   function onColar(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const colado = e.clipboardData.getData('text')
     if (!colado) return
@@ -70,33 +63,6 @@ export default function ResolverTab({
     const fim = el.selectionEnd ?? alvo.length
     const formatado = formatarAlternativas(colado)
     setAlvo(alvo.slice(0, inicio) + formatado + alvo.slice(fim))
-  }
-
-  async function extrairDeImagem(file: File) {
-    setOcrLoading(true)
-    setErro('')
-    try {
-      const { createWorker } = await import('tesseract.js')
-      const worker = await createWorker('por')
-      const { data } = await worker.recognize(file)
-      await worker.terminate()
-      const lido = data.text.trim()
-      if (modoLote) {
-        setTextoLote((t) => (t ? `${t}\n\n${lido}` : lido))
-      } else {
-        setTexto((t) => (t ? `${t}\n\n${lido}` : lido))
-      }
-    } catch (e) {
-      setErro(`Erro ao ler imagem: ${e instanceof Error ? e.message : String(e)}`)
-    } finally {
-      setOcrLoading(false)
-    }
-  }
-
-  function onImagemSelecionada(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (file) extrairDeImagem(file)
   }
 
   async function analisar() {
@@ -193,8 +159,6 @@ export default function ResolverTab({
         nenhumConfigurado={nenhumConfigurado}
       />
 
-      <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={onImagemSelecionada} />
-
       {!modoLote ? (
         <div className="grid gap-5 lg:grid-cols-2">
           <div>
@@ -212,26 +176,28 @@ export default function ResolverTab({
               }
               className="glass min-h-[240px] w-full rounded-xl p-4 font-mono text-[0.8rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
             />
+            <AnexoImagem
+              texto={texto}
+              setTexto={setTexto}
+              desabilitado={loading}
+              onProcessando={setOcrLoading}
+              resetToken={anexoReset}
+              dica="Envie um print ou foto da questão — o texto entra na caixa acima, aqui no navegador"
+            />
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={analisar}
-                disabled={loading || !pronto}
+                disabled={loading || ocrLoading || !pronto}
                 className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 {loading ? 'Analisando…' : 'Analisar Questão'}
-              </button>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={ocrLoading}
-                className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
-              >
-                {ocrLoading ? '🔍 Lendo imagem…' : '📷 Extrair de print'}
               </button>
               <button
                 onClick={() => {
                   setTexto('')
                   setResultado(null)
                   setErro('')
+                  setAnexoReset((t) => t + 1)
                 }}
                 className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
               >
@@ -397,6 +363,14 @@ export default function ResolverTab({
             }
             className="glass min-h-[260px] w-full rounded-xl p-4 font-mono text-[0.8rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
           />
+          <AnexoImagem
+            texto={textoLote}
+            setTexto={setTextoLote}
+            desabilitado={processandoLote}
+            onProcessando={setOcrLoading}
+            resetToken={anexoReset}
+            dica="Um print por questão — o texto entra no campo, na ordem em que você anexar"
+          />
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               onClick={analisarLote}
@@ -408,17 +382,11 @@ export default function ResolverTab({
                 : 'Analisar todas'}
             </button>
             <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={ocrLoading}
-              className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
-            >
-              {ocrLoading ? '🔍 Lendo imagem…' : '📷 Adicionar print'}
-            </button>
-            <button
               onClick={() => {
                 setTextoLote('')
                 setResultadosLote([])
                 setErro('')
+                setAnexoReset((t) => t + 1)
               }}
               className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
             >

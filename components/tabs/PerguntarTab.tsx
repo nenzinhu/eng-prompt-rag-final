@@ -9,6 +9,7 @@ import EvidenceList from '../EvidenceList'
 import WarnBanner from '../WarnBanner'
 import Markdown from '../Markdown'
 import RespostaAuditada from '../RespostaAuditada'
+import AnexoImagem from '../AnexoImagem'
 
 export default function PerguntarTab({ providers }: { providers: ProvidersResp }) {
   const { provider, modelo, trocarProvider, setModelo, pronto, nenhumConfigurado } = useProviderModel(providers)
@@ -29,6 +30,8 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
   const [perguntasVerificacao, setPerguntasVerificacao] = useState<string[]>([])
   const [respostasVerificacao, setRespostasVerificacao] = useState<Record<number, string>>({})
   const [carregandoVerificacaoIdx, setCarregandoVerificacaoIdx] = useState<number | null>(null)
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [anexoReset, setAnexoReset] = useState(0)
 
   async function enviar() {
     if (!pergunta.trim()) return
@@ -154,10 +157,19 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
         placeholder="Ex: Como funciona few-shot prompting? Me mostra um exemplo em Python."
         className="glass min-h-[120px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
       />
+      <AnexoImagem
+        texto={pergunta}
+        setTexto={setPergunta}
+        desabilitado={loading}
+        onProcessando={setOcrLoading}
+        aplicarFormatoAlternativas={false}
+        resetToken={anexoReset}
+        dica="Envie um print do enunciado — o texto entra na caixa acima, aqui no navegador"
+      />
       <div className="mt-3 flex gap-2">
         <button
           onClick={enviar}
-          disabled={loading || !pronto}
+          disabled={loading || ocrLoading || !pronto}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {loading ? 'Pensando…' : 'Perguntar'}
@@ -167,6 +179,7 @@ export default function PerguntarTab({ providers }: { providers: ProvidersResp }
             setPergunta('')
             setResultado(null)
             setErro('')
+            setAnexoReset((t) => t + 1)
           }}
           className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
         >

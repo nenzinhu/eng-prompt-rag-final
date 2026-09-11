@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp, TermoGlossario } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
+import AnexoImagem from '../AnexoImagem'
 
 export default function GlossarioTab({
   providers,
@@ -23,6 +24,8 @@ export default function GlossarioTab({
   const [busca, setBusca] = useState('')
   const [buscando, setBuscando] = useState(false)
   const [termosSalvos, setTermosSalvos] = useState<TermoGlossario[]>([])
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [anexoReset, setAnexoReset] = useState(0)
 
   async function buscarSalvos(q: string) {
     setBuscando(true)
@@ -128,10 +131,19 @@ export default function GlossarioTab({
         }
         className="glass min-h-[90px] w-full rounded-xl p-3.5 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
       />
+      <AnexoImagem
+        texto={tema}
+        setTexto={setTema}
+        desabilitado={loading}
+        onProcessando={setOcrLoading}
+        aplicarFormatoAlternativas={false}
+        resetToken={anexoReset}
+        dica="Envie um print da questão — os termos técnicos dela entram no sumário"
+      />
       <div className="mt-3 flex gap-2">
         <button
           onClick={() => gerar()}
-          disabled={loading || !pronto}
+          disabled={loading || ocrLoading || !pronto}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {loading ? 'Gerando…' : 'Gerar sumário'}
@@ -142,6 +154,7 @@ export default function GlossarioTab({
               setTermos(null)
               setTema('')
               setErro('')
+              setAnexoReset((t) => t + 1)
             }}
             className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
           >
