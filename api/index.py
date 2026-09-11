@@ -890,6 +890,32 @@ SYSTEM_PROMPT_COMPARAR = (
     "RESPOSTA DIRETA: <a resposta essencial em no máximo 20 palavras, sem markdown>"
 )
 
+SYSTEM_PROMPT_RESUMO_MAP = (
+    "Você está lendo um trecho de uma apostila. Extraia, em bullets curtos e objetivos, os "
+    "conceitos, definições e pontos importantes deste trecho — só o que está realmente aqui, sem "
+    "completar com conhecimento externo. Ignore ruído (cabeçalhos, numeração de página, texto "
+    "cortado sem sentido). Se o trecho não tiver conteúdo relevante, responda apenas: (sem conteúdo "
+    "relevante)."
+)
+
+SYSTEM_PROMPT_RESUMO_REDUCE = (
+    "Você é o PROFESSOR SABE TUDO. Você recebeu, abaixo, os pontos-chave extraídos de todos os "
+    "trechos de uma apostila (nem sempre na ordem original, e às vezes repetidos). Sua tarefa é "
+    "escrever um RESUMO AUTOEXPLICATIVO do assunto da apostila, como se explicasse para alguém que "
+    "nunca viu o tema.\n\n"
+    "Regras:\n"
+    "- Organize por seções com títulos em markdown (##), na ordem que fizer mais sentido didático "
+    "— não precisa seguir a ordem dos pontos recebidos.\n"
+    "- Para cada conceito importante, explique de forma natural e fluida (não apenas bullets soltos), "
+    "com uma analogia do dia a dia quando ajudar a fixar a ideia.\n"
+    "- Junte pontos repetidos ou muito parecidos numa única explicação.\n"
+    "- O tamanho do resumo deve refletir a quantidade real de conceitos relevantes: um assunto raso "
+    "pode caber em meia página, um assunto denso pode precisar de várias seções — não estenda "
+    "artificialmente nem corte conteúdo relevante para caber num tamanho fixo.\n"
+    "- Comece com um parágrafo curto de introdução ao tema geral da apostila.\n"
+    "- Não invente conteúdo que não apareça nos pontos-chave fornecidos."
+)
+
 
 # ── Rotas ────────────────────────────────────────────────────────────────────
 
@@ -1050,6 +1076,76 @@ async def perguntar(req: PerguntaReq, request: Request):
         "confianca_media": round(media, 3),
         "provider": req.provider,
         "modelo": modelo,
+    }
+
+
+MAX_CHUNKS_RESUMO = 40  # cap de chamadas na fase map — acima disso, amostra uniformemente
+
+
+@app.post("/api/resumir-apostila")
+async def resumir_apostila(
+    request: Request,
+    file: UploadFile = File(...),
+    provider: str = Form("nous"),
+    modelo: Optional[str] = Form(None),
+):
+    """Resumo autoexplicativo de um PDF/.docx/.pptx avulso, via map-reduce.
+
+    Não escreve nada no Supabase — o arquivo é processado só em memória, para
+    esta requisição. Fase map: extrai pontos-chave de cada chunk em paralelo.
+    Fase reduce: uma última chamada compõe o resumo didático final a partir
+    desses pontos-chave.
+    """
+    _limitar_llm(request)
+    nome = Path(file.filename or "").name
+    if not nome.lower().endswith(EXTENSOES_DOCUMENTO):
+        raise HTTPException(400, f"Formato não suportado (aceito: {', '.join(EXTENSOES_DOCUMENTO)}).")
+    dados = await file.read()
+    if not dados:
+        raise HTTPException(400, "Arquivo vazio.")
+    if len(dados) > limite_upload_bytes():
+        raise HTTPException(400, f"Arquivo maior que {limite_upload_mb()} MB.")
+
+    paginas = extrair_paginas(dados, nome)
+    texto_completo = "\n\n".join(texto for _, texto in paginas if texto.strip())
+    chunks = chunk_texto(texto_completo)
+    if not chunks:
+        raise HTTPException(400, "Não foi possível extrair texto deste arquivo (PDF escaneado sem OCR?).")
+
+    total_chunks = len(chunks)
+    amostrado = total_chunks > MAX_CHUNKS_RESUMO
+    if amostrado:
+        passo = total_chunks / MAX_CHUNKS_RESUMO
+        chunks = [chunks[int(i * passo)] for i in range(MAX_CHUNKS_RESUMO)]
+
+    modelo = resolver_modelo(provider, modelo)
+
+    async def extrair_pontos(chunk: str) -> Optional[str]:
+        try:
+            return await chamar_llm(provider, modelo, SYSTEM_PROMPT_RESUMO_MAP, chunk)
+        except HTTPException:
+            return None  # um chunk falho não derruba o resumo inteiro
+
+    resultados = await asyncio.gather(*(extrair_pontos(c) for c in chunks))
+    pontos_chave = [r for r in resultados if r and "sem conteúdo relevante" not in r.lower()]
+    if not pontos_chave:
+        raise HTTPException(502, "Não foi possível extrair conteúdo relevante do arquivo.")
+
+    resumo = await chamar_llm(
+        provider,
+        modelo,
+        SYSTEM_PROMPT_RESUMO_REDUCE,
+        "\n\n".join(f"- {p}" for p in pontos_chave),
+    )
+
+    return {
+        "resumo": limpar_resposta(resumo),
+        "provider": provider,
+        "modelo": modelo,
+        "arquivo": nome,
+        "chunks_usados": len(chunks),
+        "chunks_total": total_chunks,
+        "amostrado": amostrado,
     }
 
 

@@ -17,6 +17,7 @@ import type {
   GlossarioResp,
   TermoGlossario,
   AuditarResp,
+  ResumoApostilaResp,
 } from './types'
 
 /** Erro de API que preserva o corpo devolvido pelo backend. */
@@ -102,6 +103,13 @@ export const api = {
   comparar: (pergunta: string, modelos: CompararAlvo[]) =>
     postJson<CompararResp>('/api/comparar', { pergunta, modelos }),
   pdfs: () => pedir<PdfsResp>('/api/pdfs'),
+  resumirApostila: (file: File, provider: string, modelo: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('provider', provider)
+    form.append('modelo', modelo)
+    return pedir<ResumoApostilaResp>('/api/resumir-apostila', { method: 'POST', body: form })
+  },
 
   // ── Rotas de escrita (exigem o token de admin) ───────────────────────────
   adminLogin: (usuario: string, senha: string) =>

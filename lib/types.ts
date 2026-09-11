@@ -51,6 +51,16 @@ export interface PerguntarResp {
   modelo: string
 }
 
+export interface ResumoApostilaResp {
+  resumo: string
+  provider: string
+  modelo: string
+  arquivo: string
+  chunks_usados: number
+  chunks_total: number
+  amostrado: boolean
+}
+
 export type NivelFidelidade = 'apoiada' | 'parcial' | 'nao_apoiada'
 
 export interface FraseAuditada {
