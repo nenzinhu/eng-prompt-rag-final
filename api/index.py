@@ -37,7 +37,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from docx import Document as DocxDocument
 from pptx import Presentation
 from pydantic import BaseModel
@@ -890,6 +890,66 @@ SYSTEM_PROMPT_COMPARAR = (
     "RESPOSTA DIRETA: <a resposta essencial em no máximo 20 palavras, sem markdown>"
 )
 
+SYSTEM_PROMPT_ACADEMICO = (
+    "Você é O ACADÊMICO DETALHISTA, o Manual Ambulante do curso de Engenharia de Prompt. Você domina "
+    "datas, teorias, citações e conceitos com precisão cirúrgica, e trata o conhecimento como algo "
+    "técnico e estruturado. Corrija imediatamente qualquer imprecisão de termo ou data que aparecer "
+    "na pergunta, cite fontes e página do CONTEXTO sempre que possível, e prefira o rigor formal a "
+    "simplificações — mas continue sendo compreensível, nunca ao ponto de obscurecer o conteúdo. Use "
+    "principalmente o CONTEXTO fornecido; complemente com conhecimento geral, sempre com precisão, "
+    "quando faltar."
+)
+
+SYSTEM_PROMPT_IRONISTA = (
+    "Você é O INTELECTUAL DEBOCHADO do curso de Engenharia de Prompt — o Ironista. Você sabe que "
+    "domina o assunto e usa sarcasmo e ironia refinada (nunca ofensiva ou grosseira) como estilo. "
+    "Comece respostas a perguntas óbvias com uma tirada inteligente ou um comentário irônico curto "
+    "antes de explicar de verdade — mas SEMPRE entregue a explicação completa e correta logo em "
+    "seguida, usando o CONTEXTO fornecido. Desafie o aluno a pensar mais fundo. O objetivo é manter "
+    "a atenção pelo humor ácido, nunca deixar de ensinar."
+)
+
+SYSTEM_PROMPT_SHOWMAN = (
+    "Você é O ORADOR MAGNÉTICO do curso de Engenharia de Prompt — o Showman. Você transforma "
+    "qualquer explicação numa mini-palestra envolvente: comece com uma historinha curta, uma "
+    "analogia vívida ou um exemplo impressionante antes de ir ao ponto técnico, como se estivesse no "
+    "palco. Use linguagem viva e cadenciada. Mesmo com o espetáculo, use o CONTEXTO fornecido para "
+    "garantir que o conteúdo técnico esteja correto e completo — a apresentação nunca pode substituir "
+    "a precisão."
+)
+
+SYSTEM_PROMPT_DOGMATICO = (
+    "Você é O MESTRE INCONTESTÁVEL do curso de Engenharia de Prompt — o Dogmático. Você enxerga sua "
+    "visão do conteúdo como a referência definitiva. Responda de forma firme e direta, sem "
+    "hesitações nem múltiplas interpretações possíveis — apresente UMA explicação clara e assertiva, "
+    "como quem fala com autoridade e vasta experiência na área. Baseie-se no CONTEXTO fornecido "
+    "como se fosse a doutrina estabelecida do curso; não ofereça ressalvas desnecessárias."
+)
+
+SYSTEM_PROMPT_ENCICLOPEDICO = (
+    "Você é O ENCICLOPÉDICO GENERALISTA do curso de Engenharia de Prompt — o Sabichão Entusiasta. "
+    "Você não domina só a matéria técnica: conecta o tema com geopolítica, cultura pop, cinema, "
+    "filosofia e atualidades sempre que fizer sentido, para estimular repertório e interdisciplinaridade. "
+    "Responda a pergunta com base no CONTEXTO fornecido, mas enriqueça com pelo menos uma conexão "
+    "curiosa com outra área do conhecimento antes de fechar a resposta — sem nunca deixar de "
+    "responder tecnicamente ao que foi perguntado."
+)
+
+SYSTEM_PROMPT_APOSTILA = (
+    "Você é um autor de material didático do curso de Engenharia de Prompt. Escreva uma APOSTILA "
+    "completa e autoexplicativa sobre o TEMA informado, cobrindo a necessidade real de quem vai "
+    "estudar esse assunto do zero.\n\n"
+    "Regras:\n"
+    "- Formate em markdown: use `# ` para o título geral, `## ` para seções e `- ` para listas.\n"
+    "- Estruture com introdução ao tema, desenvolvimento por seções (conceitos, exemplos práticos, "
+    "cuidados/erros comuns) e uma conclusão ou resumo final.\n"
+    "- Use o CONTEXTO do curso fornecido como base principal quando existir; complemente com "
+    "conhecimento geral para cobrir lacunas e dar exemplos práticos.\n"
+    "- Linguagem didática, explicando termos técnicos na primeira aparição.\n"
+    "- O tamanho deve refletir a complexidade real do tema — não estenda artificialmente nem corte "
+    "conteúdo relevante para caber num tamanho fixo."
+)
+
 SYSTEM_PROMPT_RESUMO_MAP = (
     "Você está lendo um trecho de uma apostila. Extraia, em bullets curtos e objetivos, os "
     "conceitos, definições e pontos importantes deste trecho — só o que está realmente aqui, sem "
@@ -1042,11 +1102,24 @@ async def buscar(req: BuscarReq, request: Request):
     }
 
 
+# Personas do "Professor Sabe Tudo" — "professor" é a padrão original; as demais
+# são as 5 personalidades extras selecionáveis na aba (aba Perguntar usa "padrao").
+PERSONA_PROMPTS: dict[str, str] = {
+    "padrao": SYSTEM_PROMPT_PERGUNTA,
+    "professor": SYSTEM_PROMPT_PROFESSOR,
+    "academico": SYSTEM_PROMPT_ACADEMICO,
+    "ironista": SYSTEM_PROMPT_IRONISTA,
+    "showman": SYSTEM_PROMPT_SHOWMAN,
+    "dogmatico": SYSTEM_PROMPT_DOGMATICO,
+    "enciclopedico": SYSTEM_PROMPT_ENCICLOPEDICO,
+}
+
+
 class PerguntaReq(BaseModel):
     pergunta: str
     provider: str = "nous"
     modelo: Optional[str] = None
-    persona: str = "padrao"  # "padrao" ou "professor" (tom mais didático, aba Professor Sabe Tudo)
+    persona: str = "padrao"  # ver PERSONA_PROMPTS
 
 
 @app.post("/api/perguntar")
@@ -1061,7 +1134,7 @@ async def perguntar(req: PerguntaReq, request: Request):
 
     contexto, media = montar_contexto(chunks)
     modelo = resolver_modelo(req.provider, req.modelo)
-    system_prompt = SYSTEM_PROMPT_PROFESSOR if req.persona == "professor" else SYSTEM_PROMPT_PERGUNTA
+    system_prompt = PERSONA_PROMPTS.get(req.persona, SYSTEM_PROMPT_PERGUNTA)
     resposta = await chamar_llm(
         req.provider, modelo, system_prompt, f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
     )
@@ -1077,6 +1150,122 @@ async def perguntar(req: PerguntaReq, request: Request):
         "provider": req.provider,
         "modelo": modelo,
     }
+
+
+def _slug_arquivo(texto: str) -> str:
+    normalizado = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    normalizado = re.sub(r"[^a-zA-Z0-9]+", "-", normalizado).strip("-").lower()
+    return normalizado[:60] or "apostila"
+
+
+def _markdown_para_docx(texto: str, titulo: str) -> bytes:
+    doc = DocxDocument()
+    doc.add_heading(titulo, level=0)
+    for linha in texto.splitlines():
+        linha = linha.strip()
+        if not linha:
+            continue
+        if linha.startswith("### "):
+            doc.add_heading(linha[4:].strip(), level=3)
+        elif linha.startswith("## "):
+            doc.add_heading(linha[3:].strip(), level=2)
+        elif linha.startswith("# "):
+            doc.add_heading(linha[2:].strip(), level=1)
+        elif linha.startswith(("- ", "* ")):
+            doc.add_paragraph(linha[2:].strip(), style="List Bullet")
+        else:
+            doc.add_paragraph(linha)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _markdown_para_pdf(texto: str, titulo: str) -> bytes:
+    from fpdf import FPDF  # import local: só carregado quando o formato pedido é pdf
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    def linha_pdf(tamanho: float, altura: float, conteudo: str, negrito: bool = False):
+        # new_x="LMARGIN" é necessário: o padrão do fpdf2 deixa o cursor na borda
+        # direita após multi_cell, e a chamada seguinte com largura 0 quebra
+        # ("Not enough horizontal space") por não sobrar espaço até a margem.
+        pdf.set_font("Helvetica", "B" if negrito else "", tamanho)
+        pdf.multi_cell(0, altura, conteudo, new_x="LMARGIN", new_y="NEXT")
+
+    linha_pdf(16, 10, titulo, negrito=True)
+    pdf.ln(2)
+    for linha in texto.splitlines():
+        linha = linha.strip()
+        if not linha:
+            pdf.ln(2)
+            continue
+        if linha.startswith("### "):
+            linha_pdf(12, 8, linha[4:].strip(), negrito=True)
+        elif linha.startswith("## "):
+            linha_pdf(13, 8, linha[3:].strip(), negrito=True)
+        elif linha.startswith("# "):
+            linha_pdf(15, 9, linha[2:].strip(), negrito=True)
+        elif linha.startswith(("- ", "* ")):
+            linha_pdf(11, 7, f"-  {linha[2:].strip()}")
+        else:
+            linha_pdf(11, 7, linha)
+    return bytes(pdf.output())
+
+
+class ApostilaReq(BaseModel):
+    tema: str
+    formato: str = "pdf"  # "pdf" ou "docx"
+    provider: str = "nous"
+    modelo: Optional[str] = None
+
+
+@app.post("/api/gerar-apostila")
+async def gerar_apostila(req: ApostilaReq, request: Request):
+    """Gera uma apostila (PDF ou DOCX) sobre o tema pedido.
+
+    Busca contexto no RAG quando a base tiver algo sobre o tema; segue só com
+    conhecimento geral quando a base estiver vazia ou indisponível — nunca
+    bloqueia a geração por falta de material indexado.
+    """
+    _limitar_llm(request)
+    tema = req.tema.strip()
+    if not tema:
+        raise HTTPException(400, "Tema vazio.")
+    if req.formato not in ("pdf", "docx"):
+        raise HTTPException(400, "Formato inválido (use 'pdf' ou 'docx').")
+
+    contexto = ""
+    try:
+        emb = (await gerar_embeddings([tema]))[0]
+        chunks = await buscar_chunks(emb, n=8)
+        if chunks:
+            contexto, _ = montar_contexto(chunks)
+    except HTTPException:
+        pass  # base indisponível/vazia — segue só com conhecimento geral
+
+    modelo = resolver_modelo(req.provider, req.modelo)
+    prompt_usuario = f"TEMA: {tema}\n\n"
+    if contexto:
+        prompt_usuario += f"CONTEXTO DO CURSO:\n{contexto}\n\n"
+    prompt_usuario += "Escreva a apostila completa sobre este tema."
+
+    texto = limpar_resposta(await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_APOSTILA, prompt_usuario))
+    nome_arquivo = _slug_arquivo(tema)
+
+    if req.formato == "docx":
+        conteudo = _markdown_para_docx(texto, tema)
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    else:
+        conteudo = _markdown_para_pdf(texto, tema)
+        media_type = "application/pdf"
+
+    return Response(
+        content=conteudo,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{nome_arquivo}.{req.formato}"'},
+    )
 
 
 MAX_CHUNKS_RESUMO = 40  # cap de chamadas na fase map — acima disso, amostra uniformemente

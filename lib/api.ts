@@ -80,13 +80,46 @@ function postJson<T>(url: string, body: unknown, token?: string): Promise<T> {
   })
 }
 
+/** Extrai o nome do arquivo do header Content-Disposition, com um padrão de fallback. */
+function nomeDoContentDisposition(header: string | null, padrao: string): string {
+  const m = header?.match(/filename="?([^"]+)"?/)
+  return m ? m[1] : padrao
+}
+
+/** Baixa um arquivo binário (POST com corpo JSON, resposta é o arquivo, não JSON). */
+async function baixarArquivo(url: string, body: unknown, nomePadrao: string): Promise<void> {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) {
+    const texto = await r.text()
+    let data: unknown = null
+    try {
+      data = texto ? JSON.parse(texto) : null
+    } catch {
+      data = null
+    }
+    throw new ApiError(mensagemDe(data, r.status, texto), r.status, (data as { detail?: unknown })?.detail)
+  }
+  const blob = await r.blob()
+  const nome = nomeDoContentDisposition(r.headers.get('Content-Disposition'), nomePadrao)
+  const objUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objUrl
+  a.download = nome
+  a.click()
+  URL.revokeObjectURL(objUrl)
+}
+
 export const api = {
   // ── Leitura pública ──────────────────────────────────────────────────────
   status: () => pedir<StatusResp>('/api/status'),
   config: () => pedir<ConfigResp>('/api/config'),
   providers: () => pedir<ProvidersResp>('/api/providers'),
   buscar: (query: string, n = 6) => postJson<BuscarResp>('/api/buscar', { query, n }),
-  perguntar: (pergunta: string, provider: string, modelo: string, persona: 'padrao' | 'professor' = 'padrao') =>
+  perguntar: (pergunta: string, provider: string, modelo: string, persona: string = 'padrao') =>
     postJson<PerguntarResp>('/api/perguntar', { pergunta, provider, modelo, persona }),
   simplificar: (pergunta: string, resposta: string, contexto: Evidencia[], provider: string, modelo: string) =>
     postJson<SimplificarResp>('/api/simplificar', { pergunta, resposta, contexto, provider, modelo }),
@@ -110,6 +143,12 @@ export const api = {
     form.append('modelo', modelo)
     return pedir<ResumoApostilaResp>('/api/resumir-apostila', { method: 'POST', body: form })
   },
+  gerarApostila: (tema: string, formato: 'pdf' | 'docx', provider: string, modelo: string) =>
+    baixarArquivo(
+      '/api/gerar-apostila',
+      { tema, formato, provider, modelo },
+      `apostila.${formato}`
+    ),
 
   // ── Rotas de escrita (exigem o token de admin) ───────────────────────────
   adminLogin: (usuario: string, senha: string) =>

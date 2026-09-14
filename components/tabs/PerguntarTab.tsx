@@ -19,7 +19,7 @@ export default function PerguntarTab({
   placeholder = 'Ex: Como funciona few-shot prompting? Me mostra um exemplo em Python.',
 }: {
   providers: ProvidersResp
-  persona?: 'padrao' | 'professor'
+  persona?: string
   titulo?: string
   placeholder?: string
 }) {
