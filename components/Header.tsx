@@ -2,7 +2,9 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
+import { TriangleAlert } from 'lucide-react'
 import { api } from '@/lib/api'
+import { prefersReducedMotion } from '@/lib/reducedMotion'
 
 export default function Header() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'offline'>('loading')
@@ -53,7 +55,7 @@ export default function Header() {
       })
     let seguranca: ReturnType<typeof setTimeout> | undefined
     const ctx = gsap.context(() => {
-      if (document.hidden) {
+      if (document.hidden || prefersReducedMotion()) {
         mostrarDireto()
         return
       }
@@ -83,7 +85,7 @@ export default function Header() {
       firstStatus.current = false
       return
     }
-    if (!badgeRef.current) return
+    if (!badgeRef.current || prefersReducedMotion()) return
     gsap.fromTo(
       badgeRef.current,
       { scale: 0.9 },
@@ -141,10 +143,11 @@ export default function Header() {
       <div className="flex items-center gap-2">
         {inseguro && (
           <div
-            className="hidden items-center gap-2 rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 font-mono text-[0.68rem] font-medium text-amber-300 sm:flex"
+            className="hidden items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 font-mono text-[0.68rem] font-medium text-amber-300 sm:flex"
             title="O backend ainda escreve no banco com a chave pública. Defina SUPABASE_SERVICE_ROLE_KEY e ligue o RLS."
           >
-            ⚠ escrita insegura
+            <TriangleAlert className="h-3 w-3" aria-hidden="true" />
+            escrita insegura
           </div>
         )}
         <div

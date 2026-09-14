@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { LockOpen, Lock, TriangleAlert } from 'lucide-react'
 
 /**
  * Portão da área restrita: pede usuário e senha, autentica no servidor e
@@ -27,7 +28,10 @@ export default function AdminToken({
   if (valido) {
     return (
       <div className="mb-4 flex items-center justify-between rounded-xl border border-cyan/20 bg-cyan/[0.05] px-4 py-2.5">
-        <span className="font-mono text-[0.72rem] text-cyan">🔓 Área restrita ativa</span>
+        <span className="flex items-center gap-1.5 font-mono text-[0.72rem] text-cyan">
+          <LockOpen className="h-3.5 w-3.5" aria-hidden="true" />
+          Área restrita ativa
+        </span>
         <button
           onClick={onSair}
           className="font-mono text-[0.68rem] text-muted underline-offset-2 hover:text-text hover:underline"
@@ -46,8 +50,9 @@ export default function AdminToken({
       }}
       className="glass mb-4 rounded-xl p-4"
     >
-      <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-amber-300">
-        🔒 Área restrita — envio e indexação de materiais
+      <div className="mb-2 flex items-center gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider text-amber-300">
+        <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+        Área restrita — envio e indexação de materiais
       </div>
       <p className="mb-3 text-[0.8rem] leading-relaxed text-muted">
         Estas rotas alteram o acervo do curso. Entre com as credenciais de administrador.
@@ -79,7 +84,12 @@ export default function AdminToken({
           </button>
         </div>
       </div>
-      {erro && <div className="mt-2 text-[0.78rem] text-rose-300">⚠️ {erro}</div>}
+      {erro && (
+        <div className="mt-2 flex items-center gap-1.5 text-[0.78rem] text-rose-300">
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          {erro}
+        </div>
+      )}
     </form>
   )
 }

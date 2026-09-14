@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
+import { ImageOff, X, CircleCheck, TriangleAlert, Paperclip } from 'lucide-react'
 import { encerrarWorker, reconhecerImagem } from '@/lib/ocr'
 import { formatarAlternativas, limparTextoOcr } from '@/lib/texto'
 
@@ -237,10 +238,11 @@ export default function AnexoImagem({
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={desabilitado}
-          className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-[0.82rem] font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-[0.82rem] font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
           aria-label="Anexar imagens para extrair o texto"
         >
-          📎 Anexar imagem
+          <Paperclip className="h-4 w-4" aria-hidden="true" />
+          Anexar imagem
         </button>
 
         {anexos.length > 0 && (
@@ -288,18 +290,18 @@ export default function AnexoImagem({
                     className="h-[92px] w-full rounded-lg border border-white/10 object-cover"
                   />
                 ) : (
-                  <div className="flex h-[92px] w-full items-center justify-center rounded-lg border border-dashed border-white/10 text-lg opacity-40">
-                    🚫
+                  <div className="flex h-[92px] w-full items-center justify-center rounded-lg border border-dashed border-white/10 opacity-40">
+                    <ImageOff className="h-5 w-5" aria-hidden="true" />
                   </div>
                 )}
                 <button
                   type="button"
                   onClick={() => remover(a.id)}
-                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-md border border-white/10 bg-[#0b0a12]/85 text-[0.7rem] text-muted transition-colors hover:text-rose-300"
+                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-md border border-white/10 bg-[#0b0a12]/85 text-muted transition-colors hover:text-rose-300"
                   aria-label={`Remover ${a.nome}`}
                   title="Remover esta imagem"
                 >
-                  ✕
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </div>
 
@@ -322,8 +324,9 @@ export default function AnexoImagem({
               )}
 
               {a.status === 'pronto' && (
-                <div className="mt-1.5 font-mono text-[0.62rem] text-emerald-300">
-                  ✓ texto no campo
+                <div className="mt-1.5 flex items-center gap-1 font-mono text-[0.62rem] text-emerald-300">
+                  <CircleCheck className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  texto no campo
                 </div>
               )}
 
@@ -346,7 +349,10 @@ export default function AnexoImagem({
 
               {a.status === 'erro' && (
                 <div className="mt-1.5">
-                  <div className="text-[0.68rem] leading-snug text-rose-300">⚠️ {a.erro}</div>
+                  <div className="flex items-start gap-1 text-[0.68rem] leading-snug text-rose-300">
+                    <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                    {a.erro}
+                  </div>
                   {a.arquivo ? (
                     <button
                       type="button"

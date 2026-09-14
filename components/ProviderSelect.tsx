@@ -1,5 +1,6 @@
 'use client'
 
+import { TriangleAlert } from 'lucide-react'
 import type { ProvidersResp } from '@/lib/types'
 
 export default function ProviderSelect({
@@ -51,10 +52,13 @@ export default function ProviderSelect({
         ))}
       </select>
       {nenhumConfigurado && (
-        <div className="w-full text-[0.75rem] leading-relaxed text-amber-300">
-          ⚠️ Nenhum provedor com chave configurada no servidor. Defina{' '}
-          <code className="font-mono">NOUS_API_KEY</code> (ou GROQ/OPENROUTER/NVIDIA) no ambiente
-          para habilitar as respostas.
+        <div className="flex w-full items-start gap-1.5 text-[0.75rem] leading-relaxed text-amber-300">
+          <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            Nenhum provedor com chave configurada no servidor. Defina{' '}
+            <code className="font-mono">NOUS_API_KEY</code> (ou GROQ/OPENROUTER/NVIDIA) no ambiente
+            para habilitar as respostas.
+          </span>
         </div>
       )}
     </div>

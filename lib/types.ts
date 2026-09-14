@@ -200,6 +200,25 @@ export interface FatoExclusivo {
 
 export type NivelConcordancia = 'alta' | 'media' | 'baixa' | 'indefinida'
 
+// ── Perfis comportamentais ───────────────────────────────────────────────────
+
+export interface PerfilComportamental {
+  temperament_id: string
+  display_name: string
+  description: string
+}
+
+export interface PerfisComportamentaisResp {
+  perfis: PerfilComportamental[]
+}
+
+export interface PerfilComportamentalResp {
+  resposta: string
+  temperament_id: string
+  provider: string
+  modelo: string
+}
+
 export interface CompararResp {
   pergunta: string
   respostas: CompararResposta[]

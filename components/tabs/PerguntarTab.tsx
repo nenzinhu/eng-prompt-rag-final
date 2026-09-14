@@ -2,7 +2,9 @@
 
 import { useLayoutEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
+import { Wand2, GraduationCap, ShieldCheck, Download, TriangleAlert, MessageCircle } from 'lucide-react'
 import { api } from '@/lib/api'
+import { prefersReducedMotion } from '@/lib/reducedMotion'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { AuditarResp, ProvidersResp, PerguntarResp } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
@@ -49,7 +51,7 @@ export default function PerguntarTab({
 
   // Entrada suave do card de resposta sempre que um novo resultado chega.
   useLayoutEffect(() => {
-    if (!resultado || !resultCardRef.current) return
+    if (!resultado || !resultCardRef.current || prefersReducedMotion()) return
     gsap.fromTo(
       resultCardRef.current,
       { autoAlpha: 0, y: 16 },
@@ -129,7 +131,7 @@ export default function PerguntarTab({
     } catch (e) {
       setRespostasVerificacao((r) => ({
         ...r,
-        [idx]: e instanceof Error ? `⚠️ ${e.message}` : '⚠️ Erro ao gerar resposta',
+        [idx]: e instanceof Error ? e.message : 'Erro ao gerar resposta',
       }))
     } finally {
       setCarregandoVerificacaoIdx(null)
@@ -222,8 +224,9 @@ export default function PerguntarTab({
           </div>
         )}
         {!loading && erro && (
-          <div className="rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
-            ⚠️ {erro}
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
+            <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {erro}
           </div>
         )}
         {!loading && !erro && resultado && (
@@ -237,49 +240,58 @@ export default function PerguntarTab({
                 <Markdown>{resultado.resposta}</Markdown>
               </div>
 
-              <div className="mb-4 flex flex-wrap gap-2">
+              <div className="mb-4 flex flex-wrap items-center gap-2">
                 <button
                   onClick={explicarMaisSimples}
                   disabled={simplificando}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
                 >
-                  {simplificando ? 'Simplificando…' : '🧩 Explica de novo, mais simples'}
+                  <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  {simplificando ? 'Simplificando…' : 'Explicar mais simples'}
                 </button>
                 <button
                   onClick={testarEntendimento}
                   disabled={verificando}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+                  title="Testar meu entendimento"
+                  aria-label="Testar meu entendimento"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-muted transition-colors hover:bg-white/[0.06] hover:text-text disabled:opacity-40"
                 >
-                  {verificando ? 'Gerando perguntas…' : '🎓 Testar meu entendimento'}
+                  {verificando ? (
+                    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    <GraduationCap className="h-4 w-4" aria-hidden="true" />
+                  )}
                 </button>
                 <button
                   onClick={() => auditar(resultado.resposta)}
                   disabled={auditando}
-                  className={`rounded-lg border px-3.5 py-2 text-[0.78rem] font-medium transition-colors disabled:opacity-40 ${
-                    auditarAuto
-                      ? 'border-cyan/25 bg-cyan/10 text-cyan hover:bg-cyan/20'
-                      : 'border-white/10 bg-white/[0.03] text-text hover:bg-white/[0.06]'
-                  }`}
-                  title={auditarAuto ? 'Auditoria automática ligada' : 'Auditoria automática desligada — clique para auditar'}
+                  title={auditando ? 'Auditando…' : 'Auditar frases agora'}
+                  aria-label="Auditar frases agora"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-muted transition-colors hover:bg-white/[0.06] hover:text-text disabled:opacity-40"
                 >
-                  {auditando ? 'Verificando…' : '🔎 Auditar frases'}
-                </button>
-                <button
-                  onClick={() => setAuditarAuto((v) => !v)}
-                  className={`rounded-lg border px-3.5 py-2 text-[0.78rem] font-medium transition-colors ${
-                    auditarAuto
-                      ? 'border-white/10 bg-white/[0.03] text-muted hover:text-text'
-                      : 'border-cyan/25 bg-cyan/10 text-cyan hover:bg-cyan/20'
-                  }`}
-                >
-                  {auditarAuto ? 'AUTO: verificar a cada resposta' : 'Manual: verificar sob demanda'}
+                  {auditando ? (
+                    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                  )}
                 </button>
                 <button
                   onClick={exportarMarkdown}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06]"
+                  title="Exportar .md"
+                  aria-label="Exportar como Markdown"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-muted transition-colors hover:bg-white/[0.06] hover:text-text"
                 >
-                  ⬇️ Exportar .md
+                  <Download className="h-4 w-4" aria-hidden="true" />
                 </button>
+                <label className="ml-1 flex items-center gap-1.5 text-[0.72rem] text-muted">
+                  <input
+                    type="checkbox"
+                    checked={auditarAuto}
+                    onChange={(e) => setAuditarAuto(e.target.checked)}
+                    className="accent-cyan"
+                  />
+                  Auditar automaticamente
+                </label>
               </div>
 
               {auditando && auditoria === null && (
@@ -330,7 +342,7 @@ export default function PerguntarTab({
         )}
         {!loading && !erro && !resultado && (
           <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
-            <span className="text-2xl opacity-50">💬</span>
+            <MessageCircle className="h-6 w-6 opacity-50" aria-hidden="true" />
             <span className="text-[0.82rem]">A resposta da IA aparecerá aqui</span>
           </div>
         )}

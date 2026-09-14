@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { FileText, Upload, Search, X, TriangleAlert } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { lerTokenAdmin, salvarTokenAdmin, limparTokenAdmin } from '@/lib/admin'
 import type { PreviaIngestaoResp } from '@/lib/types'
@@ -284,7 +285,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
               dragOver ? 'border-violet bg-violet/[0.04]' : 'border-white/10'
             }`}
           >
-            <div className="mb-2.5 text-3xl">📄</div>
+            <FileText className="mx-auto mb-2.5 h-7 w-7 text-cyan" aria-hidden="true" />
             <p className="text-[0.85rem] text-muted">
               <strong className="font-medium text-text">Arraste arquivos ou clique para selecionar</strong>
               <br />
@@ -314,13 +315,14 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
             <div className="mb-4 flex flex-col gap-1.5">
               {pending.map((f, i) => (
                 <div key={f.name} className="glass flex items-center gap-2 rounded-lg px-3 py-2 text-[0.82rem]">
-                  <span>📕</span>
+                  <FileText className="h-4 w-4 shrink-0 text-cyan" aria-hidden="true" />
                   <span className="flex-1 truncate font-mono text-[0.78rem] text-text">{f.name}</span>
                   <button
                     onClick={() => setPending((prev) => prev.filter((_, idx) => idx !== i))}
+                    aria-label={`Remover ${f.name}`}
                     className="px-0.5 text-muted transition-colors hover:text-rose-400"
                   >
-                    ✕
+                    <X className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
               ))}
@@ -331,16 +333,18 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
             <button
               onClick={() => enviar()}
               disabled={!pending.length || uploading}
-              className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
             >
-              {uploading ? 'Enviando…' : '⬆ Enviar e Indexar'}
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              {uploading ? 'Enviando…' : 'Enviar e Indexar'}
             </button>
             <button
               onClick={() => verificar()}
               disabled={indexing}
-              className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
             >
-              {indexing ? 'Verificando…' : '🔎 Verificar antes de reindexar'}
+              <Search className="h-4 w-4" aria-hidden="true" />
+              {indexing ? 'Verificando…' : 'Verificar antes de reindexar'}
             </button>
           </div>
 
@@ -362,8 +366,9 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
               )}
               <ul className="mb-3 flex flex-col gap-1">
                 {(bloqueioUpload.avisos ?? []).map((a, i) => (
-                  <li key={i} className="text-[0.78rem] leading-relaxed text-amber-300">
-                    ⚠ {a}
+                  <li key={i} className="flex items-start gap-1.5 text-[0.78rem] leading-relaxed text-amber-300">
+                    <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    {a}
                   </li>
                 ))}
               </ul>
@@ -409,10 +414,13 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
 
               {bloqueado ? (
                 <div className="mt-3">
-                  <p className="mb-2 text-[0.8rem] leading-relaxed text-amber-300">
-                    ⚠️ Esta operação apaga os chunks atuais desses documentos antes de recriá-los. Se a
-                    extração cobrir menos texto que o índice atual, conteúdo se perde — foi assim que 384
-                    chunks de um PDF ausente ficaram em risco.
+                  <p className="mb-2 flex items-start gap-1.5 text-[0.8rem] leading-relaxed text-amber-300">
+                    <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>
+                      Esta operação apaga os chunks atuais desses documentos antes de recriá-los. Se a
+                      extração cobrir menos texto que o índice atual, conteúdo se perde — foi assim que 384
+                      chunks de um PDF ausente ficaram em risco.
+                    </span>
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button

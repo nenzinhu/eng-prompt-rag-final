@@ -20,10 +20,21 @@ body {
 
 body {
   background-image:
-    radial-gradient(60% 50% at 15% 0%, rgba(155, 107, 255, 0.16), transparent 60%),
-    radial-gradient(50% 40% at 100% 10%, rgba(47, 224, 214, 0.12), transparent 60%);
+    radial-gradient(60% 50% at 15% 0%, rgba(155, 107, 255, 0.07), transparent 60%),
+    radial-gradient(50% 40% at 100% 10%, rgba(47, 224, 214, 0.05), transparent 60%);
   background-attachment: fixed;
   min-height: 100vh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 ::selection {

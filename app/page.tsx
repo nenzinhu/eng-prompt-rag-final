@@ -1,6 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import {
+  MessageCircle,
+  GraduationCap,
+  BookOpen,
+  Scale,
+  Search,
+  Target,
+  Library,
+  FileStack,
+  FileArchive,
+  Shield,
+} from 'lucide-react'
 import { api } from '@/lib/api'
 import type { ProvidersResp } from '@/lib/types'
 import Header from '@/components/Header'
@@ -15,17 +27,19 @@ import PdfsTab from '@/components/tabs/PdfsTab'
 import GlossarioTab from '@/components/tabs/GlossarioTab'
 import ComprimirTab from '@/components/tabs/ComprimirTab'
 import ApostilaTab from '@/components/tabs/ApostilaTab'
+import PerfisComportamentaisTab from '@/components/tabs/PerfisComportamentaisTab'
 
 const TABS: TabDef[] = [
-  { id: 'perguntar', label: 'Perguntar', labelShort: 'Perguntar', icon: '💬' },
-  { id: 'professor', label: 'Professor Sabe Tudo', labelShort: 'Professor', icon: '🧙' },
-  { id: 'apostila', label: 'Gerador de Apostilas', labelShort: 'Apostilas', icon: '📘' },
-  { id: 'comparar', label: 'Comparar Modelos', labelShort: 'Comparar', icon: '⚖️' },
-  { id: 'buscar', label: 'Buscar', labelShort: 'Busca', icon: '🔍' },
-  { id: 'resolver', label: 'Resolver Questão', labelShort: 'Resolver', icon: '🎯' },
-  { id: 'glossario', label: 'Glossário', labelShort: 'Glossário', icon: '📖' },
-  { id: 'comprimir', label: 'Comprimir Arquivos', labelShort: 'Comprimir', icon: '🗜️' },
-  { id: 'pdfs', label: 'PDFs', labelShort: 'PDFs', icon: '📚' },
+  { id: 'perguntar', label: 'Perguntar', labelShort: 'Perguntar', icon: MessageCircle },
+  { id: 'professor', label: 'Professor Sabe Tudo', labelShort: 'Professor', icon: GraduationCap },
+  { id: 'apostila', label: 'Gerador de Apostilas', labelShort: 'Apostilas', icon: BookOpen },
+  { id: 'comparar', label: 'Comparar Modelos', labelShort: 'Comparar', icon: Scale },
+  { id: 'buscar', label: 'Buscar', labelShort: 'Busca', icon: Search },
+  { id: 'resolver', label: 'Resolver Questão', labelShort: 'Resolver', icon: Target },
+  { id: 'glossario', label: 'Glossário', labelShort: 'Glossário', icon: Library },
+  { id: 'comprimir', label: 'Comprimir Arquivos', labelShort: 'Comprimir', icon: FileArchive },
+  { id: 'pdfs', label: 'PDFs', labelShort: 'PDFs', icon: FileStack },
+  { id: 'perfis-comportamentais', label: 'Perfis Comportamentais', labelShort: 'Perfis', icon: Shield },
 ]
 
 export default function Home() {
@@ -78,6 +92,9 @@ export default function Home() {
           </TabPanel>
           <TabPanel active={active === 'pdfs'}>
             <PdfsTab onStatusChange={() => setStatusTick((t) => t + 1)} />
+          </TabPanel>
+          <TabPanel active={active === 'perfis-comportamentais'}>
+            <PerfisComportamentaisTab providers={providers} />
           </TabPanel>
         </div>
       </main>

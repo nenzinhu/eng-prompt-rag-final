@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { FileText, FileType, TriangleAlert, CircleCheck, BookOpen } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp } from '@/lib/types'
@@ -54,23 +55,25 @@ export default function ApostilaTab({ providers }: { providers: ProvidersResp })
         <div className="flex gap-2">
           <button
             onClick={() => setFormato('pdf')}
-            className={`rounded-lg px-3.5 py-2 text-[0.82rem] font-medium transition-colors ${
+            className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[0.82rem] font-medium transition-colors ${
               formato === 'pdf'
                 ? 'bg-gradient-to-r from-violet to-cyan text-[#08070c]'
                 : 'border border-white/10 bg-white/[0.03] text-text hover:bg-white/[0.06]'
             }`}
           >
-            📄 PDF
+            <FileText className="h-4 w-4" aria-hidden="true" />
+            PDF
           </button>
           <button
             onClick={() => setFormato('docx')}
-            className={`rounded-lg px-3.5 py-2 text-[0.82rem] font-medium transition-colors ${
+            className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[0.82rem] font-medium transition-colors ${
               formato === 'docx'
                 ? 'bg-gradient-to-r from-violet to-cyan text-[#08070c]'
                 : 'border border-white/10 bg-white/[0.03] text-text hover:bg-white/[0.06]'
             }`}
           >
-            📝 Word (.docx)
+            <FileType className="h-4 w-4" aria-hidden="true" />
+            Word (.docx)
           </button>
         </div>
       </div>
@@ -93,18 +96,20 @@ export default function ApostilaTab({ providers }: { providers: ProvidersResp })
           </div>
         )}
         {!loading && erro && (
-          <div className="rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
-            ⚠️ {erro}
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
+            <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {erro}
           </div>
         )}
         {!loading && !erro && ok && (
-          <div className="rounded-xl border border-cyan/25 bg-cyan/10 p-6 text-center text-[0.85rem] text-cyan">
-            ✅ Apostila gerada — o download deve ter começado automaticamente.
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-cyan/25 bg-cyan/10 p-6 text-center text-[0.85rem] text-cyan">
+            <CircleCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
+            Apostila gerada — o download deve ter começado automaticamente.
           </div>
         )}
         {!loading && !erro && !ok && (
           <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
-            <span className="text-2xl opacity-50">📘</span>
+            <BookOpen className="h-6 w-6 opacity-50" aria-hidden="true" />
             <span className="text-[0.82rem]">A apostila gerada será baixada automaticamente</span>
           </div>
         )}

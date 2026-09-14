@@ -1,5 +1,6 @@
 'use client'
 
+import { Loader2, CircleCheck } from 'lucide-react'
 import type { FraseAuditada } from '@/lib/types'
 
 /** Estilo por nível de apoio da frase no material. */
@@ -40,8 +41,9 @@ export default function RespostaAuditada({
     // Sem auditoria (não pedida, ainda carregando ou resposta sem frases).
     if (auditando) {
       return (
-        <div className="mb-4 rounded-lg border border-dashed border-white/10 p-4 text-[0.8rem] text-muted">
-          ⏳ Verificando cada frase contra o material…
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-dashed border-white/10 p-4 text-[0.8rem] text-muted">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+          Verificando cada frase contra o material…
         </div>
       )
     }
@@ -54,7 +56,8 @@ export default function RespostaAuditada({
   if (naoApoiadas.length === 0) {
     return (
       <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-2.5 text-[0.8rem] text-emerald-300">
-        ✓ Todas as frases desta resposta têm apoio no material.
+        <CircleCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
+        Todas as frases desta resposta têm apoio no material.
       </div>
     )
   }

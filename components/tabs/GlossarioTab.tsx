@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Search, Sparkles, TriangleAlert, Library } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp, TermoGlossario } from '@/lib/types'
@@ -92,8 +93,9 @@ export default function GlossarioTab({
       </p>
 
       <div className="glass mb-6 rounded-xl p-4">
-        <div className="mb-2.5 font-mono text-[0.68rem] uppercase tracking-wider text-cyan">
-          🔎 Buscar termo já salvo
+        <div className="mb-2.5 flex items-center gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider text-cyan">
+          <Search className="h-3.5 w-3.5" aria-hidden="true" />
+          Buscar termo já salvo
         </div>
         <input
           value={busca}
@@ -131,8 +133,9 @@ export default function GlossarioTab({
         </div>
       </div>
 
-      <p className="mb-2.5 font-mono text-[0.68rem] uppercase tracking-wider text-violet">
-        ✨ Gerar novo sumário
+      <p className="mb-2.5 flex items-center gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider text-violet">
+        <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+        Gerar novo sumário
       </p>
       <ProviderSelect
         providers={providers}
@@ -184,8 +187,9 @@ export default function GlossarioTab({
 
       <div className="mt-6">
         {aviso && (
-          <div className="mb-4 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.8rem] text-amber-300">
-            ⚠️ {aviso}
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.8rem] text-amber-300">
+            <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {aviso}
           </div>
         )}
         {loading && (
@@ -195,8 +199,9 @@ export default function GlossarioTab({
           </div>
         )}
         {!loading && erro && (
-          <div className="rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
-            ⚠️ {erro}
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
+            <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {erro}
           </div>
         )}
         {!loading && !erro && termos && termos.length === 0 && (
@@ -221,7 +226,7 @@ export default function GlossarioTab({
         )}
         {!loading && !erro && !termos && (
           <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
-            <span className="text-2xl opacity-50">📖</span>
+            <Library className="h-6 w-6 opacity-50" aria-hidden="true" />
             <span className="text-[0.82rem]">O sumário de termos aparecerá aqui</span>
           </div>
         )}

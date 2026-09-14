@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Upload, TriangleAlert, FileText, Image as ImageIcon, CircleCheck, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { OpcoesImagem } from '@/lib/compress/imagem'
 import type { OpcoesCompressao } from '@/lib/compress/pdf'
@@ -235,7 +236,7 @@ export default function ComprimirTab() {
           dragOver ? 'border-violet bg-violet/[0.04]' : 'border-white/10'
         }`}
       >
-        <div className="mb-2 text-3xl text-cyan" aria-hidden="true">⬆</div>
+        <Upload className="mx-auto mb-2 h-7 w-7 text-cyan" aria-hidden="true" />
         <p className="text-[0.85rem] text-muted">
           <strong className="font-medium text-text">Selecione os arquivos</strong>
           <br />
@@ -256,8 +257,9 @@ export default function ComprimirTab() {
       </div>
 
       {avisoEntrada && (
-        <div role="alert" className="mb-4 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.78rem] text-amber-200">
-          ⚠️ {avisoEntrada}
+        <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.78rem] text-amber-200">
+          <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+          {avisoEntrada}
         </div>
       )}
 
@@ -368,16 +370,22 @@ export default function ComprimirTab() {
       )}
 
       {abaixoDoLimite > 0 && limiteMb !== null && (
-        <div role="status" className="mb-4 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-2.5 text-[0.78rem] text-emerald-300">
-          ✓ {abaixoDoLimite} {abaixoDoLimite === 1 ? 'PDF está pronto' : 'PDFs estão prontos'} para o envio
-          (limite de {limiteMb} MB). Baixe e envie pela aba PDFs.
+        <div role="status" className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-2.5 text-[0.78rem] text-emerald-300">
+          <CircleCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            {abaixoDoLimite} {abaixoDoLimite === 1 ? 'PDF está pronto' : 'PDFs estão prontos'} para o envio
+            (limite de {limiteMb} MB). Baixe e envie pela aba PDFs.
+          </span>
         </div>
       )}
 
       {acimaDoLimite > 0 && limiteMb !== null && (
-        <div role="alert" className="mb-4 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.78rem] text-amber-200">
-          ⚠️ {acimaDoLimite} {acimaDoLimite === 1 ? 'PDF ainda está' : 'PDFs ainda estão'} acima de {limiteMb} MB.
-          Tente qualidade menor e largura de 800 px. Se não for suficiente, indexe pelo app local.
+        <div role="alert" className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.78rem] text-amber-200">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            {acimaDoLimite} {acimaDoLimite === 1 ? 'PDF ainda está' : 'PDFs ainda estão'} acima de {limiteMb} MB.
+            Tente qualidade menor e largura de 800 px. Se não for suficiente, indexe pelo app local.
+          </span>
         </div>
       )}
 
@@ -386,7 +394,11 @@ export default function ComprimirTab() {
           {itens.map((item) => (
             <div key={item.id} className="glass rounded-xl p-3.5">
               <div className="flex flex-wrap items-center gap-2.5">
-                <span className="text-[0.95rem]" aria-hidden="true">{item.tipo === 'pdf' ? '📕' : '🖼️'}</span>
+                {item.tipo === 'pdf' ? (
+                  <FileText className="h-4 w-4 shrink-0 text-cyan" aria-hidden="true" />
+                ) : (
+                  <ImageIcon className="h-4 w-4 shrink-0 text-cyan" aria-hidden="true" />
+                )}
                 <span className="min-w-0 flex-1 truncate font-mono text-[0.78rem] text-text" title={item.nome}>
                   {item.nome}
                 </span>
@@ -416,7 +428,10 @@ export default function ComprimirTab() {
                   </>
                 )}
                 {item.status === 'erro' && (
-                  <span role="alert" className="text-[0.75rem] text-rose-300">⚠️ Não foi possível compactar: {item.erro}</span>
+                  <span role="alert" className="flex items-center gap-1 text-[0.75rem] text-rose-300">
+                    <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    Não foi possível compactar: {item.erro}
+                  </span>
                 )}
                 <button
                   onClick={() => {
@@ -424,11 +439,11 @@ export default function ComprimirTab() {
                     setItens((atual) => atual.filter((i) => i.id !== item.id))
                   }}
                   disabled={ocupado}
-                  className="min-h-11 min-w-11 rounded-lg px-2 text-muted transition-colors hover:bg-white/[0.05] hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg px-2 text-muted transition-colors hover:bg-white/[0.05] hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label={`Remover ${item.nome} da lista`}
                   title="Remover da lista"
                 >
-                  <span aria-hidden="true">✕</span>
+                  <X className="h-4 w-4" aria-hidden="true" />
                 </button>
               </div>
               {item.detalhe && (

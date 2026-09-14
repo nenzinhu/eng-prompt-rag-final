@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Scale, TriangleAlert, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { CompararAlvo, CompararResp, NivelConcordancia, ProvidersResp } from '@/lib/types'
 import Markdown from '../Markdown'
@@ -150,10 +151,11 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
             {slots.length > MIN_MODELOS && (
               <button
                 onClick={() => remover(slot.id)}
-                className="rounded-lg border border-white/10 px-2.5 py-2 text-[0.75rem] text-muted transition-colors hover:border-rose-400/30 hover:text-rose-300"
+                className="rounded-lg border border-white/10 px-2.5 py-2 text-muted transition-colors hover:border-rose-400/30 hover:text-rose-300"
                 title="Remover este modelo"
+                aria-label="Remover este modelo"
               >
-                ✕
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             )}
           </div>
@@ -212,8 +214,9 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
         )}
 
         {!loading && erro && (
-          <div className="rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
-            ⚠️ {erro}
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
+            <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {erro}
           </div>
         )}
 
@@ -288,8 +291,9 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
                   </div>
                   <div className="flex-1 p-3.5">
                     {r.erro ? (
-                      <div className="text-[0.8rem] leading-relaxed text-rose-300">
-                        ⚠️ {r.erro}
+                      <div className="flex items-start gap-1.5 text-[0.8rem] leading-relaxed text-rose-300">
+                        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        {r.erro}
                       </div>
                     ) : (
                       <>
@@ -321,7 +325,7 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
 
         {!loading && !erro && !resultado && (
           <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
-            <span className="text-2xl opacity-50">⚖️</span>
+            <Scale className="h-6 w-6 opacity-50" aria-hidden="true" />
             <span className="text-[0.82rem]">As respostas dos modelos aparecerão aqui lado a lado</span>
           </div>
         )}

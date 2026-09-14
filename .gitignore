@@ -35,3 +35,13 @@ Thumbs.db
 
 # Superdesign: artefatos locais de brainstorm/redesign, não fazem parte do app
 .superdesign/
+
+# Cópia duplicada antiga do projeto, deixada dentro da própria pasta — não faz
+# parte do app e não deve ser versionada.
+/eng-prompt-rag-final-main/
+
+# Skills do Claude Code (ferramentas do assistente, não código do app)
+.claude/skills/
+
+# Backups locais avulsos — não fazem parte do código-fonte
+*.zip

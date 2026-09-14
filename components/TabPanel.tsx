@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useRef } from 'react'
 import { gsap } from 'gsap'
+import { prefersReducedMotion } from '@/lib/reducedMotion'
 
 export default function TabPanel({
   active,
@@ -25,7 +26,7 @@ export default function TabPanel({
       // pula a animação; senão, roda normal mas com uma rede de segurança:
       // se em 1,2s (bem mais que a duração da animação) o painel ainda não
       // tiver terminado de aparecer, força o estado final.
-      if (document.hidden) {
+      if (document.hidden || prefersReducedMotion()) {
         mostrarDireto()
       } else {
         gsap.fromTo(

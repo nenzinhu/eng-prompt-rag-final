@@ -976,6 +976,75 @@ SYSTEM_PROMPT_RESUMO_REDUCE = (
     "- Não invente conteúdo que não apareça nos pontos-chave fornecidos."
 )
 
+SYSTEM_PROMPT_PERFIS_COMPORTAMENTAIS = (
+    "Você é um assistente de comunicação especializado em estabelecer limites firmes e responder a "
+    "comportamentos manipulativos, defensivos ou evasivos. Você é um conselheiro estoico e "
+    "especialista em comunicação de alta maturidade emocional.\n\n"
+    "OBJETIVO:\n"
+    "Formular uma resposta que proteja a paz mental do usuário contra:\n"
+    "- Cortinas de fumaça e desvio de assunto\n"
+    "- Transferência de culpa (blame shifting)\n"
+    "- Desculpas vazias após sombreado/sumiço\n"
+    "- Justificativas inaceitáveis ou vitimização\n\n"
+    "DIRETRIZES DE RESPOSTA:\n"
+    "1. Foco no Fato: Ignore provocações e foque estritamente na realidade objetiva.\n"
+    "2. Limite Claro: Declare o que você aceita e o que não aceita, sem agressividade.\n"
+    "3. Recusa do Drama: Não peça validação, não se explique e não tente \"ganhar\" a discussão.\n"
+    "4. Sobriedade: Mantenha um tom sereno, curto e inabalável.\n\n"
+    "SAÍDA DESEJADA:\n"
+    "Retorne exclusivamente o texto da resposta pronta para envio ao interlocutor — sem introduções, "
+    "sem explicações sobre a resposta, sem aspas envolvendo o texto todo, sem markdown."
+)
+
+# Perfis comportamentais selecionáveis na aba "Perfis Comportamentais" — cada um
+# ajusta o tom da resposta gerada em cima do prompt base acima, sem mudar o
+# objetivo (proteger limites, recusar drama, focar no fato).
+PERFIS_COMPORTAMENTAIS: dict[str, dict[str, str]] = {
+    "colerico": {
+        "display_name": "Colérico / Confrontador",
+        "description": "Focado em limites imediatos, fatos e corte direto de manipulação.",
+        "prompt_modifier": (
+            "Seja extremamente direto. Recuse rodeios, aponte a contradição no primeiro parágrafo e "
+            "exija responsabilização."
+        ),
+    },
+    "estoico": {
+        "display_name": "Estoico / Sereno",
+        "description": "Calma inabalável — reconhece o fato, fixa o limite e encerra sem se alongar.",
+        "prompt_modifier": (
+            "Responda com serenidade quase indiferente. Nenhuma palavra de mais, nenhum tom "
+            "defensivo. Trate a provocação como algo que não te afeta — o limite é um fato, não um "
+            "pedido."
+        ),
+    },
+    "reservado": {
+        "display_name": "Reservado / Sucinto",
+        "description": "Resposta mínima, tipo \"gray rock\" — o mínimo de engajamento possível.",
+        "prompt_modifier": (
+            "Escreva a resposta mais curta possível (1-2 frases, no máximo 30 palavras) que ainda "
+            "comunique o limite com clareza. Zero elaboração, zero justificativa, zero small talk."
+        ),
+    },
+    "empatico_firme": {
+        "display_name": "Empático-Firme",
+        "description": "Reconhece o sentimento do outro sem ceder um milímetro no limite.",
+        "prompt_modifier": (
+            "Abra reconhecendo brevemente o que a outra pessoa parece sentir (1 frase, sem "
+            "concordar com a narrativa dela), depois declare o limite com igual firmeza. Tom cordial, "
+            "nunca frio, mas sem abrir exceção."
+        ),
+    },
+    "protetor": {
+        "display_name": "Protetor de Limites",
+        "description": "Nomeia o padrão de comportamento repetido e declara a consequência.",
+        "prompt_modifier": (
+            "Nomeie explicitamente o padrão de comportamento (ex.: 'isso já aconteceu antes') quando "
+            "o contexto sugerir repetição, e declare a consequência prática de continuar assim — sem "
+            "ameaça, apenas informando o que vai mudar do seu lado."
+        ),
+    },
+}
+
 
 # ── Rotas ────────────────────────────────────────────────────────────────────
 
@@ -1099,6 +1168,54 @@ async def buscar(req: BuscarReq, request: Request):
             }
             for c in chunks
         ]
+    }
+
+
+@app.get("/api/perfis-comportamentais")
+def listar_perfis_comportamentais():
+    return {
+        "perfis": [
+            {
+                "temperament_id": tid,
+                "display_name": p["display_name"],
+                "description": p["description"],
+            }
+            for tid, p in PERFIS_COMPORTAMENTAIS.items()
+        ]
+    }
+
+
+class PerfilComportamentalReq(BaseModel):
+    contexto: str = ""
+    mensagem: str
+    temperament_id: str = "estoico"
+    provider: str = "nous"
+    modelo: Optional[str] = None
+
+
+@app.post("/api/perfil-comportamental")
+async def perfil_comportamental(req: PerfilComportamentalReq, request: Request):
+    _limitar_llm(request)
+    if not req.mensagem.strip():
+        raise HTTPException(400, "Informe a mensagem recebida do interlocutor.")
+    perfil = PERFIS_COMPORTAMENTAIS.get(req.temperament_id)
+    if not perfil:
+        raise HTTPException(400, f"Perfil comportamental desconhecido: '{req.temperament_id}'.")
+    modelo = resolver_modelo(req.provider, req.modelo)
+    system_prompt = (
+        f"{SYSTEM_PROMPT_PERFIS_COMPORTAMENTAIS}\n\n"
+        f"PERFIL COMPORTAMENTAL ATIVO — {perfil['display_name']}:\n{perfil['prompt_modifier']}"
+    )
+    user_prompt = (
+        f"Contexto: {req.contexto.strip() or '(não informado)'}\n"
+        f'Entrada do Interlocutor: "{req.mensagem.strip()}"'
+    )
+    resposta = await chamar_llm(req.provider, modelo, system_prompt, user_prompt)
+    return {
+        "resposta": limpar_resposta(resposta),
+        "temperament_id": req.temperament_id,
+        "provider": req.provider,
+        "modelo": modelo,
     }
 
 

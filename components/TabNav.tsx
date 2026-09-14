@@ -2,12 +2,14 @@
 
 import { useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
+import type { LucideIcon } from 'lucide-react'
+import { prefersReducedMotion } from '@/lib/reducedMotion'
 
 export interface TabDef {
   id: string
   label: string
   labelShort: string
-  icon: string
+  icon: LucideIcon
 }
 
 export default function TabNav({
@@ -58,7 +60,7 @@ export default function TabNav({
     const mostrarDireto = () => gsap.set(targets, { autoAlpha: 1, y: 0 })
     let seguranca: ReturnType<typeof setTimeout> | undefined
     const ctx = gsap.context(() => {
-      if (document.hidden) {
+      if (document.hidden || prefersReducedMotion()) {
         mostrarDireto()
       } else {
         gsap.fromTo(
@@ -105,24 +107,28 @@ export default function TabNav({
           className="pointer-events-none absolute left-0 top-0 rounded-xl border border-white/10 bg-gradient-to-r from-violet/25 to-cyan/20"
           style={{ width: 0, height: 0 }}
         />
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            ref={(el) => {
-              btnRefs.current[t.id] = el
-            }}
-            onClick={() => onClickBtn(t.id)}
-            onMouseEnter={() => onEnterBtn(t.id)}
-            onMouseLeave={() => onLeaveBtn(t.id)}
-            className={`relative z-10 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2.5 text-[0.83rem] font-medium transition-colors sm:px-4 sm:text-sm ${
-              active === t.id ? 'text-white' : 'text-muted active:text-text sm:hover:text-text'
-            }`}
-          >
-            <span className="text-base leading-none">{t.icon}</span>
-            <span className="hidden sm:inline">{t.label}</span>
-            <span className="sm:hidden">{t.labelShort}</span>
-          </button>
-        ))}
+        {tabs.map((t) => {
+          const Icon = t.icon
+          return (
+            <button
+              key={t.id}
+              ref={(el) => {
+                btnRefs.current[t.id] = el
+              }}
+              onClick={() => onClickBtn(t.id)}
+              onMouseEnter={() => onEnterBtn(t.id)}
+              onMouseLeave={() => onLeaveBtn(t.id)}
+              aria-current={active === t.id ? 'true' : undefined}
+              className={`relative z-10 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2.5 text-[0.83rem] font-medium transition-colors sm:px-4 sm:text-sm ${
+                active === t.id ? 'text-white' : 'text-muted active:text-text sm:hover:text-text'
+              }`}
+            >
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" strokeWidth={2} />
+              <span className="hidden sm:inline">{t.label}</span>
+              <span className="sm:hidden">{t.labelShort}</span>
+            </button>
+          )
+        })}
       </div>
     </nav>
   )

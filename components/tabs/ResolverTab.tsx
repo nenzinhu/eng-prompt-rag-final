@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Package, Target, TriangleAlert, CircleCheck, X, BookOpen, GraduationCap } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp, ResolverResp } from '@/lib/types'
@@ -122,19 +123,21 @@ export default function ResolverTab({
             setModoLote((m) => !m)
             setErro('')
           }}
-          className={`rounded-lg border px-3 py-1.5 text-[0.72rem] font-medium transition-colors ${
+          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[0.72rem] font-medium transition-colors ${
             modoLote
               ? 'border-violet/30 bg-violet/10 text-violet'
               : 'border-white/10 bg-white/[0.03] text-muted hover:text-text'
           }`}
         >
-          {modoLote ? '📦 Modo lote (ativo)' : '📦 Ativar modo lote'}
+          <Package className="h-3.5 w-3.5" aria-hidden="true" />
+          {modoLote ? 'Modo lote (ativo)' : 'Ativar modo lote'}
         </button>
       </div>
 
       <div className="mb-4 flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
-        <div className="font-mono text-[0.72rem] text-muted">
-          🎯 Acurácia da IA:{' '}
+        <div className="flex items-center gap-1.5 font-mono text-[0.72rem] text-muted">
+          <Target className="h-3.5 w-3.5" aria-hidden="true" />
+          Acurácia da IA:{' '}
           <span className="font-semibold text-text">
             {acuracia.total > 0 ? `${Math.round((acuracia.acertos / acuracia.total) * 100)}%` : '—'}
           </span>{' '}
@@ -217,13 +220,14 @@ export default function ResolverTab({
               </div>
             )}
             {!loading && !ocrLoading && erro && (
-              <div className="rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
-                ⚠️ {erro}
+              <div className="flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
+                <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {erro}
               </div>
             )}
             {!loading && !ocrLoading && erro === '' && resultado && !resultado.resposta && (
               <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-muted">
-                <div className="mb-2 text-2xl">⚠️</div>
+                <TriangleAlert className="mx-auto mb-2 h-6 w-6 opacity-70" aria-hidden="true" />
                 <p className="mb-3 text-[0.82rem]">
                   A IA não conseguiu identificar a alternativa correta com confiança.
                 </p>
@@ -244,8 +248,9 @@ export default function ResolverTab({
                       {resultado.resposta}
                     </div>
                     <div>
-                      <div className="mb-0.5 font-mono text-[0.65rem] uppercase tracking-wider text-cyan">
-                        ✓ Resposta escolhida pela IA
+                      <div className="mb-0.5 flex items-center gap-1 font-mono text-[0.65rem] uppercase tracking-wider text-cyan">
+                        <CircleCheck className="h-3 w-3" aria-hidden="true" />
+                        Resposta escolhida pela IA
                       </div>
                       <div className="text-[0.88rem] font-medium leading-snug text-text">
                         {resultado.conteudo_resposta}
@@ -255,8 +260,9 @@ export default function ResolverTab({
 
                   {(resultado.por_que_correta || (resultado.exemplos?.length ?? 0) > 0) && (
                     <div className="mb-4 rounded-xl border border-violet/25 bg-violet/[0.06] p-4">
-                      <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-violet">
-                        👨‍🏫 Professor auxiliar — por que a {resultado.resposta} está correta
+                      <div className="mb-2 flex items-center gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider text-violet">
+                        <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
+                        Professor auxiliar — por que a {resultado.resposta} está correta
                       </div>
                       {resultado.por_que_correta ? (
                         <div className="mb-4">
@@ -319,9 +325,10 @@ export default function ResolverTab({
                   {onEnviarGlossario && (
                     <button
                       onClick={() => onEnviarGlossario(texto)}
-                      className="mb-4 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06]"
+                      className="mb-4 flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06]"
                     >
-                      📖 Extrair termos técnicos desta questão
+                      <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+                      Extrair termos técnicos desta questão
                     </button>
                   )}
 
@@ -334,20 +341,25 @@ export default function ResolverTab({
                         <div className="flex gap-2">
                           <button
                             onClick={() => marcarResultado(true)}
-                            className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-1.5 text-[0.78rem] font-medium text-emerald-300 transition-colors hover:bg-emerald-400/20"
+                            className="flex items-center gap-1.5 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-1.5 text-[0.78rem] font-medium text-emerald-300 transition-colors hover:bg-emerald-400/20"
                           >
-                            ✅ Acertou
+                            <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                            Acertou
                           </button>
                           <button
                             onClick={() => marcarResultado(false)}
-                            className="rounded-lg border border-rose-400/25 bg-rose-400/10 px-3.5 py-1.5 text-[0.78rem] font-medium text-rose-300 transition-colors hover:bg-rose-400/20"
+                            className="flex items-center gap-1.5 rounded-lg border border-rose-400/25 bg-rose-400/10 px-3.5 py-1.5 text-[0.78rem] font-medium text-rose-300 transition-colors hover:bg-rose-400/20"
                           >
-                            ❌ Errou
+                            <X className="h-3.5 w-3.5" aria-hidden="true" />
+                            Errou
                           </button>
                         </div>
                       </>
                     ) : (
-                      <div className="text-[0.78rem] text-muted">✓ Resultado registrado na acurácia acima.</div>
+                      <div className="flex items-center gap-1.5 text-[0.78rem] text-muted">
+                        <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                        Resultado registrado na acurácia acima.
+                      </div>
                     )}
                   </div>
 
@@ -357,7 +369,7 @@ export default function ResolverTab({
             )}
             {!loading && !ocrLoading && !erro && !resultado && (
               <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
-                <span className="text-2xl opacity-50">🎯</span>
+                <Target className="h-6 w-6 opacity-50" aria-hidden="true" />
                 <span className="text-[0.82rem]">A resposta aparecerá aqui após a análise</span>
               </div>
             )}
@@ -410,8 +422,9 @@ export default function ResolverTab({
           </div>
 
           {erro && (
-            <div className="mt-4 rounded-xl border border-rose-400/25 bg-rose-400/10 p-4 text-center text-[0.85rem] text-rose-300">
-              ⚠️ {erro}
+            <div className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-4 text-center text-[0.85rem] text-rose-300">
+              <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {erro}
             </div>
           )}
 
@@ -422,7 +435,12 @@ export default function ResolverTab({
                   <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
                     Questão {i + 1}
                   </div>
-                  {r.erro && <div className="text-[0.82rem] text-rose-300">⚠️ {r.erro}</div>}
+                  {r.erro && (
+                    <div className="flex items-center gap-1.5 text-[0.82rem] text-rose-300">
+                      <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      {r.erro}
+                    </div>
+                  )}
                   {r.resp && (
                     <div className="flex items-start gap-3">
                       {r.resp.resposta ? (
@@ -443,8 +461,9 @@ export default function ResolverTab({
                         </div>
                         {r.resp.por_que_correta && (
                           <div className="mt-2 text-[0.8rem] leading-relaxed text-text">
-                            <span className="font-mono text-[0.65rem] uppercase tracking-wider text-violet">
-                              👨‍🏫 Por que está correta:{' '}
+                            <span className="inline-flex items-center gap-1 font-mono text-[0.65rem] uppercase tracking-wider text-violet">
+                              <GraduationCap className="h-3 w-3" aria-hidden="true" />
+                              Por que está correta:{' '}
                             </span>
                             {r.resp.por_que_correta}
                           </div>

@@ -18,6 +18,8 @@ import type {
   TermoGlossario,
   AuditarResp,
   ResumoApostilaResp,
+  PerfisComportamentaisResp,
+  PerfilComportamentalResp,
 } from './types'
 
 /** Erro de API que preserva o corpo devolvido pelo backend. */
@@ -133,6 +135,21 @@ export const api = {
   auditar: (resposta: string) => postJson<AuditarResp>('/api/auditar', { resposta }),
   glossarioTermosSalvos: (q = '') =>
     pedir<{ termos: TermoGlossario[] }>(`/api/glossario/termos?q=${encodeURIComponent(q)}`),
+  perfisComportamentais: () => pedir<PerfisComportamentaisResp>('/api/perfis-comportamentais'),
+  perfilComportamental: (
+    contexto: string,
+    mensagem: string,
+    temperamentId: string,
+    provider: string,
+    modelo: string
+  ) =>
+    postJson<PerfilComportamentalResp>('/api/perfil-comportamental', {
+      contexto,
+      mensagem,
+      temperament_id: temperamentId,
+      provider,
+      modelo,
+    }),
   comparar: (pergunta: string, modelos: CompararAlvo[]) =>
     postJson<CompararResp>('/api/comparar', { pergunta, modelos }),
   pdfs: () => pedir<PdfsResp>('/api/pdfs'),

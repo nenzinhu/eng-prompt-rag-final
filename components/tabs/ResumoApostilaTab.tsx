@@ -2,7 +2,9 @@
 
 import { useLayoutEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
+import { FileText, TriangleAlert, Download, Library } from 'lucide-react'
 import { api } from '@/lib/api'
+import { prefersReducedMotion } from '@/lib/reducedMotion'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp, ResumoApostilaResp } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
@@ -18,7 +20,7 @@ export default function ResumoApostilaTab({ providers }: { providers: ProvidersR
   const resultCardRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
-    if (!resultado || !resultCardRef.current) return
+    if (!resultado || !resultCardRef.current || prefersReducedMotion()) return
     gsap.fromTo(
       resultCardRef.current,
       { autoAlpha: 0, y: 16 },
@@ -76,8 +78,15 @@ export default function ResumoApostilaTab({ providers }: { providers: ProvidersR
           disabled={loading}
           onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
         />
-        <span className="text-[0.82rem]">
-          {arquivo ? `📄 ${arquivo.name}` : 'Clique para escolher o arquivo da apostila'}
+        <span className="flex items-center gap-1.5 text-[0.82rem]">
+          {arquivo ? (
+            <>
+              <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {arquivo.name}
+            </>
+          ) : (
+            'Clique para escolher o arquivo da apostila'
+          )}
         </span>
       </label>
       <div className="mt-3 flex gap-2">
@@ -108,8 +117,9 @@ export default function ResumoApostilaTab({ providers }: { providers: ProvidersR
           </div>
         )}
         {!loading && erro && (
-          <div className="rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
-            ⚠️ {erro}
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
+            <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {erro}
           </div>
         )}
         {!loading && !erro && resultado && (
@@ -120,9 +130,10 @@ export default function ResumoApostilaTab({ providers }: { providers: ProvidersR
               </span>
               <button
                 onClick={exportarMarkdown}
-                className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[0.72rem] font-medium normal-case tracking-normal text-text transition-colors hover:bg-white/[0.06]"
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[0.72rem] font-medium normal-case tracking-normal text-text transition-colors hover:bg-white/[0.06]"
               >
-                ⬇️ Exportar .md
+                <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                Exportar .md
               </button>
             </div>
             <div className="p-5">
@@ -138,7 +149,7 @@ export default function ResumoApostilaTab({ providers }: { providers: ProvidersR
         )}
         {!loading && !erro && !resultado && (
           <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
-            <span className="text-2xl opacity-50">📚</span>
+            <Library className="h-6 w-6 opacity-50" aria-hidden="true" />
             <span className="text-[0.82rem]">O resumo da apostila aparecerá aqui</span>
           </div>
         )}
