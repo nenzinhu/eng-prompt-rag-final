@@ -38,8 +38,25 @@ export default function Header() {
   }, [])
 
   // Entrada suave do cabeçalho ao montar: logo com "pop" e texto deslizando/entrando.
+  //
+  // Se a aba do navegador nasce em segundo plano, o rAF pode não rodar e o
+  // header (que começa com autoAlpha 0) ficaria invisível até o usuário
+  // voltar à aba. Nesse caso, aplica o estado final direto, sem animar.
   useLayoutEffect(() => {
+    const mostrarDireto = () =>
+      gsap.set([rootRef.current, logoRef.current, titleRef.current], {
+        autoAlpha: 1,
+        y: 0,
+        x: 0,
+        scale: 1,
+        rotate: 0,
+      })
+    let seguranca: ReturnType<typeof setTimeout> | undefined
     const ctx = gsap.context(() => {
+      if (document.hidden) {
+        mostrarDireto()
+        return
+      }
       const tl = gsap.timeline({ defaults: { ease: 'power3.out' } })
       tl.fromTo(rootRef.current, { autoAlpha: 0, y: -12 }, { autoAlpha: 1, y: 0, duration: 0.5 })
         .fromTo(
@@ -49,8 +66,15 @@ export default function Header() {
           '-=0.35'
         )
         .fromTo(titleRef.current, { autoAlpha: 0, x: -8 }, { autoAlpha: 1, x: 0, duration: 0.4 }, '-=0.3')
+      // Rede de segurança: se a janela/aba ficar em segundo plano durante a
+      // entrada e o rAF não completar a tempo, força o estado final em vez
+      // de deixar o cabeçalho preso invisível.
+      seguranca = setTimeout(mostrarDireto, 1500)
     }, rootRef)
-    return () => ctx.revert()
+    return () => {
+      if (seguranca) clearTimeout(seguranca)
+      ctx.revert()
+    }
   }, [])
 
   // Pequeno "pop" no badge sempre que o status muda de verdade (não na primeira renderização).

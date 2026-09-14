@@ -70,3 +70,17 @@ body {
   mask-composite: exclude;
   pointer-events: none;
 }
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 380px) {
+  html {
+    font-size: 15px;
+  }
+}
