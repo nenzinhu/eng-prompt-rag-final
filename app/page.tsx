@@ -13,6 +13,7 @@ import {
   FileArchive,
   Shield,
   PartyPopper,
+  LifeBuoy,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { ProvidersResp } from '@/lib/types'
@@ -30,6 +31,7 @@ import ComprimirTab from '@/components/tabs/ComprimirTab'
 import ApostilaTab from '@/components/tabs/ApostilaTab'
 import PerfisComportamentaisTab from '@/components/tabs/PerfisComportamentaisTab'
 import ElencoTab from '@/components/tabs/ElencoTab'
+import SuporteTab from '@/components/tabs/SuporteTab'
 
 const TABS: TabDef[] = [
   { id: 'perguntar', grupo: 'Estudar', label: 'Perguntar', labelShort: 'Perguntar', icon: MessageCircle },
@@ -43,6 +45,7 @@ const TABS: TabDef[] = [
   { id: 'pdfs', grupo: 'Arquivos', label: 'PDFs', labelShort: 'PDFs', icon: FileStack },
   { id: 'perfis-comportamentais', grupo: 'Comunicar', label: 'Perfis Comportamentais', labelShort: 'Perfis', icon: Shield },
   { id: 'elenco', grupo: 'Comunicar', label: 'Elenco', labelShort: 'Elenco', icon: PartyPopper },
+  { id: 'suporte', grupo: 'Suporte', label: 'Tecnologia — Suporte em TI e IA', labelShort: 'Suporte TI', icon: LifeBuoy },
 ]
 
 export default function Home() {
@@ -101,6 +104,9 @@ export default function Home() {
           </TabPanel>
           <TabPanel active={active === 'elenco'}>
             <ElencoTab providers={providers} />
+          </TabPanel>
+          <TabPanel active={active === 'suporte'}>
+            <SuporteTab providers={providers} />
           </TabPanel>
         </div>
       </main>

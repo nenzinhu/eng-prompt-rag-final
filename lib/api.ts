@@ -22,6 +22,8 @@ import type {
   PerfilComportamentalResp,
   ElencoPersonasResp,
   ElencoConversaResp,
+  SuportePersonasResp,
+  SuporteAtendimentoResp,
 } from './types'
 
 /** Erro de API que preserva o corpo devolvido pelo backend. */
@@ -164,6 +166,23 @@ export const api = {
       contexto,
       mensagem,
       persona_id: personaId,
+      provider,
+      modelo,
+    }),
+  suportePersonas: () => pedir<SuportePersonasResp>('/api/suporte-personas'),
+  suporteAtendimento: (
+    ambiente: string,
+    problema: string,
+    personaId: string,
+    historico: string[],
+    provider: string,
+    modelo: string
+  ) =>
+    postJson<SuporteAtendimentoResp>('/api/suporte-atendimento', {
+      ambiente,
+      problema,
+      persona_id: personaId,
+      historico,
       provider,
       modelo,
     }),

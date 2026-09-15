@@ -242,6 +242,28 @@ export interface ElencoConversaResp {
   modelo: string
 }
 
+export interface SuportePersona {
+  persona_id: string
+  nome: string
+  display_name: string
+  bloco: string
+  description: string
+  exemplo: string
+  usa_historico: boolean
+}
+
+export interface SuportePersonasResp {
+  personas: SuportePersona[]
+}
+
+export interface SuporteAtendimentoResp {
+  resposta: string
+  persona_id: string
+  usou_historico: boolean
+  provider: string
+  modelo: string
+}
+
 export interface CompararResp {
   pergunta: string
   respostas: CompararResposta[]
