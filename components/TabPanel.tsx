@@ -13,6 +13,11 @@ export default function TabPanel({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const mounted = useRef(false)
+  // Só renderiza o conteúdo da aba na primeira vez que ela fica ativa — evita
+  // que todas as abas disparem seus efeitos de fetch (personas, listagens etc.)
+  // no carregamento inicial da página, mesmo as que o usuário nunca abre.
+  const jaAtivouUmaVez = useRef(active)
+  if (active) jaAtivouUmaVez.current = true
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -49,7 +54,7 @@ export default function TabPanel({
       ref={ref}
       className={active ? 'relative' : 'pointer-events-none absolute inset-0 invisible'}
     >
-      {children}
+      {jaAtivouUmaVez.current ? children : null}
     </div>
   )
 }

@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import { TriangleAlert } from 'lucide-react'
 import { api } from '@/lib/api'
 import { prefersReducedMotion } from '@/lib/reducedMotion'
 
-export default function Header() {
+export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'offline'>('loading')
   const [total, setTotal] = useState(0)
   const [inseguro, setInseguro] = useState(false)
@@ -17,27 +17,41 @@ export default function Header() {
   const badgeRef = useRef<HTMLDivElement>(null)
   const dotRef = useRef<HTMLSpanElement>(null)
   const firstStatus = useRef(true)
+  const montado = useRef(true)
+
+  const tick = useCallback(async () => {
+    try {
+      const d = await api.status()
+      if (!montado.current) return
+      setStatus(d.status)
+      setTotal(d.total)
+      setInseguro(d.escrita_via === 'anon')
+    } catch {
+      if (montado.current) setStatus('offline')
+    }
+  }, [])
 
   useEffect(() => {
-    let mounted = true
-    async function tick() {
-      try {
-        const d = await api.status()
-        if (!mounted) return
-        setStatus(d.status)
-        setTotal(d.total)
-        setInseguro(d.escrita_via === 'anon')
-      } catch {
-        if (mounted) setStatus('offline')
-      }
-    }
+    montado.current = true
     tick()
     const id = setInterval(tick, 30000)
     return () => {
-      mounted = false
+      montado.current = false
       clearInterval(id)
     }
-  }, [])
+  }, [tick])
+
+  // Reconsulta o status quando o pai sinaliza uma mudança (ex.: upload de PDF)
+  // sem remontar o componente inteiro — evita refazer a animação de entrada
+  // do cabeçalho só para atualizar um contador.
+  const primeiroSinal = useRef(true)
+  useEffect(() => {
+    if (primeiroSinal.current) {
+      primeiroSinal.current = false
+      return
+    }
+    tick()
+  }, [refreshSignal, tick])
 
   // Entrada suave do cabeçalho ao montar: logo com "pop" e texto deslizando/entrando.
   //

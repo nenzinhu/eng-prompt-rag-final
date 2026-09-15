@@ -65,7 +65,7 @@ export default function Home() {
 
   return (
     <>
-      <Header key={statusTick} />
+      <Header refreshSignal={statusTick} />
       <TabNav tabs={TABS} active={active} onChange={setActive} />
       <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-4">
         <div className="relative">

@@ -12,6 +12,8 @@ const config: Config = {
         'border-2': 'rgba(255,255,255,0.14)',
         violet: '#9b6bff',
         cyan: '#2fe0d6',
+        lime: '#c6ff3d',
+        hotpink: '#ff3df0',
         text: '#eae7f5',
         muted: '#8b85a3',
       },

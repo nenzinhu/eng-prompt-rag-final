@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { PartyPopper, TriangleAlert, Copy, CircleCheck } from 'lucide-react'
+import { PartyPopper, TriangleAlert, Copy, CircleCheck, History, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useProviderModel } from '@/lib/useProviderModel'
+import { useHistorico } from '@/lib/useHistorico'
 import type { ProvidersResp, ElencoPersona } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
 
@@ -29,6 +30,7 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
   const [erro, setErro] = useState('')
   const [resposta, setResposta] = useState('')
   const [copiado, setCopiado] = useState(false)
+  const { itens: historico, adicionar: adicionarHistorico, limpar: limparHistorico } = useHistorico('elenco')
 
   useEffect(() => {
     api
@@ -56,6 +58,7 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
     try {
       const d = await api.elencoConversa(contexto, mensagem, personaId, provider, modelo)
       setResposta(d.resposta)
+      adicionarHistorico(d.resposta, contexto || mensagem)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao gerar mensagem')
     } finally {
@@ -192,6 +195,35 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
           </div>
         )}
       </div>
+
+      {historico.length > 0 && (
+        <div className="mt-6">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+              <History className="h-3.5 w-3.5" aria-hidden="true" />
+              Histórico recente
+            </div>
+            <button
+              onClick={limparHistorico}
+              className="flex items-center gap-1 text-[0.72rem] text-muted transition-colors hover:text-rose-300"
+            >
+              <Trash2 className="h-3 w-3" aria-hidden="true" />
+              Limpar
+            </button>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {historico.map((h) => (
+              <button
+                key={h.id}
+                onClick={() => setResposta(h.resposta)}
+                className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-left text-[0.78rem] text-muted transition-colors hover:bg-white/[0.05] hover:text-text"
+              >
+                {h.resumo || h.resposta.slice(0, 140)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

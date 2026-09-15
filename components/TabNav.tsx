@@ -32,15 +32,16 @@ export default function TabNav({
     if (!btn || !nav || !indicator) return
     const navBox = nav.getBoundingClientRect()
     const btnBox = btn.getBoundingClientRect()
-    // x/y/width/height (em vez de só x/width) para o indicador acompanhar o
-    // botão certo tanto na barra em linha única (desktop) quanto quando os
-    // itens quebram em várias linhas — evita o indicador "esticar" cobrindo
-    // várias abas de uma vez.
+    // x/y/width (em vez de só x/width) para o indicador acompanhar o botão
+    // certo tanto na barra em linha única (desktop) quanto quando os itens
+    // quebram em várias linhas — evita o indicador "esticar" cobrindo várias
+    // abas de uma vez. Altura fica travada em 3px (estilo underline) — só a
+    // posição/largura acompanham o botão ativo.
     gsap.to(indicator, {
       x: btnBox.left - navBox.left,
-      y: btnBox.top - navBox.top,
+      y: btnBox.bottom - navBox.top - 3,
       width: btnBox.width,
-      height: btnBox.height,
+      height: 3,
       duration: 0.5,
       ease: 'power3.out',
     })
@@ -99,12 +100,12 @@ export default function TabNav({
     <nav className="sticky top-[64px] z-40 px-2 py-3 sm:px-4">
       <div
         ref={navRef}
-        className="no-scrollbar glass relative mx-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-2xl p-1.5 sm:flex-wrap sm:justify-center sm:overflow-visible"
+        className="no-scrollbar relative mx-auto flex max-w-full items-center gap-1 overflow-x-auto border-b border-white/10 px-1 sm:flex-wrap sm:justify-center sm:overflow-visible"
         style={{ width: 'fit-content' }}
       >
         <div
           ref={indicatorRef}
-          className="pointer-events-none absolute left-0 top-0 rounded-xl border border-white/10 bg-gradient-to-r from-violet/25 to-cyan/20"
+          className="pointer-events-none absolute bottom-0 left-0 h-[3px] rounded-full bg-gradient-to-r from-lime to-hotpink"
           style={{ width: 0, height: 0 }}
         />
         {tabs.map((t) => {
@@ -119,11 +120,15 @@ export default function TabNav({
               onMouseEnter={() => onEnterBtn(t.id)}
               onMouseLeave={() => onLeaveBtn(t.id)}
               aria-current={active === t.id ? 'true' : undefined}
-              className={`relative z-10 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2.5 text-[0.83rem] font-medium transition-colors sm:px-4 sm:text-sm ${
-                active === t.id ? 'text-white' : 'text-muted active:text-text sm:hover:text-text'
+              className={`relative z-10 flex shrink-0 items-center gap-2 whitespace-nowrap px-3.5 py-3 text-[0.83rem] font-medium transition-colors sm:px-4 sm:text-sm ${
+                active === t.id ? 'text-white' : 'text-muted hover:text-lime active:text-lime'
               }`}
             >
-              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" strokeWidth={2} />
+              <Icon
+                className={`h-4 w-4 shrink-0 ${active === t.id ? 'text-lime' : ''}`}
+                aria-hidden="true"
+                strokeWidth={2}
+              />
               <span className="hidden sm:inline">{t.label}</span>
               <span className="sm:hidden">{t.labelShort}</span>
             </button>
