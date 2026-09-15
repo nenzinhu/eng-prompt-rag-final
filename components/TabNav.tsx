@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import type { LucideIcon } from 'lucide-react'
 import { prefersReducedMotion } from '@/lib/reducedMotion'
 
 export interface TabDef {
   id: string
+  grupo: string
   label: string
   labelShort: string
   icon: LucideIcon
@@ -23,30 +24,74 @@ export default function TabNav({
 }) {
   const navRef = useRef<HTMLDivElement>(null)
   const indicatorRef = useRef<HTMLDivElement>(null)
+  const [topo, setTopo] = useState(54)
+
+  // O título do cabeçalho quebra em duas linhas em telas estreitas; um `top` fixo
+  // deixava a barra escondida atrás dele ao rolar.
+  useEffect(() => {
+    const header = document.querySelector('header')
+    if (!header) return
+    const obs = new ResizeObserver(() => setTopo(header.getBoundingClientRect().height))
+    obs.observe(header)
+    return () => obs.disconnect()
+  }, [])
   const btnRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
-  useEffect(() => {
+  const grupos = [...new Set(tabs.map((t) => t.grupo))]
+  const grupoAtivo = tabs.find((t) => t.id === active)?.grupo ?? grupos[0]
+  const abasDoGrupo = tabs.filter((t) => t.grupo === grupoAtivo)
+
+  // Voltar a um grupo reabre a última aba usada nele, não sempre a primeira.
+  const ultimaPorGrupo = useRef<Record<string, string>>({})
+  ultimaPorGrupo.current[grupoAtivo] = active
+
+  function trocarGrupo(grupo: string) {
+    if (grupo === grupoAtivo) return
+    const destino = ultimaPorGrupo.current[grupo] ?? tabs.find((t) => t.grupo === grupo)?.id
+    if (destino) onChange(destino)
+  }
+
+  // x/y/width acompanham o botão ativo tanto em linha única quanto com as abas
+  // quebrando em várias linhas; a altura fica travada em 3px (underline). O
+  // indicador é ancorado em top-0/left-0: com `bottom-0` o `y` somava a altura
+  // da barra inteira e a linha caía abaixo do menu.
+  function posicionarIndicador(animar: boolean) {
     const btn = btnRefs.current[active]
     const nav = navRef.current
     const indicator = indicatorRef.current
-    if (!btn || !nav || !indicator) return
+    if (!btn || !nav || !indicator) return null
     const navBox = nav.getBoundingClientRect()
     const btnBox = btn.getBoundingClientRect()
-    // x/y/width (em vez de só x/width) para o indicador acompanhar o botão
-    // certo tanto na barra em linha única (desktop) quanto quando os itens
-    // quebram em várias linhas — evita o indicador "esticar" cobrindo várias
-    // abas de uma vez. Altura fica travada em 3px (estilo underline) — só a
-    // posição/largura acompanham o botão ativo.
-    gsap.to(indicator, {
-      x: btnBox.left - navBox.left,
+    const alvo = {
+      x: btnBox.left - navBox.left + nav.scrollLeft,
       y: btnBox.bottom - navBox.top - 3,
       width: btnBox.width,
       height: 3,
-      duration: 0.5,
-      ease: 'power3.out',
-    })
-    btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+    }
+    // overwrite: uma animação anterior ainda em curso terminaria depois e
+    // devolveria a largura antiga (ex.: rótulo longo trocado pelo curto ao estreitar).
+    if (animar) gsap.to(indicator, { ...alvo, duration: 0.5, ease: 'power3.out', overwrite: true })
+    else gsap.set(indicator, { ...alvo, overwrite: true })
+    return btn
+  }
+
+  useEffect(() => {
+    const btn = posicionarIndicador(true)
+    btn?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, tabs])
+
+  // Mudança de largura (rotação, janela, fontes carregando) reposiciona sem animar.
+  // Inscrito uma vez; o ref evita reinscrever a cada render e cortar a animação.
+  const posicionarRef = useRef(posicionarIndicador)
+  posicionarRef.current = posicionarIndicador
+  useEffect(() => {
+    const nav = navRef.current
+    if (!nav) return
+    const obs = new ResizeObserver(() => posicionarRef.current(false))
+    obs.observe(nav)
+    return () => obs.disconnect()
+  }, [])
 
   // Entrada em cascata dos botões da barra de abas, uma única vez ao montar.
   //
@@ -97,7 +142,21 @@ export default function TabNav({
   }
 
   return (
-    <nav className="sticky top-[54px] z-40 px-2 py-1.5 sm:px-4">
+    <nav className="sticky z-40 bg-bg/80 px-2 py-1.5 backdrop-blur-xl sm:px-4" style={{ top: topo }}>
+      <div className="no-scrollbar mx-auto mb-1 flex max-w-full items-center justify-center gap-1 overflow-x-auto">
+        {grupos.map((g) => (
+          <button
+            key={g}
+            onClick={() => trocarGrupo(g)}
+            aria-pressed={g === grupoAtivo}
+            className={`shrink-0 rounded-full px-3 py-1 font-mono text-[0.68rem] uppercase tracking-wider transition-colors ${
+              g === grupoAtivo ? 'bg-white/[0.07] text-lime' : 'text-muted hover:text-text'
+            }`}
+          >
+            {g}
+          </button>
+        ))}
+      </div>
       <div
         ref={navRef}
         className="no-scrollbar relative mx-auto flex max-w-full items-center gap-1 overflow-x-auto border-b border-white/10 px-1 sm:flex-wrap sm:justify-center sm:overflow-visible"
@@ -105,10 +164,10 @@ export default function TabNav({
       >
         <div
           ref={indicatorRef}
-          className="pointer-events-none absolute bottom-0 left-0 h-[3px] rounded-full bg-gradient-to-r from-lime to-hotpink"
+          className="pointer-events-none absolute left-0 top-0 h-[3px] rounded-full bg-gradient-to-r from-lime to-hotpink"
           style={{ width: 0, height: 0 }}
         />
-        {tabs.map((t) => {
+        {abasDoGrupo.map((t) => {
           const Icon = t.icon
           return (
             <button

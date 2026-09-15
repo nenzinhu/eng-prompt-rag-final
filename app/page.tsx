@@ -32,17 +32,17 @@ import PerfisComportamentaisTab from '@/components/tabs/PerfisComportamentaisTab
 import ElencoTab from '@/components/tabs/ElencoTab'
 
 const TABS: TabDef[] = [
-  { id: 'perguntar', label: 'Perguntar', labelShort: 'Perguntar', icon: MessageCircle },
-  { id: 'professor', label: 'Professor Sabe Tudo', labelShort: 'Professor', icon: GraduationCap },
-  { id: 'apostila', label: 'Gerador de Apostilas', labelShort: 'Apostilas', icon: BookOpen },
-  { id: 'comparar', label: 'Comparar Modelos', labelShort: 'Comparar', icon: Scale },
-  { id: 'buscar', label: 'Buscar', labelShort: 'Busca', icon: Search },
-  { id: 'resolver', label: 'Resolver Questão', labelShort: 'Resolver', icon: Target },
-  { id: 'glossario', label: 'Glossário', labelShort: 'Glossário', icon: Library },
-  { id: 'comprimir', label: 'Comprimir Arquivos', labelShort: 'Comprimir', icon: FileArchive },
-  { id: 'pdfs', label: 'PDFs', labelShort: 'PDFs', icon: FileStack },
-  { id: 'perfis-comportamentais', label: 'Perfis Comportamentais', labelShort: 'Perfis', icon: Shield },
-  { id: 'elenco', label: 'Elenco', labelShort: 'Elenco', icon: PartyPopper },
+  { id: 'perguntar', grupo: 'Estudar', label: 'Perguntar', labelShort: 'Perguntar', icon: MessageCircle },
+  { id: 'professor', grupo: 'Estudar', label: 'Professor Sabe Tudo', labelShort: 'Professor', icon: GraduationCap },
+  { id: 'buscar', grupo: 'Estudar', label: 'Buscar', labelShort: 'Busca', icon: Search },
+  { id: 'resolver', grupo: 'Estudar', label: 'Resolver Questão', labelShort: 'Resolver', icon: Target },
+  { id: 'glossario', grupo: 'Estudar', label: 'Glossário', labelShort: 'Glossário', icon: Library },
+  { id: 'comparar', grupo: 'Estudar', label: 'Comparar Modelos', labelShort: 'Comparar', icon: Scale },
+  { id: 'apostila', grupo: 'Produzir', label: 'Gerador de Apostilas', labelShort: 'Apostilas', icon: BookOpen },
+  { id: 'comprimir', grupo: 'Arquivos', label: 'Comprimir Arquivos', labelShort: 'Comprimir', icon: FileArchive },
+  { id: 'pdfs', grupo: 'Arquivos', label: 'PDFs', labelShort: 'PDFs', icon: FileStack },
+  { id: 'perfis-comportamentais', grupo: 'Comunicar', label: 'Perfis Comportamentais', labelShort: 'Perfis', icon: Shield },
+  { id: 'elenco', grupo: 'Comunicar', label: 'Elenco', labelShort: 'Elenco', icon: PartyPopper },
 ]
 
 export default function Home() {
