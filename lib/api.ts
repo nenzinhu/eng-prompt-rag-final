@@ -169,7 +169,6 @@ export const api = {
     }),
   comparar: (pergunta: string, modelos: CompararAlvo[]) =>
     postJson<CompararResp>('/api/comparar', { pergunta, modelos }),
-  pdfs: () => pedir<PdfsResp>('/api/pdfs'),
   resumirApostila: (file: File, provider: string, modelo: string) => {
     const form = new FormData()
     form.append('file', file)
@@ -189,6 +188,7 @@ export const api = {
     postJson<{ token: string; expira: number; usuario: string }>('/api/admin/login', { usuario, senha }),
   adminVerificar: (token: string) =>
     pedir<{ ok: boolean }>('/api/admin/verificar', { headers: { 'X-Admin-Token': token } }),
+  pdfs: (token: string) => pedir<PdfsResp>('/api/pdfs', { headers: { 'X-Admin-Token': token } }),
   previaIngestao: (arquivo: string, token: string) =>
     postJson<PreviaIngestaoResp>('/api/ingerir/previa', { arquivo, offset: 0 }, token),
   ingerir: (arquivo: string, offset: number, token: string, forcar = false) =>

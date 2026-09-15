@@ -322,13 +322,6 @@ def _checar_config_supabase():
         )
 
 
-def _checar_config_escrita():
-    """Escrita no banco: prefere a service_role; avisa quando cai na anon."""
-    _checar_config_supabase()
-    if not SUPABASE_SERVICE_ROLE_KEY and not SUPABASE_ANON_KEY:
-        raise HTTPException(500, "Nenhuma chave do Supabase configurada para escrita.")
-
-
 def _chave_leitura() -> str:
     return SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY
 
@@ -421,7 +414,16 @@ def validar_sessao(token: str) -> bool:
 
 
 async def exigir_admin(x_admin_token: str = Header(default="")):
-    """Protege as rotas de escrita e as que gastam chave de IA.
+    """Protege as rotas de ESCRITA (upload, ingestão e diagnóstico do Storage).
+
+    Escopo real, para não prometer o que não entrega: as rotas de geração que
+    gastam chave de IA (/api/perguntar, /api/glossario, /api/resolver,
+    /api/comparar, /api/gerar-apostila, /api/resumir-apostila, /api/simplificar,
+    /api/verificar, /api/auditar, /api/perfil-comportamental e
+    /api/elenco-conversa) são PÚBLICAS de propósito — o aluno usa o app sem
+    login. O que contém abuso ali é `_limitar_llm` (limite por IP) somado à
+    validação de modelo em `resolver_modelo`, que impede escolher um modelo fora
+    da lista curada.
 
     Aceita um token de sessão válido (emitido pelo /api/admin/login) ou, por
     retrocompatibilidade, o ADMIN_TOKEN direto (usado por scripts/CLI).
@@ -449,13 +451,42 @@ async def exigir_admin(x_admin_token: str = Header(default="")):
 # o Firewall/Vercel KV ou um contador externo.
 _uso_por_ip: dict[str, list[float]] = {}
 
+# Acima disto, varre e descarta os IPs sem uso recente. Sem a varredura o
+# dicionário só crescia: a poda antiga limpava apenas a lista do IP consultado,
+# então quem passou uma vez e não voltou ficava na memória para sempre.
+MAX_IPS_RASTREADOS = 5000
+
+
+def _ip_cliente(request: Request) -> str:
+    """IP do cliente, considerando o proxy da plataforma.
+
+    `request.client.host` é o IP de quem abriu a conexão TCP — atrás da Vercel
+    (ou de qualquer reverse proxy) isso é o proxy, não o usuário, e o limite por
+    IP viraria um balde único compartilhado por todo mundo.
+
+    Honestidade sobre o limite: `x-forwarded-for` é um cabeçalho e pode ser
+    forjado por quem chama direto. Isto barra abuso trivial e devolve o limite
+    por usuário atrás do proxy; não é controle de acesso.
+    """
+    real = (request.headers.get("x-real-ip") or "").strip()
+    if not real:
+        # O primeiro item da cadeia é o cliente original; o resto são os proxies.
+        real = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if real:
+        return real
+    return (request.client.host if request.client else "?") or "?"
+
 
 def _limitar_llm(request: Request):
-    ip = (request.client.host if request.client else "?") or "?"
+    ip = _ip_cliente(request)
     agora = time.time()
+    if len(_uso_por_ip) > MAX_IPS_RASTREADOS:
+        for outro, marcas in list(_uso_por_ip.items()):
+            if all(agora - t >= 60 for t in marcas):
+                del _uso_por_ip[outro]
     usos = [t for t in _uso_por_ip.get(ip, []) if agora - t < 60]
     if len(usos) >= LIMITE_LLM_POR_MINUTO:
-        raise HTTPException(429, f"Muitas requisições em sequência. Tente de novo em instantes.")
+        raise HTTPException(429, "Muitas requisições em sequência. Tente de novo em instantes.")
     usos.append(agora)
     _uso_por_ip[ip] = usos
 
@@ -501,25 +532,6 @@ async def inserir_chunks(rows: list[dict]):
             json=rows,
         )
     r.raise_for_status()
-
-
-async def contar_chunks_por_fonte(nome: str) -> int:
-    """Quantos chunks já existem para esta fonte (usa o count exato do PostgREST)."""
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        r = await client.head(
-            f"{SUPABASE_URL}/rest/v1/ementas_chunks",
-            headers={**_h_leitura(), "Prefer": "count=exact"},
-            params={"select": "id", "source": f"eq.{nome}"},
-        )
-    if r.status_code >= 400:
-        return 0
-    cr = r.headers.get("content-range") or ""
-    if "/" in cr:
-        try:
-            return int(cr.split("/")[-1])
-        except ValueError:
-            return 0
-    return 0
 
 
 async def medir_indice_atual(nome: str) -> tuple[int, int]:
@@ -803,13 +815,30 @@ async def chamar_llm(
 
 
 def resolver_modelo(provider: str, modelo: Optional[str]) -> str:
+    """Resolve o modelo pedido, aceitando SÓ o que está na lista curada do provedor.
+
+    A checagem de pertinência é o limite de custo do app, não um detalhe: as
+    listas em PROVIDERS são curadas para privilegiar modelos gratuitos (e os
+    pagos escolhidos são os baratos, com o preço anotado ao lado). Sem esta
+    validação, qualquer requisição podia mandar um nome de modelo arbitrário —
+    inclusive um modelo caro do catálogo do provedor — e a conta ia para a
+    chave que fica no servidor.
+    """
     cfg = PROVIDERS.get(provider)
     if not cfg:
         raise HTTPException(
             400,
             f"Provedor desconhecido: '{provider}'. Recarregue a página para atualizar a lista.",
         )
-    return modelo or cfg["models"][0]
+    if not modelo:
+        return cfg["models"][0]
+    if modelo not in cfg["models"]:
+        raise HTTPException(
+            400,
+            f"Modelo '{modelo}' não está disponível no provedor '{cfg['label']}'. "
+            "Recarregue a página para atualizar a lista de modelos.",
+        )
+    return modelo
 
 
 SYSTEM_PROMPT_PERGUNTA = (
@@ -2260,5 +2289,11 @@ async def duplicatas(_: None = Depends(exigir_admin)):
 
 
 @app.get("/api/pdfs")
-async def pdfs():
+async def pdfs(_: None = Depends(exigir_admin)):
+    """Lista os documentos do Storage.
+
+    Exige admin pela mesma razão que /api/duplicatas: ambas expõem o conteúdo do
+    bucket. É usada só pela aba de administração, dentro de um fluxo que já
+    precisa do token para os passos seguintes (prévia e ingestão).
+    """
     return {"arquivos": await listar_documentos_storage()}

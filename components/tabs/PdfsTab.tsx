@@ -128,7 +128,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
     setAnalises([])
     setBloqueado(false)
     try {
-      const nomes = arquivos ?? (await api.pdfs()).arquivos
+      const nomes = arquivos ?? (await api.pdfs(token)).arquivos
       if (!nomes.length) {
         logLine('err', '✗ Nenhum documento no Storage.')
         return

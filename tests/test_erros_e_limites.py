@@ -17,7 +17,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -128,3 +128,83 @@ def test_config_publica_explica_o_limite(monkeypatch):
     corpo = r.json()
     assert corpo["max_upload_mb"] == 4
     assert corpo["limite_upload_motivo"]
+
+
+# ── 3. Limite de custo: modelo tem de estar na lista curada ─────────────────
+#
+# As rotas de geração são públicas (o aluno usa sem login), então a lista curada
+# de modelos é o que impede alguém de mandar um nome de modelo caro e deixar a
+# conta na chave do servidor.
+
+
+def test_modelo_fora_da_lista_e_recusado():
+    with pytest.raises(HTTPException) as erro:
+        index.resolver_modelo("groq", "openai/gpt-modelo-caro-inventado")
+    assert erro.value.status_code == 400
+    assert "não está disponível" in str(erro.value.detail)
+
+
+def test_modelo_da_lista_e_aceito():
+    modelo = index.PROVIDERS["groq"]["models"][1]
+    assert index.resolver_modelo("groq", modelo) == modelo
+
+
+def test_modelo_vazio_cai_no_padrao_do_provedor():
+    assert index.resolver_modelo("groq", None) == index.PROVIDERS["groq"]["models"][0]
+    assert index.resolver_modelo("groq", "") == index.PROVIDERS["groq"]["models"][0]
+
+
+def test_provedor_desconhecido_continua_recusado():
+    with pytest.raises(HTTPException) as erro:
+        index.resolver_modelo("provedor-que-nao-existe", None)
+    assert erro.value.status_code == 400
+
+
+# ── 4. Limite por IP precisa enxergar o cliente atrás do proxy ──────────────
+
+
+@index.app.get("/api/_teste_ip")
+def _rota_ip(request: Request):  # pragma: no cover - só existe para o teste
+    return {"ip": index._ip_cliente(request)}
+
+
+def test_ip_usa_x_forwarded_for_quando_ha_proxy():
+    """Sem isto, todo mundo atrás do proxy divide o mesmo balde de requisições."""
+    r = cliente.get("/api/_teste_ip", headers={"x-forwarded-for": "203.0.113.7, 10.0.0.1"})
+    assert r.json()["ip"] == "203.0.113.7"  # o primeiro é o cliente; o resto, proxies
+
+
+def test_ip_prefere_x_real_ip():
+    r = cliente.get("/api/_teste_ip", headers={"x-real-ip": "203.0.113.9", "x-forwarded-for": "198.51.100.2"})
+    assert r.json()["ip"] == "203.0.113.9"
+
+
+def test_ip_cai_no_socket_sem_cabecalho_de_proxy():
+    r = cliente.get("/api/_teste_ip")
+    assert r.json()["ip"]  # sem proxy, usa o IP da conexão (o TestClient usa "testclient")
+
+
+# ── 5. /api/pdfs expõe o bucket: exige admin, como /api/duplicatas ──────────
+
+
+def test_pdfs_sem_token_e_recusado(monkeypatch):
+    monkeypatch.setattr(index, "ADMIN_TOKEN", "segredo-de-teste")
+    r = cliente.get("/api/pdfs")
+    assert r.status_code == 401
+
+
+def test_pdfs_com_token_valido_lista(monkeypatch):
+    async def _listar():
+        return ["apostila.pdf"]
+
+    monkeypatch.setattr(index, "ADMIN_TOKEN", "segredo-de-teste")
+    monkeypatch.setattr(index, "listar_documentos_storage", _listar)
+    r = cliente.get("/api/pdfs", headers={"X-Admin-Token": "segredo-de-teste"})
+    assert r.status_code == 200
+    assert r.json()["arquivos"] == ["apostila.pdf"]
+
+
+def test_pdfs_sem_admin_configurado_falha_fechada(monkeypatch):
+    monkeypatch.setattr(index, "ADMIN_TOKEN", "")
+    r = cliente.get("/api/pdfs")
+    assert r.status_code == 503
