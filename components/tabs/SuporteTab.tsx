@@ -22,6 +22,7 @@ import { useProviderModel } from '@/lib/useProviderModel'
 import { useHistorico } from '@/lib/useHistorico'
 import type { ProvidersResp, SuportePersona } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
+import AnexoImagem from '../AnexoImagem'
 import Markdown from '../Markdown'
 
 const ICONES: Record<string, LucideIcon> = {
@@ -53,6 +54,8 @@ export default function SuporteTab({ providers }: { providers: ProvidersResp }) 
   const [ambiente, setAmbiente] = useState('')
   const [problema, setProblema] = useState('')
   const [loading, setLoading] = useState(false)
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [anexoReset, setAnexoReset] = useState(0)
   const [erro, setErro] = useState('')
   const [resposta, setResposta] = useState('')
   const [usouHistorico, setUsouHistorico] = useState(false)
@@ -172,6 +175,15 @@ export default function SuporteTab({ providers }: { providers: ProvidersResp }) 
         placeholder="Ex: o sistema trava com tela preta logo depois do logo do fabricante; o log serial para em 'Loading driver at ...'"
         className="glass min-h-[130px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
       />
+      <AnexoImagem
+        texto={problema}
+        setTexto={setProblema}
+        desabilitado={loading}
+        onProcessando={setOcrLoading}
+        aplicarFormatoAlternativas={false}
+        resetToken={anexoReset}
+        dica="Print do erro, log (.txt/.log), PDF ou DOCX — o texto entra na caixa acima, com OCR"
+      />
 
       {personaAtiva?.usa_historico && (
         <p className="mt-2 text-[0.72rem] text-muted">
@@ -182,7 +194,7 @@ export default function SuporteTab({ providers }: { providers: ProvidersResp }) 
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           onClick={atender}
-          disabled={loading || !problema.trim() || !pronto}
+          disabled={loading || ocrLoading || !problema.trim() || !pronto}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {loading ? 'Diagnosticando…' : `Atender com ${personaAtiva?.nome ?? 'o especialista'}`}
@@ -191,6 +203,7 @@ export default function SuporteTab({ providers }: { providers: ProvidersResp }) 
           onClick={() => {
             setAmbiente('')
             setProblema('')
+            setAnexoReset((n) => n + 1)
             setResposta('')
             setErro('')
           }}

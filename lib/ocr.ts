@@ -43,7 +43,7 @@ let temporizadorOcioso: ReturnType<typeof setTimeout> | null = null
  * O fundo é pintado de branco de propósito: PNG com transparência é lido como
  * preto pelo tesseract e nenhuma letra é reconhecida.
  */
-async function prepararImagem(file: File): Promise<Blob> {
+async function prepararImagem(file: Blob): Promise<Blob> {
   const bitmap = await createImageBitmap(file)
   try {
     let largura = bitmap.width
@@ -119,7 +119,7 @@ export async function encerrarWorker(): Promise<void> {
  * ordem em que as imagens foram anexadas — que é a ordem da questão.
  */
 export async function reconhecerImagem(
-  file: File,
+  file: Blob,
   onProgresso?: (fracao: number) => void
 ): Promise<string> {
   const preparada = await prepararImagem(file)

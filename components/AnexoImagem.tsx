@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { ImageOff, X, CircleCheck, TriangleAlert, Paperclip } from 'lucide-react'
+import { ImageOff, X, CircleCheck, TriangleAlert, Paperclip, FileText } from 'lucide-react'
 import { encerrarWorker, reconhecerImagem } from '@/lib/ocr'
+import { ACEITOS, extrairTextoDocumento, tipoDoArquivo } from '@/lib/documento'
 import { formatarAlternativas, limparTextoOcr } from '@/lib/texto'
 
 type Status = 'lendo' | 'pronto' | 'erro' | 'vazio'
@@ -116,8 +117,12 @@ export default function AnexoImagem({
   async function ler(id: string, file: File) {
     atualizar(id, { status: 'lendo', progresso: 0, erro: undefined })
     try {
-      const bruto = await reconhecerImagem(file, (fracao) => atualizar(id, { progresso: fracao }))
-      const limpo = limparTextoOcr(bruto)
+      const progresso = (fracao: number) => atualizar(id, { progresso: fracao })
+      const ehImagem = tipoDoArquivo(file) === 'imagem'
+      const bruto = ehImagem
+        ? await reconhecerImagem(file, progresso)
+        : await extrairTextoDocumento(file, progresso)
+      const limpo = ehImagem ? limparTextoOcr(bruto) : bruto.replace(/\n{3,}/g, '\n\n').trim()
       if (!limpo) {
         atualizar(id, { status: 'vazio', progresso: 1 })
         return
@@ -152,7 +157,7 @@ export default function AnexoImagem({
     if (!lista || lista.length === 0) return
     const novos: Anexo[] = []
     for (const file of Array.from(lista)) {
-      if (!file.type.startsWith('image/')) {
+      if (!tipoDoArquivo(file)) {
         novos.push({
           id: novoId(),
           nome: file.name,
@@ -160,7 +165,7 @@ export default function AnexoImagem({
           status: 'erro',
           progresso: 0,
           texto: '',
-          erro: 'arquivo não é uma imagem',
+          erro: 'formato não suportado',
         })
         continue
       }
@@ -181,7 +186,7 @@ export default function AnexoImagem({
         id,
         nome: file.name,
         arquivo: file,
-        url: URL.createObjectURL(file),
+        url: tipoDoArquivo(file) === 'imagem' ? URL.createObjectURL(file) : '',
         status: 'lendo',
         progresso: 0,
         texto: '',
@@ -224,7 +229,7 @@ export default function AnexoImagem({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept={ACEITOS}
         multiple
         hidden
         onChange={(e) => {
@@ -239,10 +244,10 @@ export default function AnexoImagem({
           onClick={() => inputRef.current?.click()}
           disabled={desabilitado}
           className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-[0.82rem] font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
-          aria-label="Anexar imagens para extrair o texto"
+          aria-label="Anexar imagens ou documentos para extrair o texto"
         >
           <Paperclip className="h-4 w-4" aria-hidden="true" />
-          Anexar imagem
+          Anexar imagem ou documento
         </button>
 
         {anexos.length > 0 && (
@@ -258,12 +263,12 @@ export default function AnexoImagem({
 
         <span className="text-[0.72rem] text-muted" aria-live="polite">
           {anexos.length === 0
-            ? dica ?? 'Print ou foto da questão — o texto é lido aqui no navegador'
+            ? dica ?? 'Imagem, PDF, DOCX ou TXT — o texto é lido aqui no navegador (com OCR)'
             : lendo
               ? `Lendo ${prontos} de ${anexos.length}…`
               : problemas > 0
                 ? `${prontos} de ${anexos.length} lidas · ${problemas} com problema`
-                : `${prontos} ${prontos === 1 ? 'imagem lida' : 'imagens lidas'}`}
+                : `${prontos} ${prontos === 1 ? 'anexo lido' : 'anexos lidos'}`}
         </span>
       </div>
 
@@ -289,6 +294,11 @@ export default function AnexoImagem({
                     alt={`Prévia de ${a.nome}`}
                     className="h-[92px] w-full rounded-lg border border-white/10 object-cover"
                   />
+                ) : a.arquivo ? (
+                  <div className="flex h-[92px] w-full flex-col items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] text-muted">
+                    <FileText className="h-6 w-6" aria-hidden="true" />
+                    <span className="font-mono text-[0.6rem] uppercase">{a.nome.split('.').pop()}</span>
+                  </div>
                 ) : (
                   <div className="flex h-[92px] w-full items-center justify-center rounded-lg border border-dashed border-white/10 opacity-40">
                     <ImageOff className="h-5 w-5" aria-hidden="true" />
@@ -299,7 +309,7 @@ export default function AnexoImagem({
                   onClick={() => remover(a.id)}
                   className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-md border border-white/10 bg-[#0b0a12]/85 text-muted transition-colors hover:text-rose-300"
                   aria-label={`Remover ${a.nome}`}
-                  title="Remover esta imagem"
+                  title="Remover este anexo"
                 >
                   <X className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
@@ -333,7 +343,7 @@ export default function AnexoImagem({
               {a.status === 'vazio' && (
                 <div className="mt-1.5">
                   <div className="text-[0.68rem] leading-snug text-amber-300">
-                    Não encontrei texto legível nesta imagem.
+                    Não encontrei texto legível neste arquivo.
                   </div>
                   {a.arquivo && (
                     <button

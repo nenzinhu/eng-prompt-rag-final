@@ -6,12 +6,15 @@ import { api, ApiError } from '@/lib/api'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
+import AnexoImagem from '../AnexoImagem'
 
 export default function ApostilaTab({ providers }: { providers: ProvidersResp }) {
   const { provider, modelo, trocarProvider, setModelo, pronto, nenhumConfigurado } = useProviderModel(providers)
   const [tema, setTema] = useState('')
   const [formato, setFormato] = useState<'pdf' | 'docx'>('pdf')
   const [loading, setLoading] = useState(false)
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [anexoReset, setAnexoReset] = useState(0)
   const [erro, setErro] = useState('')
   const [ok, setOk] = useState(false)
 
@@ -50,6 +53,15 @@ export default function ApostilaTab({ providers }: { providers: ProvidersResp })
         placeholder="Ex: Chain-of-thought prompting, Fundamentos de few-shot learning, Segurança em prompts..."
         className="glass min-h-[90px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
       />
+      <AnexoImagem
+        texto={tema}
+        setTexto={setTema}
+        desabilitado={loading}
+        onProcessando={setOcrLoading}
+        aplicarFormatoAlternativas={false}
+        resetToken={anexoReset}
+        dica="Imagem, PDF ou DOCX com o tema/ementa — o texto entra na caixa acima, com OCR"
+      />
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <div className="flex gap-2">
@@ -81,7 +93,7 @@ export default function ApostilaTab({ providers }: { providers: ProvidersResp })
       <div className="mt-3 flex gap-2">
         <button
           onClick={gerar}
-          disabled={loading || !tema.trim() || !pronto}
+          disabled={loading || ocrLoading || !tema.trim() || !pronto}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {loading ? 'Escrevendo apostila…' : 'Gerar apostila'}

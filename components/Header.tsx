@@ -125,12 +125,12 @@ export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }
   return (
     <header
       ref={rootRef}
-      className="sticky top-0 z-50 flex items-center justify-between border-b border-white/[0.06] bg-bg/70 px-6 py-2.5 backdrop-blur-xl"
+      className="sticky top-0 z-50 flex items-center justify-between border-b border-white/[0.12] bg-bg/70 px-[8px] py-[4px] backdrop-blur-xl"
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-[6px]">
         <span
           ref={logoRef}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet to-cyan shadow-[0_0_16px_rgba(155,107,255,0.35)]"
+          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[4px] bg-gradient-to-br from-lime to-hotpink shadow-[0_0_17px_rgba(255,61,240,0.45)]"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path
@@ -148,7 +148,7 @@ export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }
           </svg>
         </span>
         <div ref={titleRef} className="leading-tight">
-          <div className="font-display text-[0.98rem] italic text-text">
+          <div className="font-display text-[1.13rem] italic text-text">
             Engenharia de Prompt <span className="grad-text not-italic font-sans font-semibold">IA</span>
           </div>
           <div className="font-mono text-[0.65rem] tracking-wide text-muted">RAG CLOUD · VERCEL + SUPABASE</div>
@@ -157,7 +157,7 @@ export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }
       <div className="flex items-center gap-2">
         {inseguro && (
           <div
-            className="hidden items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 font-mono text-[0.68rem] font-medium text-amber-300 sm:flex"
+            className="hidden items-center gap-1.5 rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-1 font-mono text-[0.68rem] font-medium text-amber-300 sm:flex"
             title="O backend ainda escreve no banco com a chave pública. Defina SUPABASE_SERVICE_ROLE_KEY e ligue o RLS."
           >
             <TriangleAlert className="h-3 w-3" aria-hidden="true" />
@@ -166,7 +166,7 @@ export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }
         )}
         <div
           ref={badgeRef}
-          className={`flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[0.68rem] font-medium transition-colors ${styles[status]}`}
+          className={`flex items-center gap-2 rounded-md border px-3 py-1 font-mono text-[0.68rem] font-medium transition-colors ${styles[status]}`}
         >
           <span ref={dotRef} className={`h-1.5 w-1.5 rounded-full bg-current ${status === 'loading' ? 'animate-pulse' : ''}`} />
           {label}

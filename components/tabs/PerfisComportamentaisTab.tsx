@@ -7,6 +7,7 @@ import { useProviderModel } from '@/lib/useProviderModel'
 import { useHistorico } from '@/lib/useHistorico'
 import type { ProvidersResp, PerfilComportamental } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
+import AnexoImagem from '../AnexoImagem'
 
 const PERFIS_PADRAO: PerfilComportamental[] = [
   {
@@ -23,6 +24,8 @@ export default function PerfisComportamentaisTab({ providers }: { providers: Pro
   const [contexto, setContexto] = useState('')
   const [mensagem, setMensagem] = useState('')
   const [loading, setLoading] = useState(false)
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [anexoReset, setAnexoReset] = useState(0)
   const [erro, setErro] = useState('')
   const [resposta, setResposta] = useState('')
   const [copiado, setCopiado] = useState(false)
@@ -129,11 +132,20 @@ export default function PerfisComportamentaisTab({ providers }: { providers: Pro
         placeholder='Ex: "desculpa, eu tava passando por um momento difícil, você não entende..."'
         className="glass min-h-[110px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
       />
+      <AnexoImagem
+        texto={mensagem}
+        setTexto={setMensagem}
+        desabilitado={loading}
+        onProcessando={setOcrLoading}
+        aplicarFormatoAlternativas={false}
+        resetToken={anexoReset}
+        dica="Print da mensagem, PDF ou DOCX — o texto entra na caixa acima, com OCR"
+      />
 
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           onClick={gerar}
-          disabled={loading || !mensagem.trim() || !pronto}
+          disabled={loading || ocrLoading || !mensagem.trim() || !pronto}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {loading ? 'Formulando…' : 'Gerar resposta'}
@@ -142,6 +154,7 @@ export default function PerfisComportamentaisTab({ providers }: { providers: Pro
           onClick={() => {
             setContexto('')
             setMensagem('')
+            setAnexoReset((n) => n + 1)
             setResposta('')
             setErro('')
           }}

@@ -45,3 +45,6 @@ Thumbs.db
 
 # Backups locais avulsos — não fazem parte do código-fonte
 *.zip
+
+# worker do pdfjs (copiado no postinstall)
+public/pdf.worker.min.mjs
