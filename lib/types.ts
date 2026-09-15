@@ -219,6 +219,29 @@ export interface PerfilComportamentalResp {
   modelo: string
 }
 
+// ── Elenco de Personas (bate-papo que agrega e anima) ────────────────────────
+
+export interface ElencoPersona {
+  persona_id: string
+  display_name: string
+  description: string
+  contexto_label: string
+  contexto_placeholder: string
+  mensagem_label: string
+  mensagem_placeholder: string
+}
+
+export interface ElencoPersonasResp {
+  personas: ElencoPersona[]
+}
+
+export interface ElencoConversaResp {
+  resposta: string
+  persona_id: string
+  provider: string
+  modelo: string
+}
+
 export interface CompararResp {
   pergunta: string
   respostas: CompararResposta[]

@@ -1219,6 +1219,144 @@ async def perfil_comportamental(req: PerfilComportamentalReq, request: Request):
     }
 
 
+SYSTEM_PROMPT_ELENCO = (
+    "Você é um assistente de conversação social. Sua função é sugerir UMA mensagem para o usuário "
+    "enviar, escrita na personalidade ativa abaixo, capaz de puxar ou manter um assunto genuinamente "
+    "interessante para o destinatário — nunca um 'oi, tudo bem?' vazio.\n\n"
+    "REGRAS GERAIS:\n"
+    "1. A mensagem deve dar um gancho concreto de assunto (uma pergunta, opinião ou observação "
+    "específica), nunca uma saudação genérica.\n"
+    "2. Use o contexto e a última mensagem recebida (quando houver) para gerar um gancho que "
+    "continue a conversa de forma natural, não um script isolado.\n"
+    "3. Tom leve, humano e do tamanho de uma mensagem de WhatsApp real (curta, sem parecer texto "
+    "gerado por IA).\n"
+    "4. Nunca seja invasivo, insistente ou desrespeite um 'não' implícito no contexto.\n\n"
+    "SAÍDA DESEJADA:\n"
+    "Retorne exclusivamente o texto da mensagem pronta para envio — sem introduções, sem explicar a "
+    "escolha, sem aspas envolvendo o texto todo, sem markdown."
+)
+
+# Elenco de personas selecionáveis na aba "Elenco" — cada uma ajusta o gancho de
+# assunto e o tom da mensagem sugerida em cima do prompt base acima.
+ELENCO_PERSONAS: dict[str, dict[str, str]] = {
+    "debatedor": {
+        "display_name": "O Debatedor",
+        "description": "Puxa uma discussão animada (futebol, séries, \"quem venceria\") sem ofender.",
+        "prompt_modifier": (
+            "Gere uma provocação leve e divertida sobre um tema polêmico e popular (futebol, filme, "
+            "série, comida, time — infira do contexto ou escolha um clássico) que convide a pessoa a "
+            "discordar e se posicionar."
+        ),
+        "contexto_label": "Contexto (grupo, amizade, o que rolou)",
+        "contexto_placeholder": "Ex: grupo de amigos do trabalho, hoje teve clássico de futebol",
+        "mensagem_label": "Última mensagem recebida (opcional)",
+        "mensagem_placeholder": "Ex: (deixe em branco para puxar assunto do zero)",
+    },
+    "curiosa": {
+        "display_name": "A Curiosa",
+        "description": "Manda uma curiosidade/fato bizarro relacionado ao que já foi falado.",
+        "prompt_modifier": (
+            "Gere uma curiosidade ou fato surpreendente e verdadeiro (ciência, história, cultura pop) "
+            "conectado ao contexto, terminando com uma pergunta que convide a pessoa a reagir."
+        ),
+        "contexto_label": "Contexto (sobre o que estavam falando)",
+        "contexto_placeholder": "Ex: ela comentou que gosta de true crime",
+        "mensagem_label": "Última mensagem recebida (opcional)",
+        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
+    },
+    "nostalgico": {
+        "display_name": "O Nostálgico",
+        "description": "Resgata memória, música antiga ou meme para criar conexão de \"lembra quando\".",
+        "prompt_modifier": (
+            "Gere uma mensagem que resgate nostalgia (música, meme, época, infância) ligada ao "
+            "contexto, convidando a pessoa a compartilhar uma lembrança parecida."
+        ),
+        "contexto_label": "Contexto (época, geração, lembrança em comum)",
+        "contexto_placeholder": "Ex: grupo da faculdade, formado em 2018",
+        "mensagem_label": "Última mensagem recebida (opcional)",
+        "mensagem_placeholder": "Ex: (deixe em branco para puxar assunto do zero)",
+    },
+    "resenha": {
+        "display_name": "Provocador de Resenha",
+        "description": "Puxa enquete ou opinião sobre algo do momento (cultura pop, fofoca leve).",
+        "prompt_modifier": (
+            "Gere uma mensagem estilo enquete/opinião sobre algo em alta (novela, reality, música, "
+            "notícia leve), pedindo a opinião direta da pessoa."
+        ),
+        "contexto_label": "Contexto (o que está em alta no grupo)",
+        "contexto_placeholder": "Ex: grupo comentou o último episódio do reality",
+        "mensagem_label": "Última mensagem recebida (opcional)",
+        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
+    },
+    "paquera": {
+        "display_name": "Paquera / Match",
+        "description": "Conversa com alguém conhecida(o) no Tinder, Instagram etc. — flerte leve e genuíno.",
+        "prompt_modifier": (
+            "Gere uma mensagem de flerte leve e genuíno (nunca vulgar, nunca insistente), usando um "
+            "detalhe específico do perfil/conversa (bio, foto, resposta anterior) como gancho, com "
+            "humor e uma pergunta aberta que convide resposta longa. Se não houver detalhe específico "
+            "no contexto, use humor observacional em vez de elogio físico genérico."
+        ),
+        "contexto_label": "Contexto (bio do perfil, onde combinaram, vibe da pessoa)",
+        "contexto_placeholder": "Ex: deu match no Tinder, bio diz que ama trilha e café",
+        "mensagem_label": "Última mensagem recebida dela/dele (opcional)",
+        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
+    },
+}
+
+
+@app.get("/api/elenco-personas")
+def listar_elenco_personas():
+    return {
+        "personas": [
+            {
+                "persona_id": pid,
+                "display_name": p["display_name"],
+                "description": p["description"],
+                "contexto_label": p["contexto_label"],
+                "contexto_placeholder": p["contexto_placeholder"],
+                "mensagem_label": p["mensagem_label"],
+                "mensagem_placeholder": p["mensagem_placeholder"],
+            }
+            for pid, p in ELENCO_PERSONAS.items()
+        ]
+    }
+
+
+class ElencoConversaReq(BaseModel):
+    contexto: str = ""
+    mensagem: str = ""
+    persona_id: str = "debatedor"
+    provider: str = "nous"
+    modelo: Optional[str] = None
+
+
+@app.post("/api/elenco-conversa")
+async def elenco_conversa(req: ElencoConversaReq, request: Request):
+    _limitar_llm(request)
+    persona = ELENCO_PERSONAS.get(req.persona_id)
+    if not persona:
+        raise HTTPException(400, f"Persona desconhecida: '{req.persona_id}'.")
+    if not req.contexto.strip() and not req.mensagem.strip():
+        raise HTTPException(400, "Informe o contexto da conversa ou a última mensagem recebida.")
+    modelo = resolver_modelo(req.provider, req.modelo)
+    system_prompt = (
+        f"{SYSTEM_PROMPT_ELENCO}\n\n"
+        f"PERSONA ATIVA — {persona['display_name']}:\n{persona['prompt_modifier']}"
+    )
+    user_prompt = (
+        f"Contexto: {req.contexto.strip() or '(não informado)'}\n"
+        f"Última mensagem recebida: {req.mensagem.strip() or '(nenhuma — inicie o assunto)'}"
+    )
+    resposta = await chamar_llm(req.provider, modelo, system_prompt, user_prompt)
+    return {
+        "resposta": limpar_resposta(resposta),
+        "persona_id": req.persona_id,
+        "provider": req.provider,
+        "modelo": modelo,
+    }
+
+
 # Personas do "Professor Sabe Tudo" — "professor" é a padrão original; as demais
 # são as 5 personalidades extras selecionáveis na aba (aba Perguntar usa "padrao").
 PERSONA_PROMPTS: dict[str, str] = {

@@ -12,6 +12,7 @@ import {
   FileStack,
   FileArchive,
   Shield,
+  PartyPopper,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { ProvidersResp } from '@/lib/types'
@@ -28,6 +29,7 @@ import GlossarioTab from '@/components/tabs/GlossarioTab'
 import ComprimirTab from '@/components/tabs/ComprimirTab'
 import ApostilaTab from '@/components/tabs/ApostilaTab'
 import PerfisComportamentaisTab from '@/components/tabs/PerfisComportamentaisTab'
+import ElencoTab from '@/components/tabs/ElencoTab'
 
 const TABS: TabDef[] = [
   { id: 'perguntar', label: 'Perguntar', labelShort: 'Perguntar', icon: MessageCircle },
@@ -40,6 +42,7 @@ const TABS: TabDef[] = [
   { id: 'comprimir', label: 'Comprimir Arquivos', labelShort: 'Comprimir', icon: FileArchive },
   { id: 'pdfs', label: 'PDFs', labelShort: 'PDFs', icon: FileStack },
   { id: 'perfis-comportamentais', label: 'Perfis Comportamentais', labelShort: 'Perfis', icon: Shield },
+  { id: 'elenco', label: 'Elenco', labelShort: 'Elenco', icon: PartyPopper },
 ]
 
 export default function Home() {
@@ -95,6 +98,9 @@ export default function Home() {
           </TabPanel>
           <TabPanel active={active === 'perfis-comportamentais'}>
             <PerfisComportamentaisTab providers={providers} />
+          </TabPanel>
+          <TabPanel active={active === 'elenco'}>
+            <ElencoTab providers={providers} />
           </TabPanel>
         </div>
       </main>
