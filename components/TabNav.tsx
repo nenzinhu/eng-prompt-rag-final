@@ -97,7 +97,7 @@ export default function TabNav({
   }
 
   return (
-    <nav className="sticky top-[64px] z-40 px-2 py-3 sm:px-4">
+    <nav className="sticky top-[54px] z-40 px-2 py-1.5 sm:px-4">
       <div
         ref={navRef}
         className="no-scrollbar relative mx-auto flex max-w-full items-center gap-1 overflow-x-auto border-b border-white/10 px-1 sm:flex-wrap sm:justify-center sm:overflow-visible"
@@ -120,7 +120,7 @@ export default function TabNav({
               onMouseEnter={() => onEnterBtn(t.id)}
               onMouseLeave={() => onLeaveBtn(t.id)}
               aria-current={active === t.id ? 'true' : undefined}
-              className={`relative z-10 flex shrink-0 items-center gap-2 whitespace-nowrap px-3.5 py-3 text-[0.83rem] font-medium transition-colors sm:px-4 sm:text-sm ${
+              className={`relative z-10 flex shrink-0 items-center gap-2 whitespace-nowrap px-3 py-2 text-[0.83rem] font-medium transition-colors sm:px-3.5 sm:text-sm ${
                 active === t.id ? 'text-white' : 'text-muted hover:text-lime active:text-lime'
               }`}
             >

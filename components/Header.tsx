@@ -125,14 +125,14 @@ export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }
   return (
     <header
       ref={rootRef}
-      className="sticky top-0 z-50 flex items-center justify-between border-b border-white/[0.06] bg-bg/70 px-6 py-3.5 backdrop-blur-xl"
+      className="sticky top-0 z-50 flex items-center justify-between border-b border-white/[0.06] bg-bg/70 px-6 py-2.5 backdrop-blur-xl"
     >
       <div className="flex items-center gap-3">
         <span
           ref={logoRef}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet to-cyan shadow-[0_0_16px_rgba(155,107,255,0.35)]"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet to-cyan shadow-[0_0_16px_rgba(155,107,255,0.35)]"
         >
-          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path
               d="M4 6.5 9 12l-5 5.5"
               stroke="#08070c"
