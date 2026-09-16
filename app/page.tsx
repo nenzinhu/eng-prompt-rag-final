@@ -14,6 +14,7 @@ import {
   Shield,
   PartyPopper,
   LifeBuoy,
+  Lightbulb,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { ProvidersResp } from '@/lib/types'
@@ -22,6 +23,7 @@ import TabNav, { type TabDef } from '@/components/TabNav'
 import TabPanel from '@/components/TabPanel'
 import PerguntarTab from '@/components/tabs/PerguntarTab'
 import ProfessorTab from '@/components/tabs/ProfessorTab'
+import AprenderTab from '@/components/tabs/AprenderTab'
 import BuscarTab from '@/components/tabs/BuscarTab'
 import ResolverTab from '@/components/tabs/ResolverTab'
 import CompararTab from '@/components/tabs/CompararTab'
@@ -36,6 +38,7 @@ import SuporteTab from '@/components/tabs/SuporteTab'
 const TABS: TabDef[] = [
   { id: 'perguntar', grupo: 'Estudar', label: 'Perguntar', labelShort: 'Perguntar', icon: MessageCircle },
   { id: 'professor', grupo: 'Estudar', label: 'Professor Sabe Tudo', labelShort: 'Professor', icon: GraduationCap },
+  { id: 'aprender', grupo: 'Estudar', label: 'Aprender (Feynman)', labelShort: 'Aprender', icon: Lightbulb },
   { id: 'buscar', grupo: 'Estudar', label: 'Buscar', labelShort: 'Busca', icon: Search },
   { id: 'resolver', grupo: 'Estudar', label: 'Resolver Questão', labelShort: 'Resolver', icon: Target },
   { id: 'glossario', grupo: 'Estudar', label: 'Glossário', labelShort: 'Glossário', icon: Library },
@@ -77,6 +80,9 @@ export default function Home() {
           </TabPanel>
           <TabPanel active={active === 'professor'}>
             <ProfessorTab providers={providers} />
+          </TabPanel>
+          <TabPanel active={active === 'aprender'}>
+            <AprenderTab providers={providers} />
           </TabPanel>
           <TabPanel active={active === 'apostila'}>
             <ApostilaTab providers={providers} />

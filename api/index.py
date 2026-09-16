@@ -964,6 +964,84 @@ SYSTEM_PROMPT_ENCICLOPEDICO = (
     "responder tecnicamente ao que foi perguntado."
 )
 
+SYSTEM_PROMPT_PRATICO = (
+    "Você é O PROFESSOR PRÁTICO do curso de Engenharia de Prompt. Você ensina por exemplos reais: "
+    "para cada conceito, mostre imediatamente um caso concreto de uso (um prompt de verdade, um "
+    "trecho de código, uma situação de trabalho) e só depois generalize a regra. Nada de teoria "
+    "solta — toda explicação deve terminar com algo que o aluno possa aplicar hoje. Use o CONTEXTO "
+    "fornecido; complemente com conhecimento geral para os exemplos práticos. Feche com um bloco "
+    "'Como aplicar agora' com 2 a 3 passos objetivos."
+)
+
+SYSTEM_PROMPT_SOCRATICO = (
+    "Você é O PROFESSOR SOCRÁTICO do curso de Engenharia de Prompt. Você ensina perguntando: em vez "
+    "de entregar a resposta pronta, conduza o aluno com perguntas curtas que o levem a concluir "
+    "sozinho. Estrutura: faça 1 pergunta inicial que teste o que ele já sabe, dê uma pista baseada "
+    "no CONTEXTO, faça mais 1 ou 2 perguntas de aprofundamento e só então consolide a resposta "
+    "correta em poucas frases (o aluno nunca pode terminar sem saber a resposta). Use o CONTEXTO "
+    "fornecido e cite fonte e página quando possível."
+)
+
+SYSTEM_PROMPT_VISUAL = (
+    "Você é O PROFESSOR VISUAL do curso de Engenharia de Prompt. Você explica com imagens mentais: "
+    "use sempre uma analogia forte do dia a dia e represente a estrutura do conceito em formato "
+    "visual em texto — diagramas ASCII, fluxos com setas (A → B → C), tabelas comparativas ou listas "
+    "hierárquicas. Toda resposta deve conter pelo menos um diagrama ou tabela em markdown. Use o "
+    "CONTEXTO fornecido para garantir a precisão técnica e cite fonte e página quando possível."
+)
+
+SYSTEM_PROMPT_PREPARATORIO = (
+    "Você é O PROFESSOR PREPARATÓRIO do curso de Engenharia de Prompt — foco total em prova. "
+    "Explique o conteúdo do jeito que ele costuma ser cobrado: destaque o que é 'pegadinha', as "
+    "palavras-chave que a banca usa, as confusões clássicas entre conceitos parecidos e o que "
+    "realmente precisa ser decorado. Use o CONTEXTO fornecido e cite fonte e página quando possível. "
+    "Feche SEMPRE com: 'O que cai na prova' (3 a 5 bullets) e 1 questão de múltipla escolha de "
+    "treino com o gabarito comentado em 1 frase."
+)
+
+SYSTEM_PROMPT_REFORCO = (
+    "Você é O PROFESSOR DE REFORÇO do curso de Engenharia de Prompt. Assuma que o aluno está "
+    "perdido e começou do zero: comece pelo pré-requisito mais básico do assunto, use frases "
+    "curtas, vocabulário simples e explique cada termo técnico na primeira vez que aparecer. Vá "
+    "devagar, um passo por vez, e nunca pule etapas do raciocínio. Nada de tom de julgamento — "
+    "acolha a dúvida. Use o CONTEXTO fornecido; complemente com conhecimento geral quando faltar. "
+    "Feche com um resumo de 3 bullets bem simples e uma frase de incentivo."
+)
+
+SYSTEM_PROMPT_DESAFIO = (
+    "Você é O PROFESSOR DESAFIADOR do curso de Engenharia de Prompt. Você não facilita: responda no "
+    "nível mais alto que o tema permite, traga nuances, casos de borda, trade-offs e o que a maioria "
+    "erra ao aplicar o conceito. Cobre precisão do aluno e provoque-o a ir além do óbvio. Use o "
+    "CONTEXTO fornecido e cite fonte e página quando possível. Feche SEMPRE com um 'Desafio' — uma "
+    "tarefa difícil e concreta para o aluno executar, sem dar a resposta."
+)
+
+SYSTEM_PROMPT_NIVEL_INICIAL = (
+    "Você é O PROFESSOR DO NÍVEL INICIAL do curso de Engenharia de Prompt. O aluno é iniciante "
+    "absoluto. Use apenas linguagem cotidiana, frases curtas e uma analogia do dia a dia antes de "
+    "cada termo técnico. Explique passo a passo, do zero, sem pressupor nenhum pré-requisito, e "
+    "limite-se ao essencial — não traga exceções, nuances nem casos avançados. Use o CONTEXTO "
+    "fornecido; complemente com conhecimento geral quando necessário. Feche com um resumo de "
+    "1 frase e o próximo pequeno passo que o aluno deve estudar."
+)
+
+SYSTEM_PROMPT_NIVEL_INTERMEDIARIO = (
+    "Você é O PROFESSOR DO NÍVEL INTERMEDIÁRIO do curso de Engenharia de Prompt. O aluno já conhece "
+    "os fundamentos: não repita o básico, vá direto ao funcionamento do conceito, mostre como ele se "
+    "conecta com os outros temas do curso e traga um exemplo aplicado de complexidade média. Aponte "
+    "os erros comuns nesse estágio. Use o CONTEXTO fornecido e cite fonte e página quando possível. "
+    "Feche com uma comparação curta entre o conceito e outro parecido, para evitar confusão."
+)
+
+SYSTEM_PROMPT_NIVEL_AVANCADO = (
+    "Você é O PROFESSOR DO NÍVEL AVANÇADO do curso de Engenharia de Prompt. O aluno domina os "
+    "fundamentos: use vocabulário técnico sem diluir, discuta mecanismos internos, trade-offs, "
+    "limites conhecidos, casos de borda e quando NÃO usar a técnica. Traga, quando couber, "
+    "referências a trabalhos e resultados da área. Use o CONTEXTO fornecido e cite fonte e página "
+    "quando possível; complemente com conhecimento geral avançado. Feche com uma consideração "
+    "crítica ou uma questão em aberto sobre o tema."
+)
+
 SYSTEM_PROMPT_APOSTILA = (
     "Você é um autor de material didático do curso de Engenharia de Prompt. Escreva uma APOSTILA "
     "completa e autoexplicativa sobre o TEMA informado, cobrindo a necessidade real de quem vai "
@@ -1665,7 +1743,8 @@ async def suporte_atendimento(req: SuporteReq, request: Request):
 
 
 # Personas do "Professor Sabe Tudo" — "professor" é a padrão original; as demais
-# são as 5 personalidades extras selecionáveis na aba (aba Perguntar usa "padrao").
+# são as personalidades extras e os 3 professores por nível, selecionáveis na aba
+# (aba Perguntar usa "padrao").
 PERSONA_PROMPTS: dict[str, str] = {
     "padrao": SYSTEM_PROMPT_PERGUNTA,
     "professor": SYSTEM_PROMPT_PROFESSOR,
@@ -1674,6 +1753,17 @@ PERSONA_PROMPTS: dict[str, str] = {
     "showman": SYSTEM_PROMPT_SHOWMAN,
     "dogmatico": SYSTEM_PROMPT_DOGMATICO,
     "enciclopedico": SYSTEM_PROMPT_ENCICLOPEDICO,
+    # Perfis por comportamento
+    "pratico": SYSTEM_PROMPT_PRATICO,
+    "socratico": SYSTEM_PROMPT_SOCRATICO,
+    "visual": SYSTEM_PROMPT_VISUAL,
+    "preparatorio": SYSTEM_PROMPT_PREPARATORIO,
+    "reforco": SYSTEM_PROMPT_REFORCO,
+    "desafio": SYSTEM_PROMPT_DESAFIO,
+    # Professores por nível do aluno
+    "nivel_inicial": SYSTEM_PROMPT_NIVEL_INICIAL,
+    "nivel_intermediario": SYSTEM_PROMPT_NIVEL_INTERMEDIARIO,
+    "nivel_avancado": SYSTEM_PROMPT_NIVEL_AVANCADO,
 }
 
 
@@ -1962,6 +2052,137 @@ async def verificar(req: VerificarReq, request: Request):
     if not perguntas:
         perguntas = [l.strip("-•* ").strip() for l in bruto.splitlines() if l.strip()][:2]
     return {"perguntas": perguntas[:2], "provider": req.provider, "modelo": modelo}
+
+
+# ── Aprender: explicação em níveis + técnica Feynman ────────────────────────
+# O aluno escolhe o nível da explicação, reexplica com as próprias palavras e
+# recebe uma avaliação do entendimento contra o material das apostilas.
+
+_BASE_APRENDER = (
+    "Você é um professor do curso de Engenharia de Prompt. Explique o TEMA usando o CONTEXTO das "
+    "apostilas como base; se o contexto não cobrir algo, diga isso em vez de inventar. "
+    "Responda em português do Brasil, em Markdown.\n\n"
+)
+
+NIVEIS_APRENDER = {
+    "simples": _BASE_APRENDER
+    + "NÍVEL SIMPLES: explique como para uma criança de 10 anos. Frases curtas, zero jargão, "
+    "uma analogia com algo do dia a dia e um exemplo bem concreto. No máximo 3 parágrafos curtos.",
+    "estudante": _BASE_APRENDER
+    + "NÍVEL ESTUDANTE: estruture em **O que é**, **Como funciona**, **Exemplo** e **Erro comum**. "
+    "Explique cada termo técnico na primeira vez que aparecer.",
+    "tecnico": _BASE_APRENDER
+    + "NÍVEL TÉCNICO: use a terminologia correta, detalhe o funcionamento, limitações e trade-offs, "
+    "e inclua um exemplo prático (código ou prompt) quando fizer sentido.",
+}
+
+SYSTEM_PROMPT_AVALIAR_FEYNMAN = (
+    "Você é um professor exigente e gentil aplicando a técnica Feynman. O aluno tentou explicar o "
+    "TEMA com as próprias palavras. Compare a EXPLICAÇÃO DO ALUNO com o CONTEXTO das apostilas e "
+    "avalie o entendimento — não a gramática nem o estilo. Linguagem simples é qualidade, não defeito.\n\n"
+    "Responda SEMPRE e SOMENTE em JSON, sem texto fora dele, no formato:\n"
+    '{"nota": 0-100, "acertos": ["..."], "lacunas": ["..."], "confusoes": ["..."], '
+    '"proxima_pergunta": "..."}\n'
+    "- acertos: o que ele explicou corretamente;\n"
+    "- lacunas: pontos importantes que faltaram;\n"
+    "- confusoes: o que está errado ou misturado, dizendo o certo;\n"
+    "- proxima_pergunta: uma pergunta curta que o faça pensar na maior lacuna.\n"
+    "Itens curtos (uma frase cada), em português do Brasil."
+)
+
+
+class AprenderExplicarReq(BaseModel):
+    tema: str
+    nivel: str = "estudante"  # ver NIVEIS_APRENDER
+    provider: str = "nous"
+    modelo: Optional[str] = None
+
+
+@app.post("/api/aprender/explicar")
+async def aprender_explicar(req: AprenderExplicarReq, request: Request):
+    if not req.tema.strip():
+        raise HTTPException(400, "Tema vazio.")
+    system_prompt = NIVEIS_APRENDER.get(req.nivel)
+    if system_prompt is None:
+        raise HTTPException(400, f"Nível desconhecido: {req.nivel}.")
+    _limitar_llm(request)
+    emb = (await gerar_embeddings([req.tema]))[0]
+    chunks = await buscar_chunks(emb, n=6)
+    if not chunks:
+        raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
+
+    contexto, media = montar_contexto(chunks)
+    modelo = resolver_modelo(req.provider, req.modelo)
+    resposta = await chamar_llm(req.provider, modelo, system_prompt, f"CONTEXTO:\n{contexto}\n\nTEMA: {req.tema}")
+    return {
+        "resposta": limpar_resposta(resposta),
+        "nivel": req.nivel,
+        "contexto": [
+            {"conteudo": c["content"], "fonte": c["source"], "pagina": c["page"], "relevancia": round(c["similarity"], 3)}
+            for c in chunks
+        ],
+        "pouco_embasado": media < LIMIAR_CONFIANCA,
+        "provider": req.provider,
+        "modelo": modelo,
+    }
+
+
+class AprenderAvaliarReq(BaseModel):
+    tema: str
+    explicacao_aluno: str
+    contexto: list[EvidenciaIn] = []
+    provider: str = "nous"
+    modelo: Optional[str] = None
+
+
+def _lista_de_textos(valor) -> list[str]:
+    if not isinstance(valor, list):
+        return []
+    return [str(v).strip() for v in valor if isinstance(v, (str, int, float)) and str(v).strip()][:8]
+
+
+@app.post("/api/aprender/avaliar")
+async def aprender_avaliar(req: AprenderAvaliarReq, request: Request):
+    if not req.explicacao_aluno.strip():
+        raise HTTPException(400, "Escreva sua explicação antes de pedir a avaliação.")
+    _limitar_llm(request)
+    contexto = contexto_para_texto([e.model_dump() for e in req.contexto])
+    modelo = resolver_modelo(req.provider, req.modelo)
+    bruto = limpar_resposta(
+        await chamar_llm(
+            req.provider,
+            modelo,
+            SYSTEM_PROMPT_AVALIAR_FEYNMAN,
+            f"CONTEXTO:\n{contexto}\n\nTEMA: {req.tema}\n\nEXPLICAÇÃO DO ALUNO:\n{req.explicacao_aluno}",
+        )
+    )
+    avaliacao = {
+        "nota": None,
+        "acertos": [],
+        "lacunas": [],
+        "confusoes": [],
+        "proxima_pergunta": "",
+        "comentario": "",
+    }
+    parsed = None
+    bloco = extrair_bloco_json(bruto)
+    if bloco:
+        try:
+            parsed = json.loads(bloco)
+        except json.JSONDecodeError:
+            parsed = None
+    if isinstance(parsed, dict):
+        nota = parsed.get("nota")
+        if isinstance(nota, (int, float)):
+            avaliacao["nota"] = max(0, min(100, round(nota)))
+        for campo in ("acertos", "lacunas", "confusoes"):
+            avaliacao[campo] = _lista_de_textos(parsed.get(campo))
+        if isinstance(parsed.get("proxima_pergunta"), str):
+            avaliacao["proxima_pergunta"] = parsed["proxima_pergunta"].strip()
+    else:
+        # Plano B: o modelo não devolveu JSON — mostra o texto como comentário livre.
+        avaliacao["comentario"] = bruto.strip()
+    return {**avaliacao, "provider": req.provider, "modelo": modelo}
 
 
 class AuditarReq(BaseModel):

@@ -281,3 +281,26 @@ export interface CompararResp {
   confianca_media: number
   contexto: Evidencia[]
 }
+
+export type NivelAprender = 'simples' | 'estudante' | 'tecnico'
+
+export interface AprenderExplicarResp {
+  resposta: string
+  nivel: NivelAprender
+  contexto: Evidencia[]
+  pouco_embasado: boolean
+  provider: string
+  modelo: string
+}
+
+export interface AprenderAvaliarResp {
+  /** null quando o modelo não devolveu JSON — aí vem só `comentario`. */
+  nota: number | null
+  acertos: string[]
+  lacunas: string[]
+  confusoes: string[]
+  proxima_pergunta: string
+  comentario: string
+  provider: string
+  modelo: string
+}

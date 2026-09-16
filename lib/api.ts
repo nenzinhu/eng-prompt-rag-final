@@ -1,4 +1,7 @@
 import type {
+  AprenderAvaliarResp,
+  AprenderExplicarResp,
+  NivelAprender,
   StatusResp,
   ConfigResp,
   ProvidersResp,
@@ -131,6 +134,10 @@ export const api = {
     postJson<SimplificarResp>('/api/simplificar', { pergunta, resposta, contexto, provider, modelo }),
   verificar: (pergunta: string, resposta: string, contexto: Evidencia[], provider: string, modelo: string) =>
     postJson<VerificarResp>('/api/verificar', { pergunta, resposta, contexto, provider, modelo }),
+  aprenderExplicar: (tema: string, nivel: NivelAprender, provider: string, modelo: string) =>
+    postJson<AprenderExplicarResp>('/api/aprender/explicar', { tema, nivel, provider, modelo }),
+  aprenderAvaliar: (tema: string, explicacao_aluno: string, contexto: Evidencia[], provider: string, modelo: string) =>
+    postJson<AprenderAvaliarResp>('/api/aprender/avaliar', { tema, explicacao_aluno, contexto, provider, modelo }),
   resolver: (texto: string, provider: string, modelo: string) =>
     postJson<ResolverResp>('/api/resolver', { texto, provider, modelo }),
   glossario: (tema: string, provider: string, modelo: string) =>
