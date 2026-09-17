@@ -140,6 +140,10 @@ PROVIDERS = {
 STATUS_TRANSITORIOS = {429, 500, 502, 503, 504}
 MAX_ESPERA_RETENTATIVA = 3.0
 
+# Temperatura de quem não pede outra. As personas do Professor pedem a sua
+# (as expressivas soltam mais, as rigorosas menos).
+TEMPERATURA_PADRAO = 0.3
+
 
 def _preparar_chamada(provider: str, modelo: str, timeout: Optional[float]) -> tuple[dict, str, float]:
     cfg = PROVIDERS.get(provider)
@@ -174,6 +178,7 @@ async def chamar_llm(
     system_prompt: str,
     user_prompt: str,
     timeout: Optional[float] = None,
+    temperatura: Optional[float] = None,
 ) -> str:
     cfg, api_key, limite = _preparar_chamada(provider, modelo, timeout)
     inicio = time.monotonic()
@@ -183,7 +188,7 @@ async def chamar_llm(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.3,
+        "temperature": TEMPERATURA_PADRAO if temperatura is None else temperatura,
     }
     for tentativa in (1, 2):
         restante = limite - (time.monotonic() - inicio)
@@ -227,6 +232,7 @@ async def chamar_llm_stream(
     system_prompt: str,
     user_prompt: str,
     timeout: Optional[float] = None,
+    temperatura: Optional[float] = None,
 ):
     """Versão em streaming: gera os pedaços de texto conforme o modelo escreve.
 
@@ -248,7 +254,7 @@ async def chamar_llm_stream(
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    "temperature": 0.3,
+                    "temperature": TEMPERATURA_PADRAO if temperatura is None else temperatura,
                     "stream": True,
                 },
             ) as r:

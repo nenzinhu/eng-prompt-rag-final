@@ -27,6 +27,7 @@ import type {
   ElencoConversaResp,
   SuportePersonasResp,
   SuporteAtendimentoResp,
+  ProfessorPersonasResp,
 } from './types'
 
 /** Erro de API que preserva o corpo devolvido pelo backend. */
@@ -206,6 +207,7 @@ export const api = {
   buscar: (query: string, n = 6) => postJson<BuscarResp>('/api/buscar', { query, n }),
   perguntar: (pergunta: string, provider: string, modelo: string, persona: string = 'padrao') =>
     postJson<PerguntarResp>('/api/perguntar', { pergunta, provider, modelo, persona }),
+  professorPersonas: () => pedir<ProfessorPersonasResp>('/api/professor-personas'),
   simplificar: (pergunta: string, resposta: string, contexto: Evidencia[], provider: string, modelo: string) =>
     postJson<SimplificarResp>('/api/simplificar', { pergunta, resposta, contexto, provider, modelo }),
   verificar: (pergunta: string, resposta: string, contexto: Evidencia[], provider: string, modelo: string) =>

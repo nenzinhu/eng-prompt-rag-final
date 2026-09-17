@@ -258,6 +258,20 @@ export interface SuportePersonasResp {
   personas: SuportePersona[]
 }
 
+// ── Professor Sabe Tudo ──────────────────────────────────────────────────────
+
+/** Só o que o card mostra; estrutura, voz e temperatura ficam no servidor. */
+export interface ProfessorPersona {
+  persona_id: string
+  nome: string
+  descricao: string
+  exemplo: string
+}
+
+export interface ProfessorPersonasResp {
+  personas: ProfessorPersona[]
+}
+
 export interface SuporteAtendimentoResp {
   resposta: string
   persona_id: string

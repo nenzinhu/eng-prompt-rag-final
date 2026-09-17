@@ -28,7 +28,7 @@ import secrets
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 from urllib.parse import quote
 
 import httpx
@@ -70,7 +70,9 @@ from _app.prompts import (  # noqa: E402
     ELENCO_PERSONAS,
     SYSTEM_PROMPT_SUPORTE,
     SUPORTE_PERSONAS,
-    PERSONA_PROMPTS,
+    PROFESSOR_PERSONAS,
+    montar_prompt_professor,
+    resolver_persona_professor,
     NIVEIS_APRENDER,
     SYSTEM_PROMPT_AVALIAR_FEYNMAN,
 )
@@ -984,31 +986,64 @@ async def suporte_atendimento(req: SuporteReq, request: Request):
     }
 
 
+@app.get("/api/professor-personas")
+def listar_professor_personas():
+    # Só o que o card mostra: papel, estrutura, voz e temperatura ficam no servidor.
+    return {
+        "personas": [
+            {"persona_id": pid, "nome": p["nome"], "descricao": p["descricao"], "exemplo": p["exemplo"]}
+            for pid, p in PROFESSOR_PERSONAS.items()
+        ]
+    }
+
+
 class PerguntaReq(BaseModel):
     pergunta: str
     provider: str = "nous"
     modelo: Optional[str] = None
-    persona: str = "padrao"  # ver PERSONA_PROMPTS
+    # "padrao" = aba Perguntar; os demais são fichas de PROFESSOR_PERSONAS (ou IDs antigos em PERSONA_ALIASES)
+    persona: str = "padrao"
 
 
-async def _preparar_pergunta(req: PerguntaReq, request: Request) -> tuple[list[dict], str, float, str, str]:
+class _PerguntaPreparada(NamedTuple):
+    chunks: list[dict]
+    media: float
+    modelo: str
+    system_prompt: str
+    user_prompt: str
+    temperatura: Optional[float]  # None = padrão do provedor
+
+
+async def _preparar_pergunta(req: PerguntaReq, request: Request) -> _PerguntaPreparada:
     """Tudo o que vem antes da geração: limite, busca no material e validação.
 
     Compartilhado pela rota normal e pela de streaming — assim os erros (pergunta
-    vazia, banco vazio, modelo inválido, limite) saem com o status HTTP certo
-    antes de o stream começar.
+    vazia, persona desconhecida, banco vazio, modelo inválido, limite) saem com o
+    status HTTP certo antes de o stream começar.
     """
     await _limitar_llm(request)
     if not req.pergunta.strip():
         raise HTTPException(400, "Pergunta vazia.")
+    persona_id = None
+    if req.persona != "padrao":
+        # Antes, ID desconhecido caía calado no prompt padrão e o aluno recebia
+        # outra personalidade sem saber.
+        persona_id = resolver_persona_professor(req.persona)
+        if persona_id is None:
+            raise HTTPException(400, f"Persona desconhecida: '{req.persona}'.")
     modelo = resolver_modelo(req.provider, req.modelo)
     emb = (await gerar_embeddings([req.pergunta]))[0]
     chunks = await buscar_chunks(emb, n=6)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
     contexto, media = montar_contexto(chunks)
-    system_prompt = PERSONA_PROMPTS.get(req.persona, SYSTEM_PROMPT_PERGUNTA)
-    return chunks, contexto, media, modelo, system_prompt
+    if persona_id is None:
+        system_prompt = SYSTEM_PROMPT_PERGUNTA
+        user_prompt = f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
+        temperatura = None
+    else:
+        system_prompt, user_prompt, temperatura = montar_prompt_professor(persona_id, contexto, req.pergunta)
+    return _PerguntaPreparada(chunks, media, modelo, system_prompt, user_prompt, temperatura)
 
 
 def _meta_pergunta(req: PerguntaReq, chunks: list[dict], media: float, modelo: str) -> dict:
@@ -1026,11 +1061,9 @@ def _meta_pergunta(req: PerguntaReq, chunks: list[dict], media: float, modelo: s
 
 @app.post("/api/perguntar")
 async def perguntar(req: PerguntaReq, request: Request):
-    chunks, contexto, media, modelo, system_prompt = await _preparar_pergunta(req, request)
-    resposta = await chamar_llm(
-        req.provider, modelo, system_prompt, f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
-    )
-    return {"resposta": resposta, **_meta_pergunta(req, chunks, media, modelo)}
+    p = await _preparar_pergunta(req, request)
+    resposta = await chamar_llm(req.provider, p.modelo, p.system_prompt, p.user_prompt, temperatura=p.temperatura)
+    return {"resposta": resposta, **_meta_pergunta(req, p.chunks, p.media, p.modelo)}
 
 
 @app.post("/api/perguntar/stream")
@@ -1041,16 +1074,17 @@ async def perguntar_stream(req: PerguntaReq, request: Request):
     `texto` (cada pedaço gerado), e por fim `fim` ou `erro`. O aluno começa a
     ler em ~1 s em vez de esperar a resposta inteira.
     """
-    chunks, contexto, media, modelo, system_prompt = await _preparar_pergunta(req, request)
-    user_prompt = f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
+    p = await _preparar_pergunta(req, request)
 
     def linha(evento: dict) -> str:
         return json.dumps(evento, ensure_ascii=False) + "\n"
 
     async def eventos():
-        yield linha({"tipo": "meta", **_meta_pergunta(req, chunks, media, modelo)})
+        yield linha({"tipo": "meta", **_meta_pergunta(req, p.chunks, p.media, p.modelo)})
         try:
-            async for pedaco in chamar_llm_stream(req.provider, modelo, system_prompt, user_prompt):
+            async for pedaco in chamar_llm_stream(
+                req.provider, p.modelo, p.system_prompt, p.user_prompt, temperatura=p.temperatura
+            ):
                 yield linha({"tipo": "texto", "t": pedaco})
         except HTTPException as e:
             yield linha({"tipo": "erro", "mensagem": str(e.detail)})
