@@ -140,7 +140,12 @@ echo.
 echo  OK - Ambos os servidores estao respondendo.
 echo     Backend : http://localhost:8000
 echo     Frontend: http://localhost:3000
-start "" http://localhost:3000
+if /i "%~1"=="app" (
+    REM Modo app, usado pelo atalho da Area de Trabalho: janela propria, sem barra de endereco.
+    call :ABRIR_JANELA_APP
+) else (
+    start "" http://localhost:3000
+)
 echo.
 echo  Para encerrar, feche as duas janelas abertas ou pressione Ctrl+C nelas.
 echo.
@@ -157,3 +162,24 @@ echo  Erros comuns ficam visiveis na propria janela de cada servidor.
 echo.
 pause
 exit /b 1
+
+REM ---------------------------------------------------------------
+REM Abre http://localhost:3000 como janela de aplicativo (Edge ou Chrome).
+REM Sem nenhum dos dois, cai no navegador padrao.
+REM ---------------------------------------------------------------
+:ABRIR_JANELA_APP
+set "NAVEGADOR="
+for %%N in (
+    "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
+    "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
+    "%ProgramFiles%\Google\Chrome\Application\chrome.exe"
+    "%LocalAppData%\Google\Chrome\Application\chrome.exe"
+) do (
+    if not defined NAVEGADOR if exist %%N set "NAVEGADOR=%%~N"
+)
+if defined NAVEGADOR (
+    start "" "%NAVEGADOR%" --app=http://localhost:3000 --window-size=1280,860
+) else (
+    start "" http://localhost:3000
+)
+exit /b 0
