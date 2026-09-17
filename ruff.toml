@@ -1,0 +1,8 @@
+# Lint do backend Python. Começa pelo que pega defeito de verdade (nomes
+# indefinidos, imports sobrando, erros de sintaxe); regras de estilo podem
+# entrar depois, sem travar o CI com centenas de avisos de formatação.
+target-version = "py312"
+extend-exclude = [".venv", "supabase-backup", "node_modules"]
+
+[lint]
+select = ["F", "E9"]

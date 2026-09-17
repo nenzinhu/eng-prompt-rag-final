@@ -21,7 +21,6 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections import Counter
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent

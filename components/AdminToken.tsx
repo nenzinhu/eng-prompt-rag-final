@@ -8,7 +8,6 @@ import { LockOpen, Lock, TriangleAlert } from 'lucide-react'
  * recebe um token de sessão, que é enviado nas rotas de escrita.
  */
 export default function AdminToken({
-  token,
   onEntrar,
   onSair,
   valido,

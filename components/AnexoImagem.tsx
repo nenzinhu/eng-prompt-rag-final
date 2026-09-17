@@ -57,7 +57,6 @@ function removerBloco(atual: string, bloco: string): string {
  * anexadas, porque a ordem das partes costuma ser a ordem da questão.
  */
 export default function AnexoImagem({
-  texto,
   setTexto,
   desabilitado = false,
   onProcessando,

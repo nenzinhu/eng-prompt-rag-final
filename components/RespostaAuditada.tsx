@@ -29,7 +29,6 @@ const NIVEIS: Record<
  * explicando o nível e a fonte mais próxima encontrada.
  */
 export default function RespostaAuditada({
-  texto,
   auditadas,
   auditando,
 }: {

@@ -124,7 +124,7 @@ export default function TabNav({
       if (seguranca) clearTimeout(seguranca)
       ctx.revert()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [])
 
   function onEnterBtn(id: string) {

@@ -379,7 +379,7 @@ export default function ResolverTab({
         <div>
           <p className="mb-2.5 text-[0.8rem] leading-relaxed text-muted">
             Cole <strong className="font-medium text-text">várias questões</strong> separadas por linha em branco
-            (ou "QUESTÃO 1", "QUESTÃO 2"...), ou envie um print de cada uma. Todas são analisadas em sequência.
+            (ou &ldquo;QUESTÃO 1&rdquo;, &ldquo;QUESTÃO 2&rdquo;...), ou envie um print de cada uma. Todas são analisadas em sequência.
           </p>
           <textarea
             value={textoLote}

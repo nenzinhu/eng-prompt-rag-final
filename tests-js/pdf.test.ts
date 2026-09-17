@@ -14,7 +14,6 @@ import { test } from 'node:test'
 import { deflateSync, inflateSync } from 'node:zlib'
 
 import {
-  PDFArray,
   PDFDict,
   PDFDocument,
   PDFName,

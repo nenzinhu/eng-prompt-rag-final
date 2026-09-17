@@ -46,7 +46,7 @@ let temporizadorOcioso: ReturnType<typeof setTimeout> | null = null
 async function prepararImagem(file: Blob): Promise<Blob> {
   const bitmap = await createImageBitmap(file)
   try {
-    let largura = bitmap.width
+    const largura = bitmap.width
     let escala = 1
     if (largura > LARGURA_MAX) escala = LARGURA_MAX / largura
     else if (largura < LARGURA_MIN) escala = Math.min(2, LARGURA_MIN / largura)

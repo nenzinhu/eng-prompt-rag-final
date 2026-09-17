@@ -34,7 +34,7 @@ export function formatarAlternativas(texto: string): string {
 export function limparTextoOcr(bruto: string): string {
   return (bruto || '')
     .replace(/\u00a0/g, ' ')
-    // eslint-disable-next-line no-control-regex
+     
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
     .replace(/[ \t]+$/gm, '')
     .replace(/\n{3,}/g, '\n\n')

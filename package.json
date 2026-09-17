@@ -7,29 +7,36 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "test:js": "node --experimental-strip-types --import ./tests-js/registrar.mjs --test tests-js/predictor.test.ts tests-js/pdf.test.ts tests-js/dimensoes.test.ts"
+    "lint": "eslint .",
+    "test:js": "node --experimental-strip-types --import ./tests-js/registrar.mjs --test tests-js/predictor.test.ts tests-js/pdf.test.ts tests-js/dimensoes.test.ts tests-js/api-stream.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "gsap": "^3.12.5",
-    "lucide-react": "^1.46.0",
-    "mammoth": "^1.12.3",
-    "next": "^15.1.0",
-    "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^6.3.289",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-markdown": "^9.1.0",
-    "remark-gfm": "^4.0.1",
-    "tesseract.js": "^7.0.0"
+    "gsap": "3.15.0",
+    "lucide-react": "1.46.0",
+    "mammoth": "1.12.3",
+    "next": "15.5.25",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.3.289",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "9.1.0",
+    "remark-gfm": "4.0.1",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.15",
-    "typescript": "^5.7.0"
+    "@eslint/eslintrc": "3.3.7",
+    "@types/node": "22.20.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "autoprefixer": "10.5.5",
+    "eslint": "9.39.5",
+    "eslint-config-next": "15.5.25",
+    "postcss": "8.5.28",
+    "tailwindcss": "3.4.19",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.6"
   }
 }

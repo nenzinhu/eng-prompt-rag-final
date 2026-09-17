@@ -14,7 +14,8 @@ export default function ApostilaTab({ providers }: { providers: ProvidersResp })
   const [formato, setFormato] = useState<'pdf' | 'docx'>('pdf')
   const [loading, setLoading] = useState(false)
   const [ocrLoading, setOcrLoading] = useState(false)
-  const [anexoReset, setAnexoReset] = useState(0)
+  // Esta aba não tem botão de limpar: os anexos nunca precisam ser esvaziados.
+  const anexoReset = 0
   const [erro, setErro] = useState('')
   const [ok, setOk] = useState(false)
 
