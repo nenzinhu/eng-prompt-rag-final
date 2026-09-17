@@ -1,0 +1,689 @@
+# 04: Revisor / Juiz de Qualidade (Agente 4), Ciclo 3c, primeira revisão
+
+**Projeto:** `C:\Users\PMSC\Desktop\release\eng-prompt-rag-final-main`
+**Data:** 17/09/2026
+
+## O que reabri e rodei
+
+Tudo foi feito com o venv descartável (Python 3.14.7, `-B`, `PYTHONDONTWRITEBYTECODE=1`, `-p no:cacheprovider`). Os scripts ficaram só em `...\scratchpad\a4\` (`r1.py`, `r2.py`, `test_a4.py`, `vazamento.py`). No fim, `find` no projeto não achou `__pycache__`, `.pytest_cache` nem arquivo novo. A produção não foi chamada.
+
+**Código reaberto:**
+- `api\index.py`: 160-230, 340-818, 960-1540, 1560-1600 e 1660-1969
+- `api\rag_core.py`: 118-297 e 420-597
+- `api\_app\provedores.py` e `api\_app\http_util.py` (inteiros)
+- `lib\api.ts` 40-312, `lib\useProviderModel.ts`, `lib\ocr.ts` 70-135 e `lib\useHistorico.ts`
+- `components\tabs\PerguntarTab.tsx` 30-269, `PdfsTab.tsx` 70-255 e `GlossarioTab.tsx` 1-120
+- `components\TabPanel.tsx`, `components\RespostaAuditada.tsx` e `app\page.tsx` 40-121
+- `supabase-backup\recriar-banco.sql`, `README-BACKUP.md` 55-90, `CORRECOES-2026-09-10.md` 176-195, as migrações de RLS e de cota, `vercel.json`, `.vercelignore`, `requirements*.txt`, `iniciar-tudo.bat` 50-70 e `ci.yml`
+
+**Execuções:**
+1. `r1.py`, sobre as funções reais:
+   - A1-03 com 6 enunciados;
+   - a regex proposta em A3-01 e 5 casos-limite;
+   - N2;
+   - A1-09 e a negação;
+   - A1-10 (números e páginas);
+   - N9;
+   - `compare_digest` com texto não ASCII.
+2. `r2.py`: A1-04 com 8 casos mais o título, e a contagem de caracteres fora do Latin-1 no `SYSTEM_PROMPT_APOSTILA`.
+3. Os 9 testes do Agente 2 (`test_a2_part1..3.py`), rodados de novo: todos reproduziram.
+4. `test_a4.py`, com 4 reproduções novas:
+   - resumir com 429 por concorrência;
+   - `gerar_embeddings` repetindo depois de timeout;
+   - `/api/perguntar` com `<think>`;
+   - evento de erro do provedor no meio do stream.
+5. `vazamento.py`: procura o literal de `ADMIN_PASS` no projeto **sem imprimir o valor**.
+6. Checagem por amostra nos catálogos que o Agente 2 salvou (Nous e Groq).
+
+**Aviso sobre a numeração do Agente 2:** ele pula de A2-54 para A2-58. Não existem A2-55, A2-56 nem A2-57.
+
+---
+
+## 1. Vereditos
+
+### 1.1 Achados ALTO e MÉDIO do Agente 1, com os ajustes do Agente 2
+
+### A4-01 — sobre A1-01 / A2-01 (API sem limite de tamanho, amplificação, teto global)
+- **VEREDITO:** ROBUSTO quanto à mecânica. O impacto depende de a URL ser alcançável por terceiros (não há informação).
+- **SEVERIDADE REVISADA:** mantenho **ALTO**. O motivo é outro mecanismo, mais forte que o do A1 (abaixo).
+- **CHECAGEM FEITA:**
+  - Rodei de novo `test_a101_auditar_contagem`: 200 frases → 25 chamadas de embedding, 200 buscas, `n=100000` repassado, 1 consumo de cota.
+  - Rodei de novo `test_a113`: 41 chamadas de LLM para 1 consumo de cota.
+  - Li `index.py:1171` (`asyncio.gather` dos 40 trechos, todos simultâneos), `1391` (`n=max(req.n_por_frase, 3)`) e `418-439` (3 RPCs em sequência que param na 1ª negação).
+  - Código de `/api/comparar` (`index.py:1582`): 2 a 4 modelos.
+  - Reprodução nova (`test_a4.py`), com um provedor falso que só aceita 10 requisições simultâneas (é HIPÓTESE sobre o provedor): resumir fez **71 requisições, 50 respostas 429, pico de 40 simultâneas**, e respondeu **200 com `chunks_usados=40`**.
+- **ARGUMENTO:**
+  - O Ajuste 1 do A2 está certo: com 300 unidades por IP por dia, esgotar o teto global de 5.000 exige pelo menos 17 IPs.
+  - Mas o A1 e o A2 olharam para o balde errado. Um único IP pode fazer 20 resumos por minuto, cada um com 40 chamadas simultâneas na **mesma chave do provedor**. São até 820 chamadas por minuto.
+  - O próprio projeto registra 429 dos provedores gratuitos (`provedores.py:83` para AnyAPI; `:114-116` para a cota diária do OpenRouter esgotada). Um só IP derruba a cota gratuita que todos os alunos dividem.
+  - Por isso ALTO se sustenta com um IP.
+  - A frase "205.000 chamadas/dia" do A1 precisa de 17 ou mais IPs. Por IP o número correto é 300 × 41 = 12.300.
+  - A estimativa de custo do A2 (US$ 0,25 por chamada) é um teto frágil: um corpo de cerca de 4,5 MB de texto fica perto ou acima de 1 milhão de tokens, o limite de contexto do `qwen3.7-flash`, então o provedor tende a recusar. Isso é inferência, não fato confirmado.
+- **PERGUNTA AO AGENTE:**
+  - A1: reformule a severidade com o mecanismo "um IP esgota a cota do provedor" e corrija a conta por IP.
+  - A2: refaça ou retire o valor em dólar levando em conta o limite de contexto.
+
+### A4-02 — sobre A1-02 / A2-02 (restauração sem `setval`)
+- **VEREDITO:** ACEITO COM RESSALVA. A mecânica tem alta confiança, mas não foi executada: não há Postgres nesta máquina (`which psql`, Program Files, Docker e pglite, todos negativos).
+- **SEVERIDADE REVISADA:** **MÉDIO**, como propôs o A2. **Prioridade AGORA**, porque a correção é uma linha e o projeto acabou de passar por uma recuperação de desastre.
+- **CHECAGEM FEITA:**
+  - `recriar-banco.sql:18` (`generated by default as identity`) e `:116-121` (`\copy` com `id`, sem `setval`).
+  - `README-BACKUP.md:69-74`: o passo 3 é "Importe `ementas_chunks.csv`".
+  - `index.py:541-555`: o corte é o maior id **da fonte**.
+  - `index.py:1850-1864`: insere, e no último lote apaga `source=X and id<=corte`.
+  - Com a sequência em 1, os ids novos (1..N) ficam todos abaixo do corte e são apagados.
+  - Consequência que ninguém citou: depois de cerca de 941 inserções, o id 942 **colide** com um id restaurado, e a ingestão passa a dar 500. O problema acaba aparecendo, mas só depois de ter apagado índices.
+- **ARGUMENTO:**
+  - O rebaixamento é defensável porque depende de uma restauração por esse caminho.
+  - Um dos motivos do A2 é fraco: "recuperável pelos dumps". A perda é **silenciosa** (a interface registra "✓"), então o admin não sabe que precisa recuperar.
+  - Severidade e prioridade são coisas diferentes: é MÉDIO, mas deve ser corrigido já (A3-09).
+- **PERGUNTA AO AGENTE:**
+  - A2: como o admin descobriria a perda para recorrer ao dump?
+  - A1: há alguma evidência de restauração planejada ou já feita?
+
+### A4-03 — sobre A1-03 / A2-03 (Resolver corta o enunciado)
+- **VEREDITO:** ROBUSTO
+- **SEVERIDADE REVISADA:** mantenho **ALTO**.
+- **CHECAGEM FEITA:**
+  - `r1.py` reproduziu os 3 cortes do A1.
+  - Achei mais dois cortes: `'O texto abaixo trata de gestão. Assinale a correta.'` vira `'...Assinale a corret'`; `'Leia o trecho da apostila...'` vira `'...apostil'`.
+  - `index.py:1496,1501,1513`: o `questao` truncado é o **único** enunciado que vai para o embedding e para o prompt (`QUESTÃO:\n{questao}`). O texto completo não chega ao modelo.
+  - O modo lote (`ResolverTab.tsx:89-104`) divide as questões no front e chama `/api/resolver` uma por uma, então sofre o mesmo corte.
+- **ARGUMENTO:**
+  - O gatilho é qualquer palavra terminada em a–e seguida de `.`, `)` ou `-`. Em português isso é muito comum.
+  - A falha é determinística, invisível e cai numa função central de estudo.
+  - Que a **resposta** piore é inferência. Que o modelo recebe um fragmento é fato.
+- **PERGUNTA AO AGENTE:**
+  - A1/A2: montem um conjunto de pelo menos 10 questões reais do curso e comparem a letra escolhida com enunciado completo e truncado. Sem isso, o dano à nota continua sendo inferência.
+
+### A4-04 — sobre A1-04 / A2-04 (PDF do Gerador quebra fora do Latin-1)
+- **VEREDITO:** ROBUSTO no defeito. A frequência NÃO DEMONSTRADA.
+- **SEVERIDADE REVISADA:** mantenho **ALTO**.
+- **CHECAGEM FEITA:**
+  - `r2.py`: travessão, aspas curvas, "•", "…", "→", emoji e o título `'Tema — IA'` levantam `FPDFUnicodeEncodingException`. Acentos, listas e negrito passam, mas o negrito sai com os asteriscos.
+  - `ApostilaTab.tsx:14`: o padrão é `'pdf'`.
+  - `index.py:1107-1115`: o PDF é montado depois do LLM.
+  - `index.py:190-224`: o 500 sai com detalhe.
+  - `SYSTEM_PROMPT_APOSTILA` tem 1 travessão.
+- **ARGUMENTO:** a quebra é determinística no formato padrão, depois de uma chamada de IA, numa função inteira. Que uma apostila longa gerada por LLM quase sempre contenha um desses caracteres é inferência, não fato confirmado.
+- **PERGUNTA AO AGENTE:** A1/A2: existe alguma saída real de modelo (logs, `supabase-backup\reconstruido`, histórico) para estimar a taxa de falha?
+
+### A4-05 — sobre A1-05 / A2-05 (streaming da aba Perguntar)
+- **VEREDITO:** ROBUSTO na mecânica, com um sub-achado novo. Frequência NÃO DEMONSTRADA.
+- **SEVERIDADE REVISADA:** **MÉDIO**, como propôs o A2, sem logs de 504.
+- **CHECAGEM FEITA:**
+  - `provedores.py:240` usa `Timeout(limite)`, que é timeout de leitura entre pedaços.
+  - `provedores.py:264-267`: um JSON sem `choices` é ignorado com `continue`.
+  - `lib\api.ts:167-196`: `JSON.parse` sem `try`; "A conexão caiu" só quando não houve `fim`.
+  - `PerguntarTab.tsx:96-99` e `246-252`: com erro, o card some.
+  - Reprodução nova: um SSE com `data: {"error":{...}}` no meio → eventos `['meta','texto','fim']`. **O erro do provedor vira resposta "completa".**
+  - Reprodução nova: `/api/perguntar` (sem stream) devolve `'<think>raciocinio</think>Resposta final'`.
+- **ARGUMENTO:**
+  - Os modelos padrão são rápidos. Mas a lista oferece modelos anotados com 16,6 s, 47,7 s e "~90 s" em pergunta trivial. Para esses, o corte e o apagamento do texto são quase certos em respostas longas.
+  - Isso é um problema de lista curada, e existe uma mitigação barata que ninguém propôs (A4-40).
+  - A frase do A2 "o caso mais comum já é tratado com 'A conexão caiu'" é incompleta: nesse caso o texto parcial também é apagado.
+- **PERGUNTA AO AGENTE:**
+  - A1: sem logs, qual dos 5 itens sustenta ALTO?
+  - A2: você verifica o caminho SSE `error` sem `choices`?
+
+### A4-06 — sobre A1-06 / A2-06 (ingestão não idempotente)
+- **VEREDITO:** ROBUSTO
+- **CHECAGEM FEITA:**
+  - Rodei de novo `test_a106`: 4 inseridos, e `corte_id=10**12` aceito.
+  - `PdfsTab.tsx:193-197`: nova tentativa sem espera, 6 no total.
+  - `index.py:1859` insere antes de apagar em `1864`.
+- **ARGUMENTO:** MÉDIO está adequado. Só admin; a frequência depende de 5xx ou 504.
+- **PERGUNTA AO AGENTE:** —
+
+### A4-07 — sobre A1-07 / A2-07 / A2-60 (substituição nunca indexada; "✓ Concluído" falso)
+- **VEREDITO:** ROBUSTO no código. A interface não foi executada.
+- **CHECAGEM FEITA:**
+  - `PdfsTab.tsx:241`: `runIngest(mudou)` sem `forcar`.
+  - `:184-191`: o 409 vira `done = true`.
+  - `:200-207`: "✓", "✓ Concluído" e `setBloqueado(false)`, que desfaz o `setBloqueado(true)` da linha 189.
+  - `index.py:1715` e `1771`: o mesmo critério nos dois lados.
+  - `index.py:1754-1756` contra `1707`: é a variante A2-60.
+  - `_analisar_ingestao` dá 422 para PDF ilegível (`1695`), e o front repete 6 vezes.
+- **ARGUMENTO:** MÉDIO se mantém. Proponho juntar A2-60 e o caso do 422 num único achado de fluxo.
+- **PERGUNTA AO AGENTE:** —
+
+### A4-08 — sobre A1-08 / A2-08 (mesmo conteúdo sobre um nome já indexado)
+- **VEREDITO:** ROBUSTO, com uma correção de narrativa.
+- **CHECAGEM FEITA:**
+  - Rodei de novo `test_a108`: `risco(A)`, `upload(B)`, `renomear(A→B)`, `remover(A)`, e nenhum `risco(B)`.
+  - `index.py:1929` e `1937-1949`.
+- **ARGUMENTO:**
+  - O A1 diz que a perda acontece "na reindexação seguinte". Não é bem assim: `PdfsTab.tsx:241` dispara a ingestão **logo depois** do upload.
+  - Resultado: ou o conteúdo Y é apagado na hora, ou dá 409 e cai no "✓" falso de A1-07.
+  - O arquivo Y já foi sobrescrito no Storage (`x-upsert`). MÉDIO.
+- **PERGUNTA AO AGENTE:** A1: corrija o momento da perda.
+
+### A4-09 — sobre A1-09 / A2-09 / A2-62 (auditoria sem acento; negação)
+- **VEREDITO:** ROBUSTO
+- **CHECAGEM FEITA:**
+  - `r1.py`: frase literal → `nenhum`; negação → `total`.
+  - `rag_core.py:244` (`content.lower()`) e `:223` (`[a-z0-9]{4,}`).
+- **ARGUMENTO:**
+  - MÉDIO está adequado.
+  - Correção de causa em A2-62: "nao" fica de fora **porque tem 3 letras** (a regex exige 4 ou mais), independentemente de estar em `STOPWORDS`. A conclusão não muda.
+- **PERGUNTA AO AGENTE:** A2: corrija a atribuição de causa em A2-40 e A2-62.
+
+### A4-10 — sobre A1-10 / A2-10 (divergência numérica falsa)
+- **VEREDITO:** ROBUSTO
+- **CHECAGEM FEITA:** `r1.py`: "5 pilares" contra "cinco pilares" → `baixa`; página 12 contra 14 → `baixa` com similaridade 1,0. `rag_core.py:483`.
+- **ARGUMENTO:** MÉDIO, porque o `SYSTEM_PROMPT_COMPARAR` pede página, o que torna o caso das páginas frequente.
+- **PERGUNTA AO AGENTE:** —
+
+### A4-11 — sobre A1-11 / A2-11 (duas rodadas simultâneas na aba Perguntar)
+- **VEREDITO:** ACEITO COM RESSALVA (só código; depende de o usuário reenviar durante o stream).
+- **CHECAGEM FEITA:**
+  - `PerguntarTab.tsx:87`: `setLoading(false)` dentro de `onMeta`.
+  - `:221`: o botão depende de `loading`.
+  - `:105-116`: a auditoria não confere a rodada.
+  - `:122,135,166`: essas ações usam o texto atual da caixa.
+- **ARGUMENTO:** MÉDIO aceitável. Não há teste de componente no projeto: a validação seria manual.
+- **PERGUNTA AO AGENTE:** —
+
+### A4-12 — sobre A1-12 / A2-12 ("Extrair termos" na 1ª navegação)
+- **VEREDITO:** ROBUSTO no código.
+- **SEVERIDADE REVISADA:** **BAIXO** (era MÉDIO).
+- **CHECAGEM FEITA:**
+  - `GlossarioTab.tsx:65` e `82-87`.
+  - `useProviderModel.ts:57,109`.
+  - `TabPanel.tsx:19-20,57`.
+  - `page.tsx:60-63`.
+- **ARGUMENTO:** a falha é real, mas tem contorno óbvio. O texto já aparece na caixa e um clique em "Gerar" funciona. Não há perda de dado nem resultado errado.
+- **PERGUNTA AO AGENTE:** A1: que impacto justifica MÉDIO, havendo esse contorno?
+
+### A4-13 — sobre A1-13 / A2-13 / A2-63 / A2-68 (orçamento de 60 s por chamada)
+- **VEREDITO:** ROBUSTO, e agravado.
+- **CHECAGEM FEITA:**
+  - `http_util.py:15-20`.
+  - `index.py:1165-1171`: `extrair_pontos` só captura `HTTPException`.
+  - `provedores.py:210-219`: 429 → 1 nova tentativa → 502 → o trecho é descartado.
+  - Rodei de novo `test_a113`: `KeyError` → 500.
+  - Nova: `gerar_embeddings` fez **2 tentativas depois de `ReadTimeout`**, cada uma com `read=60 s`.
+  - `index.py:1688` e `1831`: 2 downloads no lote 0.
+  - Nova: 429 por concorrência → metade dos trechos se perde e a resposta diz `chunks_usados=40` (A4-01).
+- **ARGUMENTO:** MÉDIO. A perda silenciosa de trechos por causa da concorrência ainda não estava demonstrada.
+- **PERGUNTA AO AGENTE:** ver as contestações a A3-06.
+
+### A4-14 — sobre A1-14 / A2-14 (login sem limite; 500 com texto não ASCII)
+- **VEREDITO:** ROBUSTO
+- **CHECAGEM FEITA:**
+  - Rodei de novo `test_a114`: senha acentuada → 500; tentativa acentuada → 500; `X-Admin-Token` Latin-1 → 500; 30 tentativas → só 401.
+  - `index.py:757` e `770`.
+  - `index.py:357`: `exigir_admin` também aceita o `ADMIN_TOKEN` cru, sem limitador.
+- **ARGUMENTO:**
+  - MÉDIO para A1-14 isolado.
+  - O 500 com tentativa acentuada chega pelo **corpo JSON** do login, não pelo cabeçalho. A dúvida do A2 sobre o proxy da Vercel só vale para `X-Admin-Token`.
+  - Se A2-59 se confirmar, o risco do admin passa a ser outro e maior (A4-19).
+- **PERGUNTA AO AGENTE:** —
+
+### A4-15 — sobre A1-15 / A2-15 / A2-64 (dependências sem versão fixada; três Pythons)
+- **VEREDITO:** ACEITO COM RESSALVA
+- **CHECAGEM FEITA:**
+  - `requirements.txt` só usa `>=`.
+  - `iniciar-tudo.bat:59` usa `py -3.11`; `ci.yml:20` usa 3.12.
+  - `py -0p` nesta máquina: só 3.14 e 3.11.15 (uv).
+- **ARGUMENTO:**
+  - MÉDIO está adequado, mas o argumento da "guarda de 60%" é fraco: −1,4% de variação contra uma margem de 40%.
+  - O argumento forte é outro: `fastapi>=0.111` resolveu para starlette 1.6.0, e o aviso de descontinuação já aparece. Um próximo deploy pode quebrar o runtime sem nenhuma mudança de código.
+  - Declarar a versão também protege contra a Vercel trocar a versão padrão de Python.
+- **PERGUNTA AO AGENTE:** A1: reescreva o impacto sem depender da guarda.
+
+### A4-16 — sobre A1-16 / A2-16 (consumo em dobro e NAT)
+- **VEREDITO:** ROBUSTO no consumo; NÃO DEMONSTRADO no impacto (NAT).
+- **SEVERIDADE REVISADA:** **BAIXO** até haver dado de rede; **MÉDIO** se as turmas compartilharem IP. Concordo com o A2.
+- **CHECAGEM FEITA:** `PerguntarTab.tsx:41,93-95`; `index.py:1375` (auditar consome a cota de LLM sem chamar LLM) e `800` (buscar).
+- **ARGUMENTO:** o consumo em dobro é fato e se corrige de graça. Turma bloqueada é hipótese.
+- **PERGUNTA AO AGENTE:** A1: existe qualquer dado sobre o público?
+
+### 1.2 Verificações do Agente 2 que mudam conclusões, e os achados novos A2-58 a A2-68
+
+| ID | Veredito | Checagem feita / argumento |
+|---|---|---|
+| **A4-17** sobre A2-58 (`/api/perguntar` sem `limpar_resposta`) | ROBUSTO | Reproduzido: `<think>` volta intacto. É usado por `responderVerificacao` (`PerguntarTab.tsx:149`). BAIXO, somado a A1-05. |
+| **A4-18** sobre A2-60 | ROBUSTO | Código lido (A4-07). Juntar com A1-07. |
+| **A4-19** sobre A2-59 / N1 (literal com cara de senha) | NÃO DEMONSTRADO que seja a senha real | Ver o detalhamento logo abaixo da tabela. |
+| **A4-20** sobre A2-61 (vários arquivos, 4,5 MB por requisição) | ACEITO COM RESSALVA | `lib\api.ts:298-307`: um único `FormData` com todos os arquivos. `PdfsTab.tsx:81`: checagem só por arquivo. Não executado na Vercel. BAIXO. |
+| **A4-21** sobre A2-62 | ROBUSTO, com causa corrigida | Ver A4-09. |
+| **A4-22** sobre A2-63 | ROBUSTO | Reproduzido: 2 tentativas, `read=60 s`. Torna insuficiente a correção de A1-17 e de A3-02. |
+| **A4-23** sobre A2-64 | ACEITO COM RESSALVA | Não rodei de novo. Medição plausível; a causa (pypdf) é inferência. |
+| **A4-24** sobre A2-65 | ACEITO COM RESSALVA | Amostra de 5 modelos no JSON salvo pelo A2: os preços batem (ex.: `gpt-oss-20b` 0,02/0,10; `deepseek-v4-flash-0731` 0,04/0,10 e contexto de 1 M). Não baixei o catálogo de novo. |
+| **A4-25** sobre A2-66 (temporizador do OCR) | ROBUSTO no código | `ocr.ts:92-95,115-131`; `OCIOSIDADE_MS = 60_000`. BAIXO. |
+| **A4-26** sobre A2-67 | ROBUSTO | `index.py:1384` contra o laço de 8 em 8. |
+| **A4-27** sobre A2-68 | ROBUSTO | `index.py:1688` e `1831`. |
+| **A4-28** sobre A2-36 (`allam-2-7b`) | ACEITO COM RESSALVA | `grep` no `groq_models.html` salvo: "allam" não aparece; `qwen3.6-27b` aparece. O HTML estático pode não trazer todos os modelos. Pesa a favor de limpar a lista (A4-40). |
+| **A4-29** sobre A2-01, "Ajuste 1" | ACEITO no que afirma; INSUFICIENTE como conclusão | Ver A4-01. |
+
+**Detalhe de A4-19 (A2-59 / N1):**
+- **SEVERIDADE:** condicional. **CRÍTICO** se o literal for, ou tiver sido, a senha de produção. BAIXO (higiene) se não for.
+- **O que conferi, sem imprimir o valor:**
+  - o literal tem 11 caracteres, com dígitos e símbolo;
+  - aparece **só** em `tests\test_admin_auth.py` (1 ocorrência);
+  - **não** aparece em nenhum `.md` desta análise;
+  - no mesmo fixture, `ADMIN_TOKEN` é obviamente falso (`"segredo-de-teste"`). O contraste é sinal fraco de que o `ADMIN_PASS` foi copiado de uma configuração real. Isso é inferência.
+  - `.vercelignore` tira `tests/` do deploy. `README-BACKUP.md:84` diz que o repositório é privado (não verificado).
+- **Riscos que ninguém citou:**
+  1. As sessões são assinadas com `SESSION_SECRET or ADMIN_TOKEN` (`index.py:288`). Trocar só o `ADMIN_PASS` **não derruba** sessões já emitidas, que valem 8 h.
+  2. Um literal que já foi commitado continua no histórico do git. Editar o teste não resolve.
+  3. Se for uma senha pessoal reutilizada, a exposição vai além deste app.
+  4. Esta pasta se chama `release`: se o pacote circular, o teste vai junto.
+- **AÇÃO:**
+  - o dono confirma em minutos se o valor coincide;
+  - se coincidir: trocar `ADMIN_PASS` **e** `SESSION_SECRET` (ou `ADMIN_TOKEN`, se o segredo de sessão não estiver definido), trocar onde a senha for reutilizada e tratar como comprometida mesmo com repositório privado;
+  - em qualquer caso: valor obviamente falso no teste.
+
+### 1.3 Propostas AGORA do Agente 3
+
+### A4-30 — sobre A3-01 (quatro heurísticas)
+- **VEREDITO:** ACEITO COM RESSALVA
+- **CHECAGEM FEITA:**
+  - `r1.py` com a regex proposta:
+    - enunciado inteiro nos 6 casos;
+    - N2 corrigido;
+    - `A)um` e `a - um` mantidos.
+  - Resíduos:
+    - uma linha do enunciado que começa com `E. coli` continua virando a alternativa E, **tanto hoje quanto na proposta**;
+    - o formato `A -um` deixa de ser reconhecido, como o A3 já admite.
+- **ARGUMENTO:**
+  - Os itens 1 a 3 procedem.
+  - O item 4 cria regressão evitável: trocar `. :` por espaço na busca do glossário faz "Node.js", "Web 2.0" e "ISO 9001:2015" pararem de ser encontrados.
+  - A documentação do PostgREST, citada pelo próprio A2-18, prevê **aspas duplas** para caracteres reservados, que é a correção do A1. O A3 descartou uma RPC, mas não considerou as aspas.
+  - O teste `test_rag_core.py:409-416` depende do defeito e precisa ser reescrito com critério, não só "ajustado para passar".
+- **PERGUNTA AO AGENTE:** ver as contestações ao A3.
+
+### A4-31 — sobre A3-02 (PDF que não quebra; busca opcional)
+- **VEREDITO:** ACEITO COM RESSALVA
+- **CHECAGEM FEITA:**
+  - `vercel.json`: `"includeFiles": "api/{rag_core.py,_app/**}"`.
+  - A2-63, reproduzido: `gerar_embeddings` pode esperar cerca de 120 s.
+- **ARGUMENTO:**
+  - A tradução para Latin-1 resolve a exceção.
+  - Mas um dos argumentos do A3 contra a fonte TTF é **falso**: uma TTF em `api\_app\fonts\` já entra pelo glob `_app/**`, sem mudar o `vercel.json`. Sobram só o tamanho (cerca de 1,46 MB, medido pelo A3) e a licença (não verificada aqui).
+  - O item 2 (`except httpx.HTTPError`) **não** cumpre o "nunca bloqueia": com a Edge Function travada, a função morre antes do fallback. Falta um timeout curto nessa busca opcional. O A3 escreveu antes de ver A2-17.
+- **PERGUNTA AO AGENTE:** ver as contestações ao A3.
+
+### A4-32 — sobre A3-03 (limites de entrada, auditoria com teto, login)
+- **VEREDITO:** ACEITO COM RESSALVA. Há risco de regressão.
+- **CHECAGEM FEITA:**
+  - Nenhum modelo tem `Field`.
+  - `lib\api.ts:52-58` (N8): `detail` em lista passa pelo ramo de objeto, não tem `mensagem`, e cai em "Erro 422: {json cru}".
+  - `RespostaAuditada.tsx:53-60`: se nenhuma frase **auditada** for não apoiada, mostra "**Todas as frases desta resposta têm apoio no material**".
+- **ARGUMENTO:**
+  1. Nenhum `chamar_llm` envia `max_tokens`. Uma resposta legítima do Professor pode passar de 12.000 caracteres. Então `/api/auditar` responde 422, e a auditoria automática falha **em silêncio** (`setAuditoria(null)`).
+  2. Um OCR de página inteira colado em `pergunta` pode passar de 4.000 caracteres.
+  3. Com o teto de 30 frases, a mensagem verde "todas as frases" passa a ser **falsa** quando há frases ignoradas.
+  4. O limitador de login depende da service_role (`index.py:413`). Sem ela, vale só por instância.
+  5. A adivinhação de `X-Admin-Token` nas rotas de admin continua sem limite.
+
+  Os valores são estimativas sem nenhum dado. O custo vem do número de frases e de `n_por_frase`, não do tamanho: limites de caracteres folgados mais teto de frases dão o mesmo ganho com menos risco.
+- **PERGUNTA AO AGENTE:** ver as contestações ao A3.
+
+### A4-33 — sobre A3-04 (upload e ingestão)
+- **VEREDITO:** ACEITO COM RESSALVA
+- **CHECAGEM FEITA:**
+  - `PdfsTab.tsx:163-255`.
+  - `index.py:1695` (422) e `1933` (409 no meio do laço).
+  - `scripts\verificar-guarda-upload.sh:18,22` usa a resposta HTTP do upload.
+  - O único teste de 409 é de ingestão (`test_ingerir_lotes.py:121-131`).
+- **ARGUMENTO:**
+  - Os itens 1, 2 e 4 procedem.
+  - Faltam dois casos: o **422** da ingestão (repetido 6 vezes e depois "✓ Concluído") e, de modo geral, qualquer 4xx deveria ser tratado como não repetível.
+  - O item 3 muda o contrato (409 → 200 com `bloqueados`) e quebra o roteiro manual `verificar-guarda-upload.sh` sem avisar.
+- **PERGUNTA AO AGENTE:** ver as contestações ao A3.
+
+### A4-34 — sobre A3-05 (stream e estado da aba Perguntar)
+- **VEREDITO:** ACEITO COM RESSALVA
+- **CHECAGEM FEITA:**
+  - Reprodução nova: SSE `{"error":...}` → `fim`.
+  - `rag_core.py:147-158` e `r1.py` (N9): `<thinking>` não é removido. Um `<think>` sem fechamento perde só a tag e **deixa o raciocínio visível**.
+- **ARGUMENTO:**
+  - Ler `finish_reason` (item 1) **não cobre** provedores que mandam um objeto `error` sem `choices`: o `except KeyError: continue` engole o erro. É preciso detectar `error` de forma explícita.
+  - O projeto não tem teste de componente React. "Uma rodada por vez" só será validada à mão, a menos que a lógica de rodada saia do componente para uma função pura testável com `node:test`, como já se faz em `lib\*`.
+- **PERGUNTA AO AGENTE:** ver as contestações ao A3.
+
+### A4-35 — sobre A3-06 (prazo único por requisição)
+- **VEREDITO:** ACEITO COM RESSALVA
+- **CHECAGEM FEITA:** A4-01 e A4-13 (429 por concorrência); `provedores.py:83,114-116` (429 reais anotados pelo próprio projeto).
+- **ARGUMENTO:**
+  - O objeto de prazo é correto.
+  - A rejeição do semáforo ("só alonga o tempo total") **não se sustenta**. O semáforo não serve para tempo: serve para ficar abaixo do limite de concorrência e de requisições por minuto do provedor. Sem ele, o mesmo prazo entrega menos trechos, e em silêncio.
+  - Semáforo e prazo são complementares.
+  - Reduzir `MAX_CHUNKS_RESUMO` de 40 para 20 não tem nenhum dado por trás.
+- **PERGUNTA AO AGENTE:** ver as contestações ao A3.
+
+### A4-36 — sobre A3-07 (falhas silenciosas)
+- **VEREDITO:** ACEITO COM RESSALVA
+- **CHECAGEM FEITA:** `index.py:713-726`, `page.tsx:65-70`, `useProviderModel.ts:110`.
+- **ARGUMENTO:**
+  - Procede e tem baixo custo.
+  - No item 1, o `ref` do seed precisa ser zerado depois de disparar. Senão, trocar de provedor (`pronto` false → true) gera o glossário de novo.
+  - Severidade da origem: BAIXO (A4-12).
+- **PERGUNTA AO AGENTE:** —
+
+### A4-37 — sobre A3-08 (ambiente reproduzível, documentação, credencial)
+- **VEREDITO:** ACEITO COM RESSALVA
+- **CHECAGEM FEITA:** `py -0p`: esta máquina **não tem Python 3.12** (só 3.14 e 3.11.15 via uv).
+- **ARGUMENTO:**
+  - Trocar `iniciar-tudo.bat` para 3.12 quebra o inicializador local aqui.
+  - Gerar `pip freeze` "em 3.12" exige um ambiente 3.12 que só o CI tem.
+  - Alternativa não considerada: o `uv`, já instalado, busca o 3.12 sozinho (`uv venv --python 3.12`). É uma inferência sobre a ferramenta, não testada.
+  - O item 6 está incompleto: falta trocar `SESSION_SECRET`, considerar o histórico do git e a reutilização da senha (A4-19).
+  - Precisa subir para "antes de tudo" se o dono confirmar A2-59.
+- **PERGUNTA AO AGENTE:** ver as contestações ao A3.
+
+### A4-38 — sobre A3-09 (restauração segura; verificação de RLS só de leitura)
+- **VEREDITO:** ROBUSTO
+- **CHECAGEM FEITA:** `recriar-banco.sql:113-121`; `CORRECOES:184-188`; `rls-e-glossario.sql:115-117`.
+- **ARGUMENTO:**
+  - O `setval` resolve a causa.
+  - As consultas ao catálogo respondem sem escrever nada. O "DELETE com anon" documentado só distingue os casos se apagar algo, o que é destrutivo, ou se houver REVOKE.
+  - Detalhe: `setval(..., coalesce(max(id),1))` com tabela vazia faz o próximo id ser 2. É inofensivo.
+- **PERGUNTA AO AGENTE:** —
+
+### A4-39 — sobre A3-10 (log estruturado por requisição)
+- **VEREDITO:** ACEITO COM RESSALVA
+- **CHECAGEM FEITA:** li a proposta contra `index.py:190-224` (o `print` já existe).
+- **ARGUMENTO:**
+  - A3-03, A3-06, A3-11, A3-14 e a autocrítica do A3 ("504 perto de zero por semanas") dependem de consultar logs **por semanas**.
+  - A retenção e a busca de logs de runtime no plano do projeto são NÃO VERIFICADAS. Se a retenção for curta, e isso é inferência sobre planos baratos, a estratégia de calibração falha.
+  - Alternativa barata não avaliada: contadores só de **erro** (504, 429, `length`, stream interrompido) no mesmo `cota_uso`, que já grava a cada requisição.
+  - Em `StreamingResponse`, o middleware mede só até os cabeçalhos. O A3 já trata isso.
+- **PERGUNTA AO AGENTE:** ver as contestações ao A3.
+
+### 1.4 Features do Agente 3 e propostas não AGORA por amostra (A3-11, A3-12, A3-13, A3-14)
+
+| ID | Veredito | Checagem / argumento |
+|---|---|---|
+| **A4-41** sobre A3-16 (histórico local) | ROBUSTO na premissa; ACEITO | `useHistorico` é usado em Aprender, Elenco, Perfis e Suporte, e **não** em Perguntar nem Professor (grep). `ItemHistorico` só tem id, resposta, resumo e criadoEm. Custo baixo e ligado ao objetivo. Risco real em laboratório compartilhado. |
+| **A4-42** sobre A3-17 (conferir citações) | ACEITO COM RESSALVA | Premissa verificada: `documentos.py:64,71` usa formato fixo e não há conferência no front nem em `rag_core`. **Não demonstrado** que os modelos citam nesse formato. Testar com respostas reais salvas antes de construir. Texto reconstruído com `[página N]` (A2-35) pode confundir o parser. |
+| **A4-43** sobre A3-18 (modo "só o material") | ACEITO COM RESSALVA | N5 confirmado: `prompts.py:4-11` contra `RespostaAuditada.tsx:22`. **Trocar o rótulo agora**, que é barato e resolve a contradição. O modo estrito com corte por limiar depende de A3-14; sem calibração, recusa perguntas cobertas. |
+| **A4-44** sobre A3-19 (painel do admin) | ACEITO COM RESSALVA | `cota_uso` existe; a faxina apaga janelas com mais de 2 dias, então o painel só verá 2 dias. Exige migração (`resumo_acervo`) e service_role. Útil para operação, sem ganho direto para o aluno. PRÓXIMO só depois de A3-10. |
+| **A4-45** sobre A3-20 (filtro por apostila) | ACEITO COM RESSALVA / DEPOIS | Com o acervo limpo (A3-13) sobram 2 ou 3 matérias. O risco HNSW com filtro não foi verificado. O valor depende do resultado de A3-13 e de A3-14. |
+| **A4-46** sobre A3-21 (flashcards) | NÃO DEMONSTRADO (valor) | Nenhuma evidência de demanda. O glossário é gerado por IA, compartilhado e sem revisão: memorizar termo errado é risco pedagógico. Manter fora do plano até haver dado. |
+| **A4-47** sobre A3-22 (retorno do aluno) | ACEITO COM RESSALVA / DEPOIS | Primeira métrica de resultado, mas com LGPD AUSENTE, spam e viés. Custo recorrente baixo, porém não medido (volume de inserções). |
+| **A4-48** sobre A3-23 (simulado) | NÃO DEMONSTRADO; recomendo **não fazer** agora | Maior risco pedagógico (gabarito errado), custo recorrente de LLM, JSON longo dentro de 60 s. Depende de A3-06 e A3-17 prontos. |
+| **A4-49** sobre A3-24 (abrir a página citada) | Passo 1 ROBUSTO; passo 2 NÃO DEMONSTRADO | `EvidenceList.tsx:69` (`line-clamp-3`) confirmado: o passo 1 custa cerca de 1 h. O passo 2 expõe o bucket privado de propósito, com direitos autorais AUSENTE e 73% de links quebrados. |
+| **A4-50** sobre A3-11 (cota por custo), amostra | ACEITO COM RESSALVA; **dois defeitos de desenho** | (1) `consumir_cotas` "soma custo e devolve a primeira chave estourada": se somar em **todas** as chaves antes de negar, um IP já bloqueado continua incrementando `global-dia` e **um único IP esgota o teto global**. Hoje isso não acontece (`index.py:423-439` para na 1ª negação). (2) Resumir com custo 1 + 20 = 21 contra `LIMITE_LLM_POR_MINUTO = 20` → **429 permanente** na rota. |
+| **A4-51** sobre A3-12 (ingestão por execução), amostra | ACEITO COM RESSALVA; complexidade questionável | A autocrítica do próprio A3 (5 documentos, 1 admin) pesa contra. Alternativa sem migração no item 3.2. |
+| **A4-52** sobre A3-13 (higiene do acervo), amostra | ACEITO, com ordem obrigatória | O PDF reconstruído **não está no Storage**, então `fonte_afetada` sai `None` e o upload **não passa pela guarda** (`index.py:1929`). Só a guarda da ingestão protege, e um 409 ali cai no "✓" falso de A1-07. A3-04 tem de vir antes. |
+| **A4-53** sobre A3-14 (perguntas de referência), amostra | ROBUSTO como pré-requisito | Barato. É o único item que transforma A1-03, A3-17, A3-18 e A3-20 em decisões com dado. |
+
+### 1.5 Achados novos do Anexo A (N1–N11) não cobertos pelo Agente 2
+
+| ID | Veredito | Checagem |
+|---|---|---|
+| **A4-54** N2 ("E-commerce" vira alternativa E) | ROBUSTO | Reproduzido: `{'E': 'commerce cresce no Brasil.\nQual o motivo?', ...}`. A variante `E. coli` continua sem correção na proposta A3-01. |
+| **A4-55** N5 (prompt manda completar × rótulo "a IA pode ter inventado") | ROBUSTO (fato de produto) | `prompts.py:4-11`; `RespostaAuditada.tsx:22` e `:79`, onde a legenda diz "vermelho = provável invenção". |
+| **A4-56** N7 (`LIMITE_LLM_POR_MINUTO` fixo no código) | ROBUSTO | `index.py:173`; os tetos diários leem do ambiente (`175-176`). |
+| **A4-57** N8 (`mensagemDe` não trata `detail` em lista) | ROBUSTO (código) | `lib\api.ts:52-68`. |
+| **A4-58** N9 (`<thinking>` e `<think>` sem fechamento) | ROBUSTO | Reproduzido; o comentário em `provedores.py:81` promete remoção que não acontece. |
+| **A4-59** N10 (`psutil`) | ROBUSTO, BAIXO | `scripts\saude_dos_pdfs.py:25`; ausente de `requirements-dev.txt`. |
+| **A4-60** N11 (verificação de RLS destrutiva) | ACEITO COM RESSALVA | `CORRECOES:184-188` não diz qual filtro usar no DELETE. O risco é inferência sobre o procedimento. |
+
+---
+
+## 2. Riscos ignorados e problemas novos
+
+### A4-61 — Erro do provedor no meio do stream aparece como resposta completa (NOVO)
+- **SEVERIDADE:** MÉDIO (junto de A1-05)
+- **PROBLEMA:** um evento SSE `data: {"error":{...}}` depois de algum texto é ignorado e a rota emite `fim`. O aluno lê uma resposta cortada como se estivesse completa, e a auditoria roda sobre ela.
+- **LOCAL:** `api\_app\provedores.py:264-267`, `api\index.py:1053-1061`
+- **CAUSA PROVÁVEL:** `except (ValueError, KeyError, IndexError): continue`
+- **EVIDÊNCIA:** FATO reproduzido (`test_a4.py::test_stream_erro_do_provedor_no_meio_vira_fim`): eventos `['meta','texto','fim']`. INFERÊNCIA: quais provedores mandam erro nesse formato no meio do stream.
+- **IMPACTO:** truncamento silencioso na aba principal.
+- **CORREÇÃO:** se o JSON tiver `error`, lançar e emitir `erro` com `parcial: true`; e ler `finish_reason`.
+- **ALTERNATIVA:** ao receber `[DONE]`, emitir `fim` só se houve `finish_reason == "stop"`.
+- **VALIDAÇÃO:** o teste acima passa a terminar em `erro`.
+
+### A4-62 — Resumir: 40 chamadas simultâneas na mesma chave perdem trechos em silêncio e informam `chunks_usados=40` (NOVO; amplia A1-13 e A1-01)
+- **SEVERIDADE:** MÉDIO
+- **PROBLEMA:** concorrência sem limite. Os 429 viram 502 e o trecho é descartado. A resposta diz que usou 40 trechos, e o mesmo aluno esgota a cota gratuita que todos dividem.
+- **LOCAL:** `api\index.py:1165-1190`, `api\_app\provedores.py:210-219`
+- **CAUSA PROVÁVEL:** `asyncio.gather` sem semáforo; `chunks_usados=len(chunks)`.
+- **EVIDÊNCIA:**
+  - FATO reproduzido, **com um provedor simulado de 10 simultâneas (HIPÓTESE sobre o limite real)**: 71 requisições, 50 respostas 429, resposta 200 com `chunks_usados=40`.
+  - FATO: o projeto anota 429 reais em `provedores.py:83,114-116`.
+- **IMPACTO:** resumos incompletos apresentados como completos; 429 para os outros alunos.
+- **CORREÇÃO:** `asyncio.Semaphore(N)` mais prazo (A3-06); devolver `chunks_ok`.
+- **ALTERNATIVA:** resumo em etapas dirigido pelo cliente.
+- **VALIDAÇÃO:** com o mesmo mock, 0 respostas 429 e `chunks_ok` igual aos trechos com sucesso.
+
+### A4-40 — Nenhum agente propôs limpar a lista curada de modelos (NOVO, OPORTUNIDADE)
+- **SEVERIDADE:** OPORTUNIDADE (reduz A1-05 e A1-13 sem código de fluxo)
+- **PROBLEMA:** a lista oferece modelos que, pelo próprio código, falham ou estouram o tempo:
+  - `nvidia/nemotron-3.5-lightning-30b-a3b` (47,7 s em pergunta trivial);
+  - `nvidia/nemotron-3.5-lightning:free` no OpenRouter (~90 s);
+  - OpenRouter com cota gratuita esgotada em 10/09;
+  - `allam-2-7b` não encontrado nas docs da Groq (A2-36).
+- **LOCAL:** `api\_app\provedores.py:72,114-129,36`
+- **EVIDÊNCIA:** FATO (anotações do próprio código); disponibilidade atual NÃO VERIFICADA.
+- **CORREÇÃO:** tirar os modelos com mais de cerca de 15 s em pergunta trivial (estimativa, precisa ser validada) ou marcá-los como "lento" no dropdown; rodar `scripts\medir_latencia.sh` com chaves.
+- **VALIDAÇÃO:** medir de novo a latência; nenhum modelo da lista acima do limiar.
+
+### A4-63 — Teto de 30 frases (A3-03) torna falsa a mensagem "Todas as frases têm apoio" (NOVO, risco de solução)
+- **SEVERIDADE:** MÉDIO se A3-03 for implementado como descrito.
+- **LOCAL:** `components\RespostaAuditada.tsx:53-60`
+- **EVIDÊNCIA:** FATO (código): a mensagem verde só olha as frases auditadas.
+- **CORREÇÃO:** mostrar "N frases não verificadas" quando houver `frases_ignoradas`.
+
+### A4-64 — Trocar só a senha não revoga sessões; o histórico do git guarda o literal (NOVO, sobre A2-59)
+- **SEVERIDADE:** condicional à confirmação do dono (ver A4-19).
+- **LOCAL:** `api\index.py:288,291-307`
+- **EVIDÊNCIA:** FATO (código): a sessão é assinada com `SESSION_SECRET or ADMIN_TOKEN`; não há revogação individual (A2-33).
+- **CORREÇÃO:** trocar também `SESSION_SECRET`.
+
+### A4-65 — `X-Admin-Token` aceito cru e sem limite de tentativas (NOVO, BAIXO)
+- **LOCAL:** `api\index.py:357`
+- **EVIDÊNCIA:** FATO (código). O risco só é relevante se `ADMIN_TOKEN` for curto (desconhecido).
+- **CORREÇÃO:** incluir falhas de `exigir_admin` no limitador de A3-03, ou exigir token de 32 caracteres ou mais.
+
+### Outros riscos ignorados
+- **Colisão de chave primária depois da restauração** (A4-02): depois de cerca de 941 inserções, a ingestão dá 500. É mais um sintoma de A1-02 que ninguém citou.
+- **Lacunas de teste de regressão:**
+  - não há teste de `_markdown_para_pdf` nem de `aviso_salvamento` (A2-29);
+  - não há teste de enunciado com várias frases;
+  - não há teste de SSE com `error`;
+  - não há **nenhum** teste de componente React (A1-11, A1-12, A3-05, A3-07 ficam manuais);
+  - o teste `test_rag_core.py:409-416` codifica o defeito de A1-09.
+- **Modo lote do Resolver com o limite por minuto:** 20 questões por minuto por IP. Um lote maior com modelo rápido recebe 429 no meio. BAIXO; não demonstrado em execução.
+
+---
+
+## 3. Soluções que criam problema maior e complexidade desnecessária
+
+### 3.1 Soluções com efeito colateral
+| Proposta | Problema que cria | Evidência |
+|---|---|---|
+| A3-11, `consumir_cotas` somando em todas as chaves | Um IP bloqueado passa a esgotar o teto global, pior que hoje | `index.py:423-439` hoje para na 1ª negação |
+| A3-11, custo por trecho em resumir | 429 permanente com o limite de 20 por minuto | `index.py:173`; custo proposto 21 |
+| A3-03, limites de 4.000 e 12.000 sem dado | 422 em respostas e OCR legítimos; auditoria automática some em silêncio; mensagem verde falsa | `PerguntarTab.tsx:110-113`; `RespostaAuditada.tsx:53-60`; nenhum `max_tokens` |
+| A3-01, item 4 (trocar `. :` por espaço) | Busca por "Node.js" e "Web 2.0" deixa de funcionar | Doc do PostgREST (A2-18) prevê aspas |
+| A3-08, venv local em 3.12 | `iniciar-tudo.bat` quebra na máquina que não tem 3.12 | `py -0p` |
+| A3-06, `MAX_CHUNKS_RESUMO` para 20 sem semáforo | Menos cobertura e a mesma perda silenciosa por 429 | A4-62 |
+| A3-04, item 3 (409 → 200) | Quebra `scripts\verificar-guarda-upload.sh` | `:18,22` |
+
+### 3.2 Complexidade desnecessária
+- **A3-12:** migração na tabela principal, duas colunas, rota de cancelamento e risco de concorrência entre abas, para 5 documentos e 1 admin.
+  - Alternativa **sem migração** que ninguém considerou: na falha, `DELETE source=X AND id > corte`, que remove só os parciais daquela tentativa, e recomeçar do offset 0 com o **mesmo** corte, sem refazer a guarda.
+  - Isso só vale enquanto a sequência de ids estiver alinhada, o que A3-04 item 4 e A3-09 garantem.
+  - É uma inferência sobre o fluxo, não testada.
+- **A3-04 item 4 junto com A3-12:** fazer os dois é trabalho duplicado. Escolher um.
+- **A3-11 antes de A3-10 ter dados:** balde novo, RPC nova e custos por rota calibrados sem nenhum número. Para o cenário "turma fechada", tirar a auditoria e a busca da cota de LLM (duas linhas) resolve A1-16.
+- **A3-19, A3-20, A3-21, A3-22, A3-23:** cinco features, três com migração ou armazenamento novo, sem objetivo de produto, público nem orçamento documentados. Só A3-16, A3-17 (depois de uma amostra) e A3-24 passo 1 têm relação direta com um problema observado e custo quase zero.
+
+---
+
+## 4. Discordâncias
+
+**DISCORDÂNCIA 1 — Severidade de A1-02**
+- **Agente:** A1 (ALTO) × A2 (MÉDIO)
+- **Posição:** o A1 vê perda no cenário de recuperação documentado; o A2 vê dependência de uma restauração que não se sabe se vai acontecer.
+- **Argumento:** a probabilidade é condicional, a correção é uma linha, a perda é silenciosa.
+- **Evidência:** `recriar-banco.sql:116-121`, `README-BACKUP.md:69-74`, `index.py:541-555,1850-1864`. Não executado em Postgres.
+- **O que a evidência sustenta até aqui:** **MÉDIO** com prioridade AGORA. O argumento "recuperável pelo dump" do A2 é fraco.
+- **O que falta:** ensaio num Postgres local; saber se há restauração planejada.
+
+**DISCORDÂNCIA 2 — Severidade de A1-05**
+- **Agente:** A1 (ALTO) × A2 (MÉDIO)
+- **Posição:** o A1 pesa a rota principal; o A2 pesa a falta de logs e os modelos padrão rápidos.
+- **Argumento / evidência:** mecânica reproduzida (A2-05 e A4-61); não há dado de 504.
+- **O que a evidência sustenta até aqui:** **MÉDIO**, com A4-61 incluído e mitigação por A4-40.
+- **O que falta:** logs de duração e de streams sem `fim` por modelo.
+
+**DISCORDÂNCIA 3 — A1-01 e o teto global**
+- **Agente:** A1 ("terceiros esgotam o teto global") × A2 ("são precisos 17 ou mais IPs")
+- **Argumento:** os dois têm razão sobre o teto global; nenhum olhou o limite do provedor.
+- **Evidência:** `index.py:1171`; `provedores.py:83,114-116`; A4-62 (simulado).
+- **O que a evidência sustenta até aqui:** **ALTO** pelo mecanismo de um IP esgotando a cota do provedor, não pelo teto global.
+- **O que falta:** limites reais de requisições por minuto e de concorrência de cada chave; se a URL é pública.
+
+**DISCORDÂNCIA 4 — A1-13, semáforo (A1) × só prazo (A3, Anexo B)**
+- **Argumento:** o A3 trata o semáforo como controle de tempo; ele é controle de taxa.
+- **Evidência:** A4-62; anotações de 429 no próprio projeto.
+- **O que a evidência sustenta até aqui:** o **A1**. Os dois mecanismos são necessários.
+- **O que falta:** limite real do provedor.
+
+**DISCORDÂNCIA 5 — A1-04, fonte TTF (A1) × tradução para Latin-1 (A3)**
+- **Argumento:** as duas geram PDF (executado pelo A3). O custo de `includeFiles` que o A3 alega não existe.
+- **Evidência:** `vercel.json` (`api/{rag_core.py,_app/**}`).
+- **O que a evidência sustenta até aqui:** **empate técnico**. Latin-1 é mais rápido; TTF preserva os símbolos. A razão dada pelo A3 contra a TTF está errada.
+- **O que falta:** licença da DejaVu verificada; opinião do dono sobre "?" no PDF.
+
+**DISCORDÂNCIA 6 — A1-15, matriz 3.11/3.12 (A1) × unificar em 3.12 (A3)**
+- **Evidência:** doc da Vercel (A2-48: 3.12 a 3.14); `py -0p` (3.12 ausente aqui).
+- **O que a evidência sustenta até aqui:** o **A3** na direção. Mas o plano não diz como rodar 3.12 localmente.
+- **O que falta:** a máquina de desenvolvimento real do dono; teste com `uv`.
+
+**DISCORDÂNCIA 7 — A1-20, contagem antes e depois de um DELETE (A1) × consultas ao catálogo (A3)**
+- **Evidência:** `CORRECOES:184-188`; semântica de RLS (A2-20).
+- **O que a evidência sustenta até aqui:** o **A3**. Verificar sem escrever.
+- **O que falta:** nada para decidir; só executar.
+
+**DISCORDÂNCIA 8 — A1-12**
+- **Agente:** A1 (MÉDIO) × A4 (BAIXO)
+- **Argumento:** o contorno é imediato e não há dado perdido.
+- **Evidência:** `GlossarioTab.tsx:82-87` (o tema fica na caixa).
+- **O que a evidência sustenta até aqui:** **BAIXO**.
+- **O que falta:** teste no navegador e a resposta do A1.
+
+**DISCORDÂNCIA 9 — A1-16**
+- **Agente:** A1 (MÉDIO) × A2 (condicional) × A4 (BAIXO até haver dado)
+- **Evidência:** o consumo é fato; NAT é hipótese.
+- **O que a evidência sustenta até aqui:** **BAIXO**, MÉDIO se o NAT se confirmar.
+- **O que falta:** perfil de rede dos alunos.
+
+**DISCORDÂNCIA 10 — Busca do glossário: aspas (A1) × troca de caracteres (A3-01)**
+- **Evidência:** doc do PostgREST citada em A2-18.
+- **O que a evidência sustenta até aqui:** o **A1** (aspas), porque não degrada a busca.
+- **O que falta:** um teste da URL com aspas contra um PostgREST local.
+
+**DISCORDÂNCIA 11 — Prioridade de A3-12 e de A3-11**
+- **Agente:** A3 (PRÓXIMO) × A4 (DEPOIS, condicional)
+- **Argumento:** complexidade e migração sem dado; a autocrítica do próprio A3 aponta na mesma direção.
+- **Evidência:** 5 documentos, 1 admin (inferido); defeitos de desenho de A4-50.
+- **O que falta:** frequência real de falha na ingestão; se a URL é pública.
+
+**DISCORDÂNCIA 12 — `max_tokens` como alternativa em A1-05 (A1) × parâmetro por provedor (A3)**
+- **Evidência:** a Groq deprecia `max_tokens` (A3, não conferido por mim); nos demais provedores, NÃO VERIFICADO.
+- **O que a evidência sustenta até aqui:** **não resolvida**; a cautela do A3 é razoável.
+- **O que falta:** chamada real por provedor.
+
+---
+
+## 5. Contestações para o Ciclo 4
+
+### Agente 1
+1. **A1-01:** reescreva a justificativa de ALTO com o mecanismo "um IP esgota a cota do provedor via resumir" (A4-01, A4-62). Corrija "205.000/dia", que exige 17 ou mais IPs; por IP são 12.300. Se não sustentar, aceite MÉDIO.
+2. **A1-02:** apresente evidência de restauração planejada ou realizada, ou aceite MÉDIO. Inclua a colisão de chave primária depois de cerca de 941 inserções.
+3. **A1-03:** traga questões reais, pelo menos 10, e mostre quantas são truncadas e se a letra escolhida muda. Sem isso, o dano à resposta continua inferência.
+4. **A1-04:** alguma saída real de modelo para estimar a frequência?
+5. **A1-05:** qual item sustenta ALTO sem logs? Incorpore A4-61 (SSE `error` vira `fim`).
+6. **A1-08:** corrija "na reindexação seguinte": a ingestão roda logo depois do upload (`PdfsTab.tsx:241`).
+7. **A1-12:** justifique MÉDIO, já que o tema fica na caixa e "Gerar" funciona.
+8. **A1-13:** responda à rejeição do semáforo pelo A3 com evidência de limite de concorrência ou de requisições por minuto dos provedores.
+9. **A1-15:** o argumento da guarda é fraco (−1,4% contra margem de 40%). Reescreva o impacto (starlette 1.x, quebra no deploy).
+10. **A1-16:** existe qualquer dado de NAT? Senão, aceite BAIXO.
+11. **A1-20:** aceita a verificação só de leitura (A3-09) no lugar do DELETE?
+12. **§5 do A1:** o problema em `AnexoImagem.tsx` (anexo removido durante a leitura ainda insere o texto) foi citado e não detalhado nem verificado por ninguém. Demonstre ou retire.
+
+### Agente 2
+1. **A2-02:** "recuperável pelos dumps", mas a perda é silenciosa (UI "✓"). Como o admin saberia? Reavalie o peso desse argumento no rebaixamento.
+2. **A2-01:** o pior caso de US$ 0,25 supõe cerca de 4,5 MB dentro de um contexto de 1 M tokens. Refaça a conta com o limite de contexto ou retire o número. Avalie o mecanismo de um IP contra o limite do provedor.
+3. **A2-05:** verifique o caminho SSE `{"error":...}` sem `choices` (A4-61). Diga se "o caso mais comum já é tratado" continua valendo, dado que o parcial é apagado.
+4. **A2-40 e A2-62:** corrija a causa: "nao" fica de fora pela regex `{4,}`, não só pelas `STOPWORDS`.
+5. **Numeração:** A2-55 a A2-57 não existem. Houve itens perdidos?
+6. **A2-36:** confirme `allam-2-7b` no enum da referência da API da Groq, como fez com `qwen3.6-27b`, e não só no HTML estático.
+7. **A2-53:** a doc de *reasoning* da Groq veio de resumo do WebFetch. Confirme no HTML bruto.
+8. **A2-14:** confirme que o 500 do login acentuado chega pelo corpo JSON, sem depender do proxy da Vercel.
+9. **Verificar as propostas do A3 que você ainda não viu:**
+   - A3-01 (resíduo `E. coli`; aspas × troca de caracteres);
+   - A3-02 (o `includeFiles` já cobre `_app/**`?);
+   - A3-03 (tamanho real das respostas contra 12.000; a mensagem verde com teto de frases);
+   - A3-11 (semântica de `consumir_cotas`; custo 21 contra o limite de 20);
+   - A3-08 (3.12 ausente localmente).
+10. **A2-59:** sem revelar o valor, diga em que se baseia "aparência de senha pessoal" e inclua na recomendação a troca de `SESSION_SECRET`, o histórico do git e a reutilização.
+
+### Agente 3
+1. **A3-01:** por que trocar `. :` por espaço em vez de usar as aspas previstas pelo PostgREST? Como fica "Node.js"? Aceita ou trata o resíduo `E. coli` e `A. Smith` no início de linha?
+2. **A3-02:** o `includeFiles` atual já inclui `api/_app/**`. Reavalie o custo da TTF. Adicione um timeout curto na busca opcional, porque sem ele `except httpx.HTTPError` não evita a espera de cerca de 120 s (A2-63).
+3. **A3-03:**
+   - Qual dado sustenta 4.000 e 12.000?
+   - Como evitar 422 em respostas longas (sem `max_tokens`) e em OCR de página inteira?
+   - Como fica a mensagem "Todas as frases têm apoio" com 30 frases (A4-63)?
+   - N8 vai no mesmo PR?
+   - E a adivinhação de `X-Admin-Token` (A4-65)?
+   - E o login sem service_role?
+4. **A3-04:** trate o 422 da ingestão e qualquer 4xx como não repetível (A2-07 item 2, A2-60). A mudança de contrato quebra `scripts\verificar-guarda-upload.sh`: inclua na proposta.
+5. **A3-05:** inclua a detecção de `error` no SSE (A4-61). Como vai testar a lógica de rodadas sem teste de componente?
+6. **A3-06:** justifique rejeitar o semáforo diante de A4-62 e dos 429 anotados em `provedores.py:83,114-116`. Justifique 40 → 20 com dado ou retire.
+7. **A3-08:** como `iniciar-tudo.bat` vai rodar 3.12 numa máquina que só tem 3.14 e 3.11? Em que ambiente 3.12 sai o `pip freeze`? Na rotação da credencial, inclua `SESSION_SECRET`, histórico do git e reutilização.
+8. **A3-10:** retenção e busca de logs no plano real são NÃO VERIFICADAS. Se forem curtas, qual é o plano B para calibrar A3-03, A3-06, A3-11 e A3-14? Avalie contadores de erro no `cota_uso`.
+9. **A3-11:** a função incrementa o global quando o IP já foi negado? Como resumir com custo 21 passa pelo limite de 20 por minuto?
+10. **A3-12:** compare com a alternativa sem migração (rollback `id > corte` e recomeço do offset 0 com o mesmo corte) e com a sua própria autocrítica. Por que não DEPOIS?
+11. **A3-13:** explicite que o PDF reconstruído escapa da guarda do upload (`fonte_afetada=None`) e depende de A3-04 antes.
+12. **A3-17 e A3-18:** os modelos citam no formato `[Fonte: X, página N]`? Traga uma amostra antes de construir. Separe "trocar o rótulo" (AGORA) do "modo estrito" (depois de A3-14).
+13. **A3-21 e A3-23:** apresente evidência de demanda ou retire da lista.
+14. **Omissão:** por que nenhuma proposta limpa a lista curada de modelos lentos ou mortos (A4-40)?
+
+---
+
+## 6. O que ainda precisa ser investigado
+
+1. **A2-59:** o literal do teste é, ou foi, a senha de produção? Houve reutilização? Está no histórico do git? É a decisão mais urgente e custa minutos ao dono.
+2. **Estado de produção (V19):** service_role, RLS e REVOKE, migração de 16/09, `ADMIN_TOKEN` e `SESSION_SECRET` definidos. Verificar só por consultas ao catálogo.
+3. **Limites reais dos provedores** (requisições por minuto e concorrência por chave) para resumir e comparar.
+4. **Exposição da URL** (pública ou só para a turma), Firewall e Deployment Protection, plano e fluid compute da Vercel, **retenção de logs**.
+5. **Conjunto de questões reais** para A1-03; **saídas reais de apostila** para A1-04; **respostas reais** para medir o tamanho (A3-03) e o formato das citações (A3-17).
+6. **Ensaio de restauração** num Postgres com pgvector (A1-02), incluindo a colisão de chave primária.
+7. **Navegador:** A1-11, A1-12, A2-66 e a remoção de anexo durante o OCR (A1 §5).
+8. **Python 3.12:** rodar pytest no CI; como o dono roda localmente.
+9. **Supabase local:** DELETE com 0 linhas, limite padrão de 100 no Storage, HNSW com filtro (A3-20), upsert com termos duplicados (A1-18), aspas no `or=()`.
+10. **Disponibilidade e latência** da lista de modelos (`allam-2-7b`, OpenRouter, nemotron lightning).
+11. **Compatibilidade** de `overrides` da postcss com next 15.5.25.
+12. **Perfil dos alunos** (NAT, número de usuários) antes de mexer em cotas.
+
+---
+
+## 7. Autocrítica
+
+**Em que circunstância meu veredito estaria errado?**
+- **A4-01 (ALTO pelo limite do provedor):** se as chaves tiverem limites altos ou pagos sem teto de concorrência baixo, ou se a URL for conhecida só pela turma. O teste A4-62 usa um limite **simulado** de 10 simultâneas, que é hipótese.
+- **A4-03 e A4-04 (ALTO):** se as questões reais quase nunca tiverem o gatilho antes das alternativas, ou se os modelos compensarem o fragmento. Se as apostilas geradas quase nunca contiverem travessão, aspas curvas, marcadores ou setas.
+- **A4-02 (MÉDIO com AGORA):** se a importação usada na prática (painel do Supabase ou `reimportar_chunks.py`) não enviar o id ou ajustar a sequência sozinha. Aí o achado seria quase irrelevante.
+- **A4-12 (BAIXO):** se o fluxo Resolver → Glossário for o principal uso da aba e o aluno não perceber que precisa clicar.
+- **A4-32, A4-50, A4-63 (riscos das soluções):** são leituras de propostas ainda não implementadas. O A3 pode detalhar a semântica de um jeito que elimine o risco apontado.
+- **A4-39 (logs):** se o plano da Vercel tiver retenção e busca adequadas, a crítica perde força.
+- Rodei tudo em Python 3.14 com TestClient e mocks. A Vercel (3.12, adaptador próprio) pode se comportar de outro jeito em streaming, cabeçalhos e corpo.
+
+**Que evidência me faria mudar de opinião?**
+- Documentação ou painel do provedor com limite de concorrência e de requisições por minuto folgado, mais confirmação de que a URL é restrita: A4-01 cai para MÉDIO.
+- Dez ou mais questões reais sem truncamento relevante, ou com a mesma letra escolhida: A4-03 cai para MÉDIO.
+- Dez ou mais apostilas geradas por modelos da lista sem caracteres fora do Latin-1: A4-04 cai para MÉDIO.
+- Ensaio em Postgres com `nextval` acima de 1768 sem `setval`: A4-02 é retirado.
+- Logs com streams longos completos e sem 504 nos modelos oferecidos: A4-05 cai para BAIXO. Logs com 504 frequentes na rota principal: A4-05 volta a ALTO.
+- Confirmação do dono de que o literal nunca foi a senha, nem reutilizado: A4-19 vira só higiene (BAIXO).
+- Medição de respostas reais sempre abaixo de 12.000 caracteres e OCR abaixo de 4.000: retiro a maior parte de A4-32.
+- Um provedor real que nunca mande `error` sem `choices` no stream: A4-61 cai para BAIXO.
