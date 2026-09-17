@@ -90,7 +90,7 @@ def test_primeira_indexacao_sem_chunks_novos_ok(monkeypatch):
 # ── Guarda do upload ────────────────────────────────────────────────────────
 #
 # O caminho mais perigoso: subir um arquivo com o MESMO nome de um documento
-# indexado. O upload antigo executava apagar_chunks_por_fonte na hora, sem
+# indexado. O upload antigo apagava os chunks da fonte na hora, sem
 # comparar nada — um PDF que não extrai texto subindo no lugar de um indexado
 # apagava o material e não colocava nada no lugar.
 

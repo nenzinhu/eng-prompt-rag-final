@@ -3,28 +3,17 @@
 import { useState } from 'react'
 import { Search, TriangleAlert, CircleSlash, FileText } from 'lucide-react'
 import { api } from '@/lib/api'
+import { useRequisicao } from '@/lib/useRequisicao'
 import type { BuscarResultado } from '@/lib/types'
 
 export default function BuscarTab() {
   const [query, setQuery] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [erro, setErro] = useState('')
-  const [resultados, setResultados] = useState<BuscarResultado[] | null>(null)
+  const { dados: resultados, carregando: loading, erro, executar } = useRequisicao<BuscarResultado[] | null>(null)
 
   async function buscar(e: React.FormEvent) {
     e.preventDefault()
     if (!query.trim()) return
-    setLoading(true)
-    setErro('')
-    try {
-      const d = await api.buscar(query, 6)
-      setResultados(d.resultados)
-    } catch (e2) {
-      setErro(e2 instanceof Error ? e2.message : 'Erro na busca')
-      setResultados(null)
-    } finally {
-      setLoading(false)
-    }
+    await executar(() => api.buscar(query, 6).then((d) => d.resultados), 'Erro na busca')
   }
 
   return (

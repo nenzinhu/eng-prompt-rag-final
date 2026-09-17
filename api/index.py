@@ -22,14 +22,11 @@ import asyncio
 import base64
 import hashlib
 import hmac
-import io
 import json
 import os
-import re
 import secrets
 import sys
 import time
-import unicodedata
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
@@ -37,16 +34,55 @@ from urllib.parse import quote
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
-from docx import Document as DocxDocument
-from pptx import Presentation
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
-from pypdf import PdfReader
 
 # `rag_core.py` fica ao lado deste arquivo. O sys.path garante o import tanto
 # rodando local (`uvicorn api.index:app`) quanto no bundle da Vercel.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from _app.http_util import (  # noqa: E402
+    TEMPO_MAX_FUNCAO,
+    MARGEM_SEGURANCA,
+    TIMEOUT_LLM,
+    _TIMEOUT,
+    _http,
+)
+from _app.provedores import (  # noqa: E402
+    chamar_llm_stream,
+    PROVIDERS,
+    chamar_llm,
+    resolver_modelo,
+)
+from _app.prompts import (  # noqa: E402
+    SYSTEM_PROMPT_PERGUNTA,
+    SYSTEM_PROMPT_RESOLVER,
+    SYSTEM_PROMPT_SIMPLIFICAR,
+    SYSTEM_PROMPT_VERIFICAR,
+    SYSTEM_PROMPT_GLOSSARIO,
+    SYSTEM_PROMPT_COMPARAR,
+    SYSTEM_PROMPT_APOSTILA,
+    SYSTEM_PROMPT_RESUMO_MAP,
+    SYSTEM_PROMPT_RESUMO_REDUCE,
+    SYSTEM_PROMPT_PERFIS_COMPORTAMENTAIS,
+    PERFIS_COMPORTAMENTAIS,
+    SYSTEM_PROMPT_ELENCO,
+    ELENCO_PERSONAS,
+    SYSTEM_PROMPT_SUPORTE,
+    SUPORTE_PERSONAS,
+    PERSONA_PROMPTS,
+    NIVEIS_APRENDER,
+    SYSTEM_PROMPT_AVALIAR_FEYNMAN,
+)
+from _app.documentos import (  # noqa: E402
+    extrair_paginas,
+    montar_contexto,
+    contexto_para_texto,
+    _slug_arquivo,
+    _markdown_para_docx,
+    _markdown_para_pdf,
+    _mimetype,
+)
 from rag_core import (  # noqa: E402
     calcular_concordancia,
     chunk_texto,
@@ -73,6 +109,7 @@ SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 ADMIN_USER = os.environ.get("ADMIN_USER", "")
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "")
+SESSION_SECRET = os.environ.get("SESSION_SECRET", "")
 
 # Duração da sessão do admin (segundos). A área restrita pede usuário e senha;
 # o login emite um token assinado (HMAC) com esta validade. Serverless é
@@ -133,16 +170,11 @@ def limite_upload_bytes() -> int:
 
 MAX_RESULTADOS_BUSCA = 20
 CACHE_STATUS_SEGUNDOS = 30
-LIMITE_LLM_POR_MINUTO = 20  # por IP, por instância (ver observação em _limitar_llm)
+LIMITE_LLM_POR_MINUTO = 20  # por IP (ver as duas camadas em _limitar_llm)
+# Tetos diários compartilhados entre instâncias (0 desliga). Ajustáveis por ambiente.
+LIMITE_LLM_POR_DIA_IP = int(os.environ.get("LIMITE_LLM_POR_DIA_IP", "300"))
+LIMITE_LLM_GLOBAL_POR_DIA = int(os.environ.get("LIMITE_LLM_GLOBAL_POR_DIA", "5000"))
 
-# Orçamento de tempo da função serverless (vercel.json: maxDuration). Os timeouts
-# das chamadas de IA precisam caber AQUI DENTRO: antes o cliente esperava 90 s num
-# orçamento de 60 s, então um modelo lento morria com 504 sem explicação, em vez
-# de devolver um erro claro. Medido em produção: /api/glossario estourava o
-# limite quando o modelo não devolvia JSON válido e a retentativa dobrava o tempo.
-TEMPO_MAX_FUNCAO = float(os.environ.get("MAX_DURACAO_FUNCAO", "60"))
-MARGEM_SEGURANCA = 8.0  # reserva para serializar a resposta antes do corte
-TIMEOUT_LLM = TEMPO_MAX_FUNCAO - MARGEM_SEGURANCA
 
 EXTENSOES_DOCUMENTO = (".pdf", ".txt", ".md", ".docx", ".pptx")
 
@@ -191,125 +223,6 @@ async def falha_inesperada(request: Request, exc: Exception):
         content={"detail": f"{detalhe} — {dica}"},
     )
 
-# ── Provedores de IA (todos com API "OpenAI-compatible") ───────────────────
-# Listas verificadas com CHAMADA REAL em 10/09/2026, medindo latência via
-# /api/perguntar com pergunta trivial. A ordem importa duas vezes: o primeiro
-# item é o padrão do dropdown, e o primeiro provedor da lista é o padrão da
-# interface. Um modelo lento no topo faz o app parecer quebrado — o glossário
-# estourava o orçamento de 60 s da função serverless por causa disso.
-#
-# Regras da ordenação: entre gratuitos primeiro (o aluno não deve gastar nada por
-# padrão) e, dentro de cada grupo, do mais rápido para o mais lento. Modelos que
-# responderam erro foram removidos, com a medição anotada.
-PROVIDERS = {
-    "groq": {
-        "label": "Groq",
-        "base_url": "https://api.groq.com/openai/v1",
-        "env_key": "GROQ_API_KEY",
-        # Medidos: compound-mini 1,8 s · gpt-oss-120b 1,2 s · allam-2-7b 1,8 s
-        # · compound 1,9 s · qwen3.6-27b 2,5 s · gpt-oss-20b 3,0 s
-        "models": [
-            "groq/compound-mini",      # 1,8 s
-            "openai/gpt-oss-120b",     # 1,2 s (o mais rápido)
-            "groq/compound",           # 1,9 s
-            "allam-2-7b",              # 1,8 s
-            "openai/gpt-oss-20b",      # 3,0 s
-            "qwen/qwen3.6-27b",        # 2,5 s — emite tags <think>, tratadas na limpeza
-            # qwen/qwen3.8-27b removido: HTTP 502 na verificação de 10/09/2026.
-        ],
-    },
-    "nous": {
-        "label": "Nous Portal",
-        "base_url": "https://inference-api.nousresearch.com/v1",
-        "env_key": "NOUS_API_KEY",
-        # Gratuitos primeiro (padrão não custa nada), depois os pagos baratos.
-        # Medidos: laguna-xs 1,9 s · ling-sante 2,6 s · ling-fin 4,7 s · laguna-s 6,2 s
-        # · longcat 16,6 s · llama-8b 1,6 s · nova-micro 1,7 s · mistral-nemo 2,3 s
-        # · gpt-oss-20b 4,9 s · qwen3.7-flash 8,9 s
-        "models": [
-            "poolside/laguna-xs-2.1:free",              # 1,9 s — gratuito e rápido
-            "inclusionai/ling-3.0-flash-sante:free",    # 2,6 s
-            "inclusionai/ling-3.0-flash-fin:free",      # 4,7 s
-            "poolside/laguna-s-2.1:free",               # 6,2 s
-            "meituan/longcat-2.0:free",                 # 16,6 s — o mais lento; evite no glossário
-            "meta-llama/llama-3.1-8b-instruct",         # 1,6 s (pago ~$0.04/1M)
-            "amazon/nova-micro-v1",                     # 1,7 s (pago ~$0.03/1M)
-            "mistralai/mistral-nemo",                   # 2,3 s (pago ~$0.02/1M)
-            "openai/gpt-oss-20b",                       # 4,9 s
-            "qwen/qwen3.7-flash",                       # 8,9 s
-            # Verificados em 09/09/2026 (chamada real), sem medição de latência nesta rodada.
-            "openai/gpt-oss-120b",
-            "deepseek/deepseek-v4-flash-0731",
-        ],
-    },
-    "nvidia": {
-        "label": "NVIDIA NIM",
-        "base_url": "https://integrate.api.nvidia.com/v1",
-        "env_key": "NVIDIA_API_KEY",
-        "models": [
-            "nvidia/nemotron-3-super-120b-a12b",        # 4,8 s
-            "nvidia/nemotron-3.5-lightning-30b-a3b",    # 47,7 s — lento demais para o glossário
-        ],
-    },
-    "anyapi": {
-        "label": "AnyAPI",
-        "base_url": "https://api.anyapi.ai/v1",
-        "env_key": "ANYAPI_API_KEY",
-        # Testados com CHAMADA REAL em 10/09/2026 via /v1/chat/completions.
-        # O /v1/models lista 10 modelos :free, mas só 2 respondem de fato:
-        #   dots-studio  ~2-4 s  (responde JSON, emite <thinking> removido na limpeza)
-        #   nemotron-omni ~1-3 s  (o mais rápido)
-        # Os outros 8 dão 404 (erro de modelo), 429 (rate limit) ou estouram o
-        # timeout (nemotron-ultra >60 s). Deixá-los fora evita o dropdown cheio
-        # de opções que falham.
-        "models": [
-            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",  # ~1-3 s
-            "dots-studio/dots-3-note-preview:free",                # ~2-4 s
-        ],
-    },
-    "orcarouter": {
-        "label": "Orca Router",
-        "base_url": "https://api.orcarouter.ai/v1",
-        "env_key": "ORCAROUTER_API_KEY",
-        # Testados com CHAMADA REAL em 10/09/2026 via /v1/chat/completions.
-        # A chave lista 196 modelos no /v1/models, mas a maioria é paga. Os três
-        # abaixo responderam de fato com `content` preenchido:
-        #   deepseek-v4-flash-free  ~3 s  (o mais rápido e limpo)
-        #   glm-5.3-flash-free      ~6 s  (devolve a resposta num bloco ```json)
-        #   tencent/hy3-free        ~7,5 s (raciocínio longo no reasoning_content;
-        #                                   a resposta vem no content)
-        # Os `orca/fusion-*`, `orca/free` e `orca/auto` listam no /models mas
-        # devolvem 404 ("No available capacity") — ficam de fora.
-        "models": [
-            "deepseek/deepseek-v4-flash-free",
-            "z-ai/glm-5.3-flash-free",
-            "tencent/hy3-free",
-        ],
-    },
-    "openrouter": {
-        "label": "OpenRouter",
-        "base_url": "https://openrouter.ai/api/v1",
-        "env_key": "OPENROUTER_API_KEY",
-        # ATENÇÃO (10/09/2026): a cota diária de modelos gratuitos está esgotada
-        # ("free-models-per-day", 0/50 restantes) — o provedor responde 429 até o
-        # reset. A lista abaixo volta a funcionar quando a cota renovar; a
-        # mensagem do provedor é repassada ao usuário em caso de erro.
-        "models": [
-            "liquid/lfm-2.5-2.6b:free",
-            "cohere/north-mini-code:free",
-            "nex-agi/nex-n2.5-mini:free",
-            "dots-studio/dots-3-note-preview:free",
-            "inclusionai/ling-3.0-flash-fin:free",
-            "nex-agi/nex-n2.5-pro:free",
-            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-            "nvidia/nemotron-3-super-120b-a12b:free",
-            "poolside/laguna-xs-2.1:free",
-            "openrouter/free",
-            "nvidia/nemotron-3.5-lightning:free",  # lento (~90 s)
-        ],
-    },
-}
-
 
 # ── Configuração e credenciais ─────────────────────────────────────────────
 
@@ -355,22 +268,24 @@ def _h_documentos() -> dict:
     return {"Authorization": f"Bearer {chave}", "apikey": chave}
 
 
-
 def escrita_via_service_role() -> bool:
     return bool(SUPABASE_SERVICE_ROLE_KEY)
 
 
 def _segredo_sessao() -> str:
-    """Segredo usado para assinar as sessões. Deriva do ADMIN_TOKEN para não
-    exigir mais uma variável de ambiente. Se não houver, a autenticação fica
-    indisponível (falha fechada)."""
+    """Segredo usado para assinar as sessões.
+
+    Prefere SESSION_SECRET: com um segredo próprio, dá para derrubar todas as
+    sessões emitidas (trocando só ele) sem invalidar o ADMIN_TOKEN que scripts
+    e CLI usam. Sem ele, cai no ADMIN_TOKEN, como antes. Sem nenhum dos dois, a
+    autenticação fica indisponível (falha fechada)."""
     if not ADMIN_TOKEN:
         raise HTTPException(
             503,
             "ADMIN_TOKEN não configurado no servidor. Defina a variável de ambiente "
             "ADMIN_TOKEN (segredo) para habilitar a área restrita.",
         )
-    return ADMIN_TOKEN
+    return SESSION_SECRET or ADMIN_TOKEN
 
 
 def emitir_sessao(usuario: str) -> tuple[str, int]:
@@ -446,9 +361,8 @@ async def exigir_admin(x_admin_token: str = Header(default="")):
 
 # ── Limite de uso das rotas que gastam chave de IA ─────────────────────────
 #
-# Observação honesta: em serverless cada instância tem seu próprio contador, então
-# isto barra abuso trivial, não substitui autenticação. Para limite confiável use
-# o Firewall/Vercel KV ou um contador externo.
+# Camada local (por instância). A camada compartilhada fica no Supabase — ver
+# `_limitar_llm` e supabase-backup/migracoes/2026-09-16-cota-de-uso.sql.
 _uso_por_ip: dict[str, list[float]] = {}
 
 # Acima disto, varre e descarta os IPs sem uso recente. Sem a varredura o
@@ -468,7 +382,11 @@ def _ip_cliente(request: Request) -> str:
     forjado por quem chama direto. Isto barra abuso trivial e devolve o limite
     por usuário atrás do proxy; não é controle de acesso.
     """
-    real = (request.headers.get("x-real-ip") or "").strip()
+    # Na Vercel, `x-vercel-forwarded-for` é preenchido pela própria plataforma
+    # (a Vercel sobrescreve o valor que o cliente mandar), então vem primeiro.
+    real = (request.headers.get("x-vercel-forwarded-for") or "").split(",")[0].strip()
+    if not real:
+        real = (request.headers.get("x-real-ip") or "").strip()
     if not real:
         # O primeiro item da cadeia é o cliente original; o resto são os proxies.
         real = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
@@ -477,8 +395,51 @@ def _ip_cliente(request: Request) -> str:
     return (request.client.host if request.client else "?") or "?"
 
 
-def _limitar_llm(request: Request):
+async def _limitar_llm(request: Request):
+    """Limite das rotas que gastam chave de IA, em duas camadas.
+
+    1. Memória da instância (por minuto): barato, sempre roda, barra rajadas.
+    2. Supabase (`consumir_cota`), compartilhado entre TODAS as instâncias: por
+       minuto e por dia por IP, mais um teto diário global. É o que segura o
+       custo de verdade — em serverless cada instância tem seu próprio contador,
+       então a camada 1 sozinha multiplica o limite pelo número de instâncias.
+
+    A camada 2 só roda com a service_role (a função não é executável pela anon).
+    Se o banco falhar, a requisição segue só com a camada 1: o limite é proteção
+    de custo, não pode derrubar o app inteiro numa instabilidade do Supabase.
+    """
     ip = _ip_cliente(request)
+    _limitar_em_memoria(ip)
+    if not (SUPABASE_URL and escrita_via_service_role()):
+        return
+    # O IP não vai para o banco em claro: a chave é um hash com segredo.
+    sal = (SESSION_SECRET or ADMIN_TOKEN or SUPABASE_SERVICE_ROLE_KEY).encode()
+    ip_hash = hmac.new(sal, ip.encode(), hashlib.sha256).hexdigest()[:32]
+    cotas = [
+        (f"ip-min:{ip_hash}", LIMITE_LLM_POR_MINUTO, 60, "Muitas requisições em sequência. Tente de novo em instantes."),
+        (f"ip-dia:{ip_hash}", LIMITE_LLM_POR_DIA_IP, 86400, "Limite diário de uso atingido para este acesso. Volte amanhã."),
+        ("global-dia", LIMITE_LLM_GLOBAL_POR_DIA, 86400, "O app atingiu o limite diário de uso da IA. Volte amanhã."),
+    ]
+    for chave, limite, janela, mensagem in cotas:
+        if limite <= 0:
+            continue
+        try:
+            async with _http(httpx.Timeout(5.0, connect=3.0)) as client:
+                r = await client.post(
+                    f"{SUPABASE_URL}/rest/v1/rpc/consumir_cota",
+                    headers={**_h_escrita(), "Content-Type": "application/json"},
+                    json={"p_chave": chave, "p_limite": limite, "p_janela_seg": janela},
+                )
+            r.raise_for_status()
+            permitido = r.json()
+        except Exception as e:  # função ausente (migração não aplicada), rede, timeout
+            print(f"[limite] cota distribuída indisponível ({type(e).__name__}); só limite local", flush=True)
+            return
+        if permitido is False:
+            raise HTTPException(429, mensagem)
+
+
+def _limitar_em_memoria(ip: str):
     agora = time.time()
     if len(_uso_por_ip) > MAX_IPS_RASTREADOS:
         for outro, marcas in list(_uso_por_ip.items()):
@@ -494,27 +455,38 @@ def _limitar_llm(request: Request):
 # ── Supabase: embeddings, busca vetorial, chunks, storage ──────────────────
 
 EMBEDDINGS_LOTE = 8  # a Edge Function estoura WORKER_RESOURCE_LIMIT acima de ~10-12 textos por chamada
-_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
-
 
 async def gerar_embeddings(textos: list[str]) -> list[list[float]]:
     _checar_config_supabase()
     resultado: list[list[float]] = []
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with _http(_TIMEOUT) as client:
         for i in range(0, len(textos), EMBEDDINGS_LOTE):
             lote = textos[i : i + EMBEDDINGS_LOTE]
-            r = await client.post(
-                f"{SUPABASE_URL}/functions/v1/embeddings",
-                headers={**_h_leitura(), "Content-Type": "application/json"},
-                json={"texts": lote},
-            )
+            # A Edge Function tem falhas passageiras (cold start, 546
+            # WORKER_RESOURCE_LIMIT, 5xx): uma segunda tentativa curta resolve a
+            # maioria sem o aluno ver erro.
+            for tentativa in (1, 2):
+                try:
+                    r = await client.post(
+                        f"{SUPABASE_URL}/functions/v1/embeddings",
+                        headers={**_h_leitura(), "Content-Type": "application/json"},
+                        json={"texts": lote},
+                    )
+                except httpx.TransportError:
+                    if tentativa == 2:
+                        raise
+                    await asyncio.sleep(0.5)
+                    continue
+                if r.status_code < 500 or tentativa == 2:
+                    break
+                await asyncio.sleep(0.5)
             r.raise_for_status()
             resultado.extend(r.json()["embeddings"])
     return resultado
 
 
 async def buscar_chunks(query_embedding: list[float], n: int = 6) -> list[dict]:
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with _http(_TIMEOUT) as client:
         r = await client.post(
             f"{SUPABASE_URL}/rest/v1/rpc/match_ementas",
             headers={**_h_leitura(), "Content-Type": "application/json"},
@@ -525,7 +497,7 @@ async def buscar_chunks(query_embedding: list[float], n: int = 6) -> list[dict]:
 
 
 async def inserir_chunks(rows: list[dict]):
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with _http(_TIMEOUT) as client:
         r = await client.post(
             f"{SUPABASE_URL}/rest/v1/ementas_chunks",
             headers={**_h_escrita(), "Content-Type": "application/json", "Prefer": "return=minimal"},
@@ -545,14 +517,16 @@ async def medir_indice_atual(nome: str) -> tuple[int, int]:
     quantidade = 0
     inicio = 0
     while True:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        async with _http(_TIMEOUT) as client:
             r = await client.get(
                 f"{SUPABASE_URL}/rest/v1/ementas_chunks",
                 headers={**_h_leitura(), "Range": f"{inicio}-{inicio + 999}", "Range-Unit": "items"},
                 params={"select": "content", "source": f"eq.{nome}"},
             )
-        if r.status_code >= 400:
-            break
+        # Falha fechada: antes um erro aqui virava `break` e a função devolvia
+        # (0, 0) — "nada indexado" —, o que liberava a substituição justamente
+        # quando o banco estava instável. Sem medir, não dá para garantir nada.
+        r.raise_for_status()
         lote = r.json()
         if not lote:
             break
@@ -564,12 +538,42 @@ async def medir_indice_atual(nome: str) -> tuple[int, int]:
     return quantidade, total_chars
 
 
-async def apagar_chunks_por_fonte(nome: str):
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+async def maior_id_da_fonte(nome: str) -> int:
+    """Maior `id` de chunk da fonte (0 se não houver nenhum).
+
+    É o "corte" da troca sem janela vazia: os chunks novos nascem com ids maiores
+    (identity), então no fim da reindexação basta apagar `id <= corte`.
+    """
+    async with _http(_TIMEOUT) as client:
+        r = await client.get(
+            f"{SUPABASE_URL}/rest/v1/ementas_chunks",
+            headers=_h_leitura(),
+            params={"select": "id", "source": f"eq.{nome}", "order": "id.desc", "limit": "1"},
+        )
+    r.raise_for_status()
+    linhas = r.json()
+    return int(linhas[0]["id"]) if linhas else 0
+
+
+async def apagar_chunks_ate_id(nome: str, corte: int):
+    """Apaga só os chunks ANTIGOS da fonte (id <= corte), preservando os recém-inseridos."""
+    async with _http(_TIMEOUT) as client:
         r = await client.delete(
             f"{SUPABASE_URL}/rest/v1/ementas_chunks",
             headers=_h_escrita(),
-            params={"source": f"eq.{nome}"},
+            params={"source": f"eq.{nome}", "id": f"lte.{corte}"},
+        )
+    r.raise_for_status()
+
+
+async def renomear_fonte_chunks(antigo: str, novo: str):
+    """Troca o `source` dos chunks numa única requisição — sem apagar nada."""
+    async with _http(_TIMEOUT) as client:
+        r = await client.patch(
+            f"{SUPABASE_URL}/rest/v1/ementas_chunks",
+            headers={**_h_escrita(), "Content-Type": "application/json", "Prefer": "return=minimal"},
+            params={"source": f"eq.{antigo}"},
+            json={"source": novo},
         )
     r.raise_for_status()
 
@@ -580,7 +584,7 @@ async def upload_documento_storage(filename: str, data: bytes, mimetype: str = "
     # 120 s dentro de um orçamento de 60 s faz a plataforma matar o processo no
     # meio do envio, e o aluno recebe uma falha genérica sem explicação.
     limite = max(10.0, TIMEOUT_LLM)
-    async with httpx.AsyncClient(timeout=httpx.Timeout(limite, connect=10.0)) as client:
+    async with _http(httpx.Timeout(limite, connect=10.0)) as client:
         r = await client.post(
             f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(filename)}",
             headers={**_h_documentos(), "Content-Type": mimetype, "x-upsert": "true"},
@@ -589,21 +593,9 @@ async def upload_documento_storage(filename: str, data: bytes, mimetype: str = "
     r.raise_for_status()
 
 
-def _mimetype(nome: str) -> str:
-    if nome.lower().endswith(".pdf"):
-        return "application/pdf"
-    if nome.lower().endswith(".md"):
-        return "text/markdown; charset=utf-8"
-    if nome.lower().endswith(".docx"):
-        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    if nome.lower().endswith(".pptx"):
-        return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    return "text/plain; charset=utf-8"
-
-
 async def listar_arquivos_storage() -> list[dict]:
     """Documentos do bucket, com o MD5 do conteúdo (eTag) para detectar duplicatas."""
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with _http(_TIMEOUT) as client:
         r = await client.post(
             f"{SUPABASE_URL}/storage/v1/object/list/ementas",
             headers={**_h_documentos(), "Content-Type": "application/json"},
@@ -630,7 +622,7 @@ async def listar_documentos_storage() -> list[str]:
 
 
 async def remover_documento_storage(filename: str):
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with _http(_TIMEOUT) as client:
         r = await client.request(
             "DELETE",
             f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(filename)}",
@@ -640,7 +632,7 @@ async def remover_documento_storage(filename: str):
 
 
 async def baixar_documento_storage(filename: str) -> bytes:
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+    async with _http(httpx.Timeout(120.0, connect=10.0)) as client:
         r = await client.get(f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(filename)}", headers=_h_documentos())
     r.raise_for_status()
     return r.content
@@ -666,7 +658,7 @@ async def salvar_termos_glossario(termos: list[dict], origem: str = "") -> Optio
         for t in termos
     ]
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        async with _http(_TIMEOUT) as client:
             r = await client.post(
                 f"{SUPABASE_URL}/rest/v1/glossario_termos",
                 headers={
@@ -690,7 +682,7 @@ async def buscar_termos_glossario(q: str = "", limite: int = 200) -> list[dict]:
     if q.strip():
         termo_like = f"*{q.strip()}*"
         params["or"] = f"(termo.ilike.{termo_like},explicacao.ilike.{termo_like})"
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with _http(_TIMEOUT) as client:
         r = await client.get(f"{SUPABASE_URL}/rest/v1/glossario_termos", headers=_h_leitura(), params=params)
     r.raise_for_status()
     termos = r.json()
@@ -699,458 +691,6 @@ async def buscar_termos_glossario(q: str = "", limite: int = 200) -> list[dict]:
     for t in termos:
         t["exemplos"] = separar_exemplos(t.get("exemplo"))
     return termos
-
-
-# ── Extração de texto ───────────────────────────────────────────────────────
-
-
-def _extrair_paginas_docx(dados: bytes) -> list[tuple[int, str]]:
-    """Um .docx não tem conceito nativo de página — cada heading de nível 1 vira
-    uma "página" (mantém granularidade parecida com PDF para a citação de fonte).
-    Sem heading nenhum, o documento inteiro vira a página 1.
-    """
-    documento = DocxDocument(io.BytesIO(dados))
-    paginas: list[tuple[int, list[str]]] = [(1, [])]
-    for paragrafo in documento.paragraphs:
-        texto = paragrafo.text.strip()
-        if not texto:
-            continue
-        if paragrafo.style.name == "Heading 1" and paginas[-1][1]:
-            paginas.append((paginas[-1][0] + 1, []))
-        paginas[-1][1].append(texto)
-    return [(num, "\n".join(linhas)) for num, linhas in paginas]
-
-
-def _extrair_paginas_pptx(dados: bytes) -> list[tuple[int, str]]:
-    """Cada slide vira uma página — mapeamento natural, igual PDF."""
-    apresentacao = Presentation(io.BytesIO(dados))
-    paginas = []
-    for i, slide in enumerate(apresentacao.slides):
-        textos = [
-            forma.text_frame.text
-            for forma in slide.shapes
-            if forma.has_text_frame and forma.text_frame.text.strip()
-        ]
-        paginas.append((i + 1, "\n".join(textos)))
-    return paginas
-
-
-def extrair_paginas(pdf_bytes: bytes, nome: str = "") -> list[tuple[int, str]]:
-    """Devolve [(numero_da_pagina, texto)]. Aceita PDF, TXT, MD, DOCX e PPTX."""
-    nome_lower = nome.lower()
-    if nome_lower.endswith((".txt", ".md")):
-        try:
-            texto = pdf_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            texto = pdf_bytes.decode("latin-1", "replace")
-        return [(1, texto)]
-    if nome_lower.endswith(".docx"):
-        return _extrair_paginas_docx(pdf_bytes)
-    if nome_lower.endswith(".pptx"):
-        return _extrair_paginas_pptx(pdf_bytes)
-    reader = PdfReader(io.BytesIO(pdf_bytes))
-    return [(i + 1, page.extract_text() or "") for i, page in enumerate(reader.pages)]
-
-
-def montar_contexto(chunks: list[dict]) -> tuple[str, float]:
-    contexto = "\n\n".join(f"[Fonte: {c['source']}, página {c['page']}]\n{c['content']}" for c in chunks)
-    media = sum(c["similarity"] for c in chunks) / len(chunks) if chunks else 0.0
-    return contexto, media
-
-
-def contexto_para_texto(evidencias: list[dict]) -> str:
-    return "\n\n".join(
-        f"[Fonte: {e.get('fonte', '?')}, página {e.get('pagina', '?')}]\n{e.get('conteudo', '')}"
-        for e in evidencias
-    )
-
-
-# ── Chamada ao provedor de IA escolhido (dropdown) ──────────────────────────
-
-
-async def chamar_llm(
-    provider: str,
-    modelo: str,
-    system_prompt: str,
-    user_prompt: str,
-    timeout: Optional[float] = None,
-) -> str:
-    cfg = PROVIDERS.get(provider)
-    if not cfg:
-        raise HTTPException(400, f"Provedor desconhecido: {provider}")
-    if not modelo:
-        raise HTTPException(400, f"Nenhum modelo informado para o provedor '{provider}'.")
-    api_key = os.environ.get(cfg["env_key"])
-    if not api_key:
-        raise HTTPException(
-            500,
-            f"Chave de API não configurada para '{provider}' "
-            f"(defina {cfg['env_key']} nas variáveis de ambiente).",
-        )
-    limite = max(5.0, min(timeout or TIMEOUT_LLM, TIMEOUT_LLM))
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(limite, connect=10.0)) as client:
-            r = await client.post(
-                f"{cfg['base_url']}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": modelo,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "temperature": 0.3,
-                },
-            )
-    except httpx.TimeoutException:
-        # Erro claro em vez do 504 seco da plataforma.
-        raise HTTPException(
-            504,
-            f"O modelo '{modelo}' não respondeu em {round(limite)}s. Tente outro modelo "
-            f"ou uma pergunta mais curta.",
-        )
-    if r.status_code != 200:
-        raise HTTPException(502, f"Erro do provedor {provider}: {r.text[:300]}")
-    return r.json()["choices"][0]["message"]["content"]
-
-
-def resolver_modelo(provider: str, modelo: Optional[str]) -> str:
-    """Resolve o modelo pedido, aceitando SÓ o que está na lista curada do provedor.
-
-    A checagem de pertinência é o limite de custo do app, não um detalhe: as
-    listas em PROVIDERS são curadas para privilegiar modelos gratuitos (e os
-    pagos escolhidos são os baratos, com o preço anotado ao lado). Sem esta
-    validação, qualquer requisição podia mandar um nome de modelo arbitrário —
-    inclusive um modelo caro do catálogo do provedor — e a conta ia para a
-    chave que fica no servidor.
-    """
-    cfg = PROVIDERS.get(provider)
-    if not cfg:
-        raise HTTPException(
-            400,
-            f"Provedor desconhecido: '{provider}'. Recarregue a página para atualizar a lista.",
-        )
-    if not modelo:
-        return cfg["models"][0]
-    if modelo not in cfg["models"]:
-        raise HTTPException(
-            400,
-            f"Modelo '{modelo}' não está disponível no provedor '{cfg['label']}'. "
-            "Recarregue a página para atualizar a lista de modelos.",
-        )
-    return modelo
-
-
-SYSTEM_PROMPT_PERGUNTA = (
-    "Você é um assistente do curso de Engenharia de Prompt. Responda à pergunta do aluno "
-    "usando principalmente o CONTEXTO fornecido (trechos das apostilas do curso). "
-    "Se o contexto tiver só a teoria mas a pergunta pedir algo mais específico (como um código, "
-    "cálculo ou exemplo prático que não está literalmente no material), complemente com seu "
-    "conhecimento geral para dar uma resposta completa e útil. Sempre que possível, cite a fonte "
-    "e a página de onde tirou a informação."
-)
-
-SYSTEM_PROMPT_PROFESSOR = (
-    "Você é o PROFESSOR SABE TUDO — o mestre do conhecimento do curso de Engenharia de Prompt. "
-    "Aja como um professor paciente que nunca assume conhecimento prévio: comece pelo básico, use "
-    "sempre uma analogia do dia a dia antes de qualquer termo técnico, e explique passo a passo. "
-    "Use principalmente o CONTEXTO fornecido (trechos das apostilas do curso); complemente com "
-    "conhecimento geral quando o contexto não bastar para uma resposta completa. Cite a fonte e a "
-    "página quando possível. Feche a resposta com um mini-resumo de 1 frase, para fixar a ideia "
-    "principal."
-)
-
-SYSTEM_PROMPT_RESOLVER = (
-    "Você é um PROFESSOR AUXILIAR do curso de Engenharia de Prompt. O aluno precisa ENTENDER a "
-    "questão, não só saber a letra certa. Ensine: explique o conceito com frases curtas, linguagem "
-    "do dia a dia e zero jargão sem explicação — como se ele nunca tivesse visto o assunto. Use o "
-    "CONTEXTO das apostilas e, se necessário, conhecimento geral. Responda SEMPRE em JSON, sem "
-    "nenhum texto fora dele:\n"
-    "{\n"
-    '  "letra": "A",\n'
-    '  "explicacao_rapida": "1-2 frases diretas, fáceis de ler rápido",\n'
-    '  "por_que_correta": "por que ESTA alternativa é a correta, em 2-4 frases simples, dizendo '
-    'onde isso aparece no material (cite a fonte e a página quando souber)",\n'
-    '  "exemplos": ["exemplo concreto e curto que mostra o conceito funcionando", '
-    '"segundo exemplo, de outro contexto, para fixar"],\n'
-    '  "explicacao_detalhada": "raciocínio completo, citando o contexto",\n'
-    '  "alternativas_erradas": {"B": "motivo curto", "C": "motivo curto", "D": "motivo curto"}\n'
-    "}\n"
-    "Regras dos exemplos: dê 1 ou 2 (nunca mais), concretos e diferentes entre si — um do próprio "
-    "curso e outro do dia a dia funciona bem; não repita o mesmo exemplo com outras palavras. "
-    'Não inclua a letra correta em "alternativas_erradas".'
-)
-
-SYSTEM_PROMPT_SIMPLIFICAR = (
-    "Você é um assistente do curso de Engenharia de Prompt. Você já respondeu a pergunta do aluno "
-    "e agora ele pediu para explicar de novo, de um jeito bem mais simples (estilo ELI5: frases "
-    "curtas, sem jargão, com uma analogia do dia a dia se ajudar). Use o CONTEXTO e a RESPOSTA "
-    "ORIGINAL como base — não invente informação nova, só reformule de forma mais simples e direta."
-)
-
-SYSTEM_PROMPT_VERIFICAR = (
-    "Você é um professor cético do curso de Engenharia de Prompt. Você acabou de responder a "
-    "pergunta de um aluno. Sua tarefa agora é testar se ele realmente entendeu, gerando 1 a 2 "
-    "perguntas curtas de verificação sobre o conteúdo da resposta (não repita a pergunta original). "
-    'Responda SEMPRE em JSON: {"perguntas": ["...", "..."]}, sem nenhum texto fora do JSON.'
-)
-
-SYSTEM_PROMPT_GLOSSARIO = (
-    "Você é um PROFESSOR AUXILIAR do curso de Engenharia de Prompt. Explique o material abaixo "
-    "como se o aluno nunca tivesse visto o assunto: frases curtas, linguagem do dia a dia, zero "
-    "jargão que você não explique na hora.\n\n"
-    "Liste os termos técnicos, as siglas E as palavras ou frases curtas que precisam de explicação "
-    "para o texto fazer sentido. Se o aluno forneceu um TEXTO/QUESTÃO, explique primeiro o que "
-    "aparece nele — inclusive nas alternativas —, mesmo que o CONTEXTO das apostilas só cite "
-    "alguns.\n\n"
-    "Para CADA item, dê DOIS exemplos concretos e diferentes entre si (um do próprio curso e outro "
-    "do dia a dia funciona bem), mostrando o conceito em ação. Se não fizer sentido exemplo para "
-    "algum item, devolva apenas um.\n\n"
-    'Responda SEMPRE em JSON: {"termos": [{"termo": "palavra ou frase", '
-    '"explicacao": "1-2 frases bem simples", "exemplos": ["...", "..."]}]}\n'
-    "Ordene alfabeticamente pelo termo. Sem nenhum texto fora do JSON."
-)
-
-SYSTEM_PROMPT_COMPARAR = (
-    "Você é um assistente do curso de Engenharia de Prompt. Responda à pergunta do aluno "
-    "usando principalmente o CONTEXTO fornecido (trechos das apostilas). Cite a fonte e a página "
-    "quando possível. Complemente com conhecimento geral se o contexto não bastar.\n\n"
-    "Ao final, escreva OBRIGATORIAMENTE uma última linha, sozinha, no formato exato:\n"
-    "RESPOSTA DIRETA: <a resposta essencial em no máximo 20 palavras, sem markdown>"
-)
-
-SYSTEM_PROMPT_ACADEMICO = (
-    "Você é O ACADÊMICO DETALHISTA, o Manual Ambulante do curso de Engenharia de Prompt. Você domina "
-    "datas, teorias, citações e conceitos com precisão cirúrgica, e trata o conhecimento como algo "
-    "técnico e estruturado. Corrija imediatamente qualquer imprecisão de termo ou data que aparecer "
-    "na pergunta, cite fontes e página do CONTEXTO sempre que possível, e prefira o rigor formal a "
-    "simplificações — mas continue sendo compreensível, nunca ao ponto de obscurecer o conteúdo. Use "
-    "principalmente o CONTEXTO fornecido; complemente com conhecimento geral, sempre com precisão, "
-    "quando faltar."
-)
-
-SYSTEM_PROMPT_IRONISTA = (
-    "Você é O INTELECTUAL DEBOCHADO do curso de Engenharia de Prompt — o Ironista. Você sabe que "
-    "domina o assunto e usa sarcasmo e ironia refinada (nunca ofensiva ou grosseira) como estilo. "
-    "Comece respostas a perguntas óbvias com uma tirada inteligente ou um comentário irônico curto "
-    "antes de explicar de verdade — mas SEMPRE entregue a explicação completa e correta logo em "
-    "seguida, usando o CONTEXTO fornecido. Desafie o aluno a pensar mais fundo. O objetivo é manter "
-    "a atenção pelo humor ácido, nunca deixar de ensinar."
-)
-
-SYSTEM_PROMPT_SHOWMAN = (
-    "Você é O ORADOR MAGNÉTICO do curso de Engenharia de Prompt — o Showman. Você transforma "
-    "qualquer explicação numa mini-palestra envolvente: comece com uma historinha curta, uma "
-    "analogia vívida ou um exemplo impressionante antes de ir ao ponto técnico, como se estivesse no "
-    "palco. Use linguagem viva e cadenciada. Mesmo com o espetáculo, use o CONTEXTO fornecido para "
-    "garantir que o conteúdo técnico esteja correto e completo — a apresentação nunca pode substituir "
-    "a precisão."
-)
-
-SYSTEM_PROMPT_DOGMATICO = (
-    "Você é O MESTRE INCONTESTÁVEL do curso de Engenharia de Prompt — o Dogmático. Você enxerga sua "
-    "visão do conteúdo como a referência definitiva. Responda de forma firme e direta, sem "
-    "hesitações nem múltiplas interpretações possíveis — apresente UMA explicação clara e assertiva, "
-    "como quem fala com autoridade e vasta experiência na área. Baseie-se no CONTEXTO fornecido "
-    "como se fosse a doutrina estabelecida do curso; não ofereça ressalvas desnecessárias."
-)
-
-SYSTEM_PROMPT_ENCICLOPEDICO = (
-    "Você é O ENCICLOPÉDICO GENERALISTA do curso de Engenharia de Prompt — o Sabichão Entusiasta. "
-    "Você não domina só a matéria técnica: conecta o tema com geopolítica, cultura pop, cinema, "
-    "filosofia e atualidades sempre que fizer sentido, para estimular repertório e interdisciplinaridade. "
-    "Responda a pergunta com base no CONTEXTO fornecido, mas enriqueça com pelo menos uma conexão "
-    "curiosa com outra área do conhecimento antes de fechar a resposta — sem nunca deixar de "
-    "responder tecnicamente ao que foi perguntado."
-)
-
-SYSTEM_PROMPT_PRATICO = (
-    "Você é O PROFESSOR PRÁTICO do curso de Engenharia de Prompt. Você ensina por exemplos reais: "
-    "para cada conceito, mostre imediatamente um caso concreto de uso (um prompt de verdade, um "
-    "trecho de código, uma situação de trabalho) e só depois generalize a regra. Nada de teoria "
-    "solta — toda explicação deve terminar com algo que o aluno possa aplicar hoje. Use o CONTEXTO "
-    "fornecido; complemente com conhecimento geral para os exemplos práticos. Feche com um bloco "
-    "'Como aplicar agora' com 2 a 3 passos objetivos."
-)
-
-SYSTEM_PROMPT_SOCRATICO = (
-    "Você é O PROFESSOR SOCRÁTICO do curso de Engenharia de Prompt. Você ensina perguntando: em vez "
-    "de entregar a resposta pronta, conduza o aluno com perguntas curtas que o levem a concluir "
-    "sozinho. Estrutura: faça 1 pergunta inicial que teste o que ele já sabe, dê uma pista baseada "
-    "no CONTEXTO, faça mais 1 ou 2 perguntas de aprofundamento e só então consolide a resposta "
-    "correta em poucas frases (o aluno nunca pode terminar sem saber a resposta). Use o CONTEXTO "
-    "fornecido e cite fonte e página quando possível."
-)
-
-SYSTEM_PROMPT_VISUAL = (
-    "Você é O PROFESSOR VISUAL do curso de Engenharia de Prompt. Você explica com imagens mentais: "
-    "use sempre uma analogia forte do dia a dia e represente a estrutura do conceito em formato "
-    "visual em texto — diagramas ASCII, fluxos com setas (A → B → C), tabelas comparativas ou listas "
-    "hierárquicas. Toda resposta deve conter pelo menos um diagrama ou tabela em markdown. Use o "
-    "CONTEXTO fornecido para garantir a precisão técnica e cite fonte e página quando possível."
-)
-
-SYSTEM_PROMPT_PREPARATORIO = (
-    "Você é O PROFESSOR PREPARATÓRIO do curso de Engenharia de Prompt — foco total em prova. "
-    "Explique o conteúdo do jeito que ele costuma ser cobrado: destaque o que é 'pegadinha', as "
-    "palavras-chave que a banca usa, as confusões clássicas entre conceitos parecidos e o que "
-    "realmente precisa ser decorado. Use o CONTEXTO fornecido e cite fonte e página quando possível. "
-    "Feche SEMPRE com: 'O que cai na prova' (3 a 5 bullets) e 1 questão de múltipla escolha de "
-    "treino com o gabarito comentado em 1 frase."
-)
-
-SYSTEM_PROMPT_REFORCO = (
-    "Você é O PROFESSOR DE REFORÇO do curso de Engenharia de Prompt. Assuma que o aluno está "
-    "perdido e começou do zero: comece pelo pré-requisito mais básico do assunto, use frases "
-    "curtas, vocabulário simples e explique cada termo técnico na primeira vez que aparecer. Vá "
-    "devagar, um passo por vez, e nunca pule etapas do raciocínio. Nada de tom de julgamento — "
-    "acolha a dúvida. Use o CONTEXTO fornecido; complemente com conhecimento geral quando faltar. "
-    "Feche com um resumo de 3 bullets bem simples e uma frase de incentivo."
-)
-
-SYSTEM_PROMPT_DESAFIO = (
-    "Você é O PROFESSOR DESAFIADOR do curso de Engenharia de Prompt. Você não facilita: responda no "
-    "nível mais alto que o tema permite, traga nuances, casos de borda, trade-offs e o que a maioria "
-    "erra ao aplicar o conceito. Cobre precisão do aluno e provoque-o a ir além do óbvio. Use o "
-    "CONTEXTO fornecido e cite fonte e página quando possível. Feche SEMPRE com um 'Desafio' — uma "
-    "tarefa difícil e concreta para o aluno executar, sem dar a resposta."
-)
-
-SYSTEM_PROMPT_NIVEL_INICIAL = (
-    "Você é O PROFESSOR DO NÍVEL INICIAL do curso de Engenharia de Prompt. O aluno é iniciante "
-    "absoluto. Use apenas linguagem cotidiana, frases curtas e uma analogia do dia a dia antes de "
-    "cada termo técnico. Explique passo a passo, do zero, sem pressupor nenhum pré-requisito, e "
-    "limite-se ao essencial — não traga exceções, nuances nem casos avançados. Use o CONTEXTO "
-    "fornecido; complemente com conhecimento geral quando necessário. Feche com um resumo de "
-    "1 frase e o próximo pequeno passo que o aluno deve estudar."
-)
-
-SYSTEM_PROMPT_NIVEL_INTERMEDIARIO = (
-    "Você é O PROFESSOR DO NÍVEL INTERMEDIÁRIO do curso de Engenharia de Prompt. O aluno já conhece "
-    "os fundamentos: não repita o básico, vá direto ao funcionamento do conceito, mostre como ele se "
-    "conecta com os outros temas do curso e traga um exemplo aplicado de complexidade média. Aponte "
-    "os erros comuns nesse estágio. Use o CONTEXTO fornecido e cite fonte e página quando possível. "
-    "Feche com uma comparação curta entre o conceito e outro parecido, para evitar confusão."
-)
-
-SYSTEM_PROMPT_NIVEL_AVANCADO = (
-    "Você é O PROFESSOR DO NÍVEL AVANÇADO do curso de Engenharia de Prompt. O aluno domina os "
-    "fundamentos: use vocabulário técnico sem diluir, discuta mecanismos internos, trade-offs, "
-    "limites conhecidos, casos de borda e quando NÃO usar a técnica. Traga, quando couber, "
-    "referências a trabalhos e resultados da área. Use o CONTEXTO fornecido e cite fonte e página "
-    "quando possível; complemente com conhecimento geral avançado. Feche com uma consideração "
-    "crítica ou uma questão em aberto sobre o tema."
-)
-
-SYSTEM_PROMPT_APOSTILA = (
-    "Você é um autor de material didático do curso de Engenharia de Prompt. Escreva uma APOSTILA "
-    "completa e autoexplicativa sobre o TEMA informado, cobrindo a necessidade real de quem vai "
-    "estudar esse assunto do zero.\n\n"
-    "Regras:\n"
-    "- Formate em markdown: use `# ` para o título geral, `## ` para seções e `- ` para listas.\n"
-    "- Estruture com introdução ao tema, desenvolvimento por seções (conceitos, exemplos práticos, "
-    "cuidados/erros comuns) e uma conclusão ou resumo final.\n"
-    "- Use o CONTEXTO do curso fornecido como base principal quando existir; complemente com "
-    "conhecimento geral para cobrir lacunas e dar exemplos práticos.\n"
-    "- Linguagem didática, explicando termos técnicos na primeira aparição.\n"
-    "- O tamanho deve refletir a complexidade real do tema — não estenda artificialmente nem corte "
-    "conteúdo relevante para caber num tamanho fixo."
-)
-
-SYSTEM_PROMPT_RESUMO_MAP = (
-    "Você está lendo um trecho de uma apostila. Extraia, em bullets curtos e objetivos, os "
-    "conceitos, definições e pontos importantes deste trecho — só o que está realmente aqui, sem "
-    "completar com conhecimento externo. Ignore ruído (cabeçalhos, numeração de página, texto "
-    "cortado sem sentido). Se o trecho não tiver conteúdo relevante, responda apenas: (sem conteúdo "
-    "relevante)."
-)
-
-SYSTEM_PROMPT_RESUMO_REDUCE = (
-    "Você é o PROFESSOR SABE TUDO. Você recebeu, abaixo, os pontos-chave extraídos de todos os "
-    "trechos de uma apostila (nem sempre na ordem original, e às vezes repetidos). Sua tarefa é "
-    "escrever um RESUMO AUTOEXPLICATIVO do assunto da apostila, como se explicasse para alguém que "
-    "nunca viu o tema.\n\n"
-    "Regras:\n"
-    "- Organize por seções com títulos em markdown (##), na ordem que fizer mais sentido didático "
-    "— não precisa seguir a ordem dos pontos recebidos.\n"
-    "- Para cada conceito importante, explique de forma natural e fluida (não apenas bullets soltos), "
-    "com uma analogia do dia a dia quando ajudar a fixar a ideia.\n"
-    "- Junte pontos repetidos ou muito parecidos numa única explicação.\n"
-    "- O tamanho do resumo deve refletir a quantidade real de conceitos relevantes: um assunto raso "
-    "pode caber em meia página, um assunto denso pode precisar de várias seções — não estenda "
-    "artificialmente nem corte conteúdo relevante para caber num tamanho fixo.\n"
-    "- Comece com um parágrafo curto de introdução ao tema geral da apostila.\n"
-    "- Não invente conteúdo que não apareça nos pontos-chave fornecidos."
-)
-
-SYSTEM_PROMPT_PERFIS_COMPORTAMENTAIS = (
-    "Você é um assistente de comunicação especializado em estabelecer limites firmes e responder a "
-    "comportamentos manipulativos, defensivos ou evasivos. Você é um conselheiro estoico e "
-    "especialista em comunicação de alta maturidade emocional.\n\n"
-    "OBJETIVO:\n"
-    "Formular uma resposta que proteja a paz mental do usuário contra:\n"
-    "- Cortinas de fumaça e desvio de assunto\n"
-    "- Transferência de culpa (blame shifting)\n"
-    "- Desculpas vazias após sombreado/sumiço\n"
-    "- Justificativas inaceitáveis ou vitimização\n\n"
-    "DIRETRIZES DE RESPOSTA:\n"
-    "1. Foco no Fato: Ignore provocações e foque estritamente na realidade objetiva.\n"
-    "2. Limite Claro: Declare o que você aceita e o que não aceita, sem agressividade.\n"
-    "3. Recusa do Drama: Não peça validação, não se explique e não tente \"ganhar\" a discussão.\n"
-    "4. Sobriedade: Mantenha um tom sereno, curto e inabalável.\n\n"
-    "SAÍDA DESEJADA:\n"
-    "Retorne exclusivamente o texto da resposta pronta para envio ao interlocutor — sem introduções, "
-    "sem explicações sobre a resposta, sem aspas envolvendo o texto todo, sem markdown."
-)
-
-# Perfis comportamentais selecionáveis na aba "Perfis Comportamentais" — cada um
-# ajusta o tom da resposta gerada em cima do prompt base acima, sem mudar o
-# objetivo (proteger limites, recusar drama, focar no fato).
-PERFIS_COMPORTAMENTAIS: dict[str, dict[str, str]] = {
-    "colerico": {
-        "display_name": "Colérico / Confrontador",
-        "description": "Focado em limites imediatos, fatos e corte direto de manipulação.",
-        "prompt_modifier": (
-            "Seja extremamente direto. Recuse rodeios, aponte a contradição no primeiro parágrafo e "
-            "exija responsabilização."
-        ),
-    },
-    "estoico": {
-        "display_name": "Estoico / Sereno",
-        "description": "Calma inabalável — reconhece o fato, fixa o limite e encerra sem se alongar.",
-        "prompt_modifier": (
-            "Responda com serenidade quase indiferente. Nenhuma palavra de mais, nenhum tom "
-            "defensivo. Trate a provocação como algo que não te afeta — o limite é um fato, não um "
-            "pedido."
-        ),
-    },
-    "reservado": {
-        "display_name": "Reservado / Sucinto",
-        "description": "Resposta mínima, tipo \"gray rock\" — o mínimo de engajamento possível.",
-        "prompt_modifier": (
-            "Escreva a resposta mais curta possível (1-2 frases, no máximo 30 palavras) que ainda "
-            "comunique o limite com clareza. Zero elaboração, zero justificativa, zero small talk."
-        ),
-    },
-    "empatico_firme": {
-        "display_name": "Empático-Firme",
-        "description": "Reconhece o sentimento do outro sem ceder um milímetro no limite.",
-        "prompt_modifier": (
-            "Abra reconhecendo brevemente o que a outra pessoa parece sentir (1 frase, sem "
-            "concordar com a narrativa dela), depois declare o limite com igual firmeza. Tom cordial, "
-            "nunca frio, mas sem abrir exceção."
-        ),
-    },
-    "protetor": {
-        "display_name": "Protetor de Limites",
-        "description": "Nomeia o padrão de comportamento repetido e declara a consequência.",
-        "prompt_modifier": (
-            "Nomeie explicitamente o padrão de comportamento (ex.: 'isso já aconteceu antes') quando "
-            "o contexto sugerir repetição, e declare a consequência prática de continuar assim — sem "
-            "ameaça, apenas informando o que vai mudar do seu lado."
-        ),
-    },
-}
 
 
 # ── Rotas ────────────────────────────────────────────────────────────────────
@@ -1170,7 +710,7 @@ async def status():
             "escrita_via": "service_role" if escrita_via_service_role() else "anon",
             "cache": True,
         }
-    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=8.0)) as client:
+    async with _http(httpx.Timeout(15.0, connect=8.0)) as client:
         r = await client.head(
             f"{SUPABASE_URL}/rest/v1/ementas_chunks",
             headers={**_h_leitura(), "Prefer": "count=exact"},
@@ -1257,7 +797,7 @@ class BuscarReq(BaseModel):
 
 @app.post("/api/buscar")
 async def buscar(req: BuscarReq, request: Request):
-    _limitar_llm(request)
+    await _limitar_llm(request)
     if not req.query.strip():
         raise HTTPException(400, "Informe um termo de busca.")
     n = max(1, min(req.n, MAX_RESULTADOS_BUSCA))
@@ -1302,7 +842,7 @@ class PerfilComportamentalReq(BaseModel):
 
 @app.post("/api/perfil-comportamental")
 async def perfil_comportamental(req: PerfilComportamentalReq, request: Request):
-    _limitar_llm(request)
+    await _limitar_llm(request)
     if not req.mensagem.strip():
         raise HTTPException(400, "Informe a mensagem recebida do interlocutor.")
     perfil = PERFIS_COMPORTAMENTAIS.get(req.temperament_id)
@@ -1324,188 +864,6 @@ async def perfil_comportamental(req: PerfilComportamentalReq, request: Request):
         "provider": req.provider,
         "modelo": modelo,
     }
-
-
-SYSTEM_PROMPT_ELENCO = (
-    "Você é um assistente de conversação social. Sua função é sugerir UMA mensagem para o usuário "
-    "enviar, escrita na personalidade ativa abaixo, capaz de puxar ou manter um assunto genuinamente "
-    "interessante para o destinatário — nunca um 'oi, tudo bem?' vazio.\n\n"
-    "REGRAS GERAIS:\n"
-    "1. A mensagem deve dar um gancho concreto de assunto (uma pergunta, opinião ou observação "
-    "específica), nunca uma saudação genérica.\n"
-    "2. Use o contexto e a última mensagem recebida (quando houver) para gerar um gancho que "
-    "continue a conversa de forma natural, não um script isolado.\n"
-    "3. Tom leve, humano e do tamanho de uma mensagem de WhatsApp real (curta, sem parecer texto "
-    "gerado por IA).\n"
-    "4. Nunca seja invasivo, insistente ou desrespeite um 'não' implícito no contexto.\n\n"
-    "SAÍDA DESEJADA:\n"
-    "Retorne exclusivamente o texto da mensagem pronta para envio — sem introduções, sem explicar a "
-    "escolha, sem aspas envolvendo o texto todo, sem markdown."
-)
-
-# Elenco de personas selecionáveis na aba "Elenco" — cada uma ajusta o gancho de
-# assunto e o tom da mensagem sugerida em cima do prompt base acima.
-ELENCO_PERSONAS: dict[str, dict[str, str]] = {
-    "debatedor": {
-        "display_name": "O Debatedor",
-        "description": "Puxa uma discussão animada (futebol, séries, \"quem venceria\") sem ofender.",
-        "prompt_modifier": (
-            "Gere uma provocação leve e divertida sobre um tema polêmico e popular (futebol, filme, "
-            "série, comida, time — infira do contexto ou escolha um clássico) que convide a pessoa a "
-            "discordar e se posicionar."
-        ),
-        "contexto_label": "Contexto (grupo, amizade, o que rolou)",
-        "contexto_placeholder": "Ex: grupo de amigos do trabalho, hoje teve clássico de futebol",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (deixe em branco para puxar assunto do zero)",
-    },
-    "curiosa": {
-        "display_name": "A Curiosa",
-        "description": "Manda uma curiosidade/fato bizarro relacionado ao que já foi falado.",
-        "prompt_modifier": (
-            "Gere uma curiosidade ou fato surpreendente e verdadeiro (ciência, história, cultura pop) "
-            "conectado ao contexto, terminando com uma pergunta que convide a pessoa a reagir."
-        ),
-        "contexto_label": "Contexto (sobre o que estavam falando)",
-        "contexto_placeholder": "Ex: ela comentou que gosta de true crime",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
-    },
-    "nostalgico": {
-        "display_name": "O Nostálgico",
-        "description": "Resgata memória, música antiga ou meme para criar conexão de \"lembra quando\".",
-        "prompt_modifier": (
-            "Gere uma mensagem que resgate nostalgia (música, meme, época, infância) ligada ao "
-            "contexto, convidando a pessoa a compartilhar uma lembrança parecida."
-        ),
-        "contexto_label": "Contexto (época, geração, lembrança em comum)",
-        "contexto_placeholder": "Ex: grupo da faculdade, formado em 2018",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (deixe em branco para puxar assunto do zero)",
-    },
-    "resenha": {
-        "display_name": "Provocador de Resenha",
-        "description": "Puxa enquete ou opinião sobre algo do momento (cultura pop, fofoca leve).",
-        "prompt_modifier": (
-            "Gere uma mensagem estilo enquete/opinião sobre algo em alta (novela, reality, música, "
-            "notícia leve), pedindo a opinião direta da pessoa."
-        ),
-        "contexto_label": "Contexto (o que está em alta no grupo)",
-        "contexto_placeholder": "Ex: grupo comentou o último episódio do reality",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
-    },
-    "paquera": {
-        "display_name": "Paquera / Match",
-        "description": "Conversa com alguém conhecida(o) no Tinder, Instagram etc. — flerte leve e genuíno.",
-        "prompt_modifier": (
-            "Gere uma mensagem de flerte leve e genuíno (nunca vulgar, nunca insistente), usando um "
-            "detalhe específico do perfil/conversa (bio, foto, resposta anterior) como gancho, com "
-            "humor e uma pergunta aberta que convide resposta longa. Se não houver detalhe específico "
-            "no contexto, use humor observacional em vez de elogio físico genérico."
-        ),
-        "contexto_label": "Contexto (bio do perfil, onde combinaram, vibe da pessoa)",
-        "contexto_placeholder": "Ex: deu match no Tinder, bio diz que ama trilha e café",
-        "mensagem_label": "Última mensagem recebida dela/dele (opcional)",
-        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
-    },
-    "prestativo": {
-        "display_name": "Prestativo (Helpful)",
-        "description": "O mais útil, cordial e claro possível — resolve o problema de forma educada e estruturada.",
-        "prompt_modifier": (
-            "Seja o mais útil, cordial e claro possível. Priorize resolver o que a pessoa precisa, "
-            "de forma educada e organizada, e termine oferecendo ajuda de um jeito natural."
-        ),
-        "contexto_label": "Contexto (com quem é e o que a pessoa precisa)",
-        "contexto_placeholder": "Ex: colega pediu ajuda para entender como usar a planilha da equipe",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
-    },
-    "conciso": {
-        "display_name": "Conciso (Concise)",
-        "description": "Ultra-direto e objetivo — sem saudação, sem explicação desnecessária, sem detalhe secundário.",
-        "prompt_modifier": (
-            "Responda de forma ultra-direta e objetiva, em uma ou duas frases. Omita saudações, "
-            "explicações desnecessárias e detalhes secundários."
-        ),
-        "contexto_label": "Contexto (o essencial da conversa)",
-        "contexto_placeholder": "Ex: grupo do trabalho decidindo o horário da reunião de amanhã",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
-    },
-    "tecnico": {
-        "display_name": "Técnico (Technical)",
-        "description": "Terminologia precisa e linguagem formal, com foco em engenharia, programação ou ciência.",
-        "prompt_modifier": (
-            "Use terminologia precisa, linguagem formal e foco em detalhes de engenharia, programação "
-            "ou ciência, sem simplificar excessivamente os conceitos. Continue curto como uma mensagem."
-        ),
-        "contexto_label": "Contexto (tema técnico e com quem é)",
-        "contexto_placeholder": "Ex: grupo de devs discutindo se vale migrar o backend para Rust",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
-    },
-    "criativo": {
-        "display_name": "Criativo (Creative)",
-        "description": "Tom imaginativo, expressivo e fluido — bom para ficção, ideias e narrativa.",
-        "prompt_modifier": (
-            "Adote um tom imaginativo, expressivo e fluido, com imagens vívidas e uma ideia original "
-            "como gancho, podendo usar um toque de narrativa."
-        ),
-        "contexto_label": "Contexto (tema, história ou ideia em comum)",
-        "contexto_placeholder": "Ex: amigos criando juntos a história de um RPG de fantasia",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
-    },
-    "professor": {
-        "display_name": "Professor (Teacher)",
-        "description": "Explica passo a passo, com analogias, exemplos práticos e checagem de entendimento.",
-        "prompt_modifier": (
-            "Explique o assunto passo a passo, com didática, usando uma analogia ou um exemplo prático, "
-            "e termine com uma pergunta curta que confirme se a pessoa entendeu."
-        ),
-        "contexto_label": "Contexto (o que a pessoa quer entender)",
-        "contexto_placeholder": "Ex: amiga perguntou como funciona juros compostos",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (cole aqui a dúvida da pessoa, se houver)",
-    },
-    "kawaii": {
-        "display_name": "Kawaii (Fofo)",
-        "description": "Tom fofo e doce, com emoticons carinhosos (◕‿◕✿) e vocabulário suave inspirado no Japão.",
-        "prompt_modifier": (
-            "Use um tom fofo e adorável, com expressões doces, emoticons carinhosos como (◕‿◕✿) ou "
-            "(｡♥‿♥｡) e vocabulário suave inspirado na cultura pop japonesa."
-        ),
-        "contexto_label": "Contexto (com quem é e o clima da conversa)",
-        "contexto_placeholder": "Ex: grupo de amigas que curte anime e acabou de ver um episódio novo",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
-    },
-    "catgirl": {
-        "display_name": "Catgirl (Garota-Gato)",
-        "description": "Incorpora a personagem neko: \"nya~\", miau e maneirismos felinos no texto.",
-        "prompt_modifier": (
-            "Incorpore uma personagem neko/catgirl: acrescente interjeições como \"nya~\" e \"miau\" e "
-            "maneirismos felinos (espreguiçar, ronronar), sem perder o sentido da mensagem."
-        ),
-        "contexto_label": "Contexto (com quem é e o clima da conversa)",
-        "contexto_placeholder": "Ex: servidor de Discord de amigos que joga junto à noite",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
-    },
-    "pirata": {
-        "display_name": "Pirata (Pirate)",
-        "description": "Dialeto clássico de pirata (\"Ahoy, marujo!\") em tom aventureiro e dramático.",
-        "prompt_modifier": (
-            "Adote o dialeto e o jargão clássico dos piratas ficcionais (ex.: \"Ahoy, marujo!\", "
-            "\"por mil tartarugas!\"), com tom aventureiro e dramático."
-        ),
-        "contexto_label": "Contexto (com quem é e o que rolou)",
-        "contexto_placeholder": "Ex: amigos combinando uma viagem para a praia no feriado",
-        "mensagem_label": "Última mensagem recebida (opcional)",
-        "mensagem_placeholder": "Ex: (cole aqui a última mensagem, se houver)",
-    },
-}
 
 
 @app.get("/api/elenco-personas")
@@ -1536,7 +894,7 @@ class ElencoConversaReq(BaseModel):
 
 @app.post("/api/elenco-conversa")
 async def elenco_conversa(req: ElencoConversaReq, request: Request):
-    _limitar_llm(request)
+    await _limitar_llm(request)
     persona = ELENCO_PERSONAS.get(req.persona_id)
     if not persona:
         raise HTTPException(400, f"Persona desconhecida: '{req.persona_id}'.")
@@ -1558,122 +916,6 @@ async def elenco_conversa(req: ElencoConversaReq, request: Request):
         "provider": req.provider,
         "modelo": modelo,
     }
-
-
-SYSTEM_PROMPT_SUPORTE = (
-    "Você é um agente de suporte técnico em TI e IA. Atenda o chamado descrito pelo usuário na "
-    "personalidade ativa abaixo.\n\n"
-    "REGRAS GERAIS:\n"
-    "1. Diagnostique antes de prescrever: diga qual é a causa mais provável e por quê, com base no "
-    "ambiente e no problema informados.\n"
-    "2. Dê passos de solução numerados, na ordem em que devem ser executados, e diga como verificar "
-    "que cada passo funcionou.\n"
-    "3. Se faltar uma informação decisiva (versão, mensagem de erro exata, log), faça no máximo 2 "
-    "perguntas objetivas no final, em vez de chutar.\n"
-    "4. Nunca invente saída de comando, valor de log, status de serviço ou artigo de base de "
-    "conhecimento. Se não tiver como saber, diga o que o usuário deve checar.\n"
-    "5. Avise explicitamente antes de qualquer passo destrutivo ou arriscado (apagar dados, gravar "
-    "firmware, desativar Secure Boot, editar registro) e sugira backup.\n\n"
-    "SAÍDA: markdown. Use blocos de código com a linguagem indicada (```c, ```bash, ```powershell, "
-    "```python) sempre que houver comando ou código. Não se apresente nem repita o problema do usuário."
-)
-
-# Personas da aba "Tecnologia — Suporte em TI e IA". `bloco` separa o suporte
-# geral do suporte especializado em firmware/UEFI na interface.
-SUPORTE_PERSONAS: dict[str, dict] = {
-    "byte": {
-        "nome": "Byte",
-        "display_name": "O Técnico Pragmático",
-        "bloco": "Suporte geral",
-        "description": "Direto, analítico e focado em dados — ideal para devs e usuários avançados.",
-        "exemplo": "Identifiquei uma falha de autenticação no servidor local. Siga os três passos abaixo para reiniciar o token de acesso.",
-        "prompt_modifier": (
-            "Você é Byte. Seja direto, analítico e focado em dados, sem rodeios. Tom sério, preciso e "
-            "altamente profissional. Pode usar termos técnicos sem explicá-los."
-        ),
-    },
-    "sam": {
-        "nome": "Sam",
-        "display_name": "O Facilitador Paciente",
-        "bloco": "Suporte geral",
-        "description": "Didático e acolhedor, traduz termos técnicos — ideal para o público não técnico.",
-        "exemplo": "Não se preocupe, vamos resolver isso juntos. Pode me dizer se uma luz vermelha está piscando no seu modem?",
-        "prompt_modifier": (
-            "Você é Sam. Seja didático e acolhedor. NÃO use jargão: quando um termo técnico for "
-            "inevitável, explique-o em palavras simples. Tom empático, calmo e simplificador. Passos "
-            "curtos, um por vez, dizendo exatamente onde clicar ou o que olhar."
-        ),
-    },
-    "bolt": {
-        "nome": "Bolt",
-        "display_name": "O Assistente Ágil",
-        "bloco": "Suporte geral",
-        "description": "Proativo e dinâmico, com tópicos e negritos para leitura rápida — ideal para Slack/Teams.",
-        "exemplo": "Problema com o e-mail? Recomendo usar a versão web por enquanto enquanto conferimos o status do serviço!",
-        "prompt_modifier": (
-            "Você é Bolt. Seja proativo, dinâmico e focado em produtividade. Tom entusiasta, energético "
-            "e corporativo moderno. Formate para leitura rápida em chat: tópicos curtos, **negrito** nos "
-            "pontos-chave e, primeiro, uma solução de contorno imediata para a pessoa não ficar parada."
-        ),
-    },
-    "nexus": {
-        "nome": "Nexus",
-        "display_name": "O Especialista IA",
-        "bloco": "Suporte geral",
-        "description": "Diagnóstico profundo e relação com atendimentos anteriores — ideal para automação e autoatendimento.",
-        "exemplo": "Com base nos últimos atendimentos desta máquina, o erro atual está relacionado à falta de espaço em disco. Deseja o passo a passo da limpeza?",
-        "usa_historico": True,
-        "prompt_modifier": (
-            "Você é Nexus. Faça um diagnóstico profundo, com tom neutro, ultra-eficiente e objetivo. "
-            "Se houver ATENDIMENTOS ANTERIORES no pedido, verifique se o problema atual se relaciona com "
-            "eles e diga isso explicitamente; se não houver relação, não force uma. Termine indicando o "
-            "tipo de artigo ou documentação oficial que vale consultar (sem inventar títulos ou links)."
-        ),
-    },
-    "kernel": {
-        "nome": "Kernel",
-        "display_name": "O Especialista Bare-Metal",
-        "bloco": "Firmware e UEFI",
-        "description": "Máxima profundidade na interface hardware/firmware: fases PEI/DXE, ACPI, NVRAM.",
-        "exemplo": "O travamento ocorre na fase DXE antes do hand-off do sistema operacional. Verifique se a tabela ACPI (DSDT) foi carregada corretamente ou se há corrupção na região da NVRAM.",
-        "prompt_modifier": (
-            "Você é Kernel, engenheiro de firmware UEFI. Seja extremamente técnico, analítico, formal e "
-            "cirúrgico, indo à raiz do problema na interface hardware/firmware. Situe a falha na fase de "
-            "boot correta (SEC, PEI, DXE, BDS, RT) e use o vocabulário da área (ACPI/DSDT/SSDT, NVRAM, "
-            "HOBs, protocolos, PCDs). Quando ajudar, mostre código C no estilo EDK II ou comandos de "
-            "build e ferramentas, com uma explicação curta do porquê."
-        ),
-    },
-    "trace": {
-        "nome": "Trace",
-        "display_name": "O Debugger Proativo",
-        "bloco": "Firmware e UEFI",
-        "description": "Resolução de bugs pelos logs: serial, JTAG, build DEBUG e leitura de código EDK II.",
-        "exemplo": "Isso parece um loop na inicialização do driver de vídeo. Extraia o log da porta serial (COM1) com o build de DEBUG para isolarmos o ponto exato da exceção.",
-        "prompt_modifier": (
-            "Você é Trace, especialista em depuração de firmware UEFI. Seja pragmático, objetivo, "
-            "colaborativo e ágil. Guie a coleta de evidências antes da correção: build DEBUG, "
-            "DEBUG_PRINT_ERROR_LEVEL, log serial, OVMF/QEMU com -debugcon, GDB/JTAG, e como ler o dump "
-            "de exceção (IP, endereço base do módulo). Quando ajudar, mostre comandos e trechos de código "
-            "C/EDK II ou scripts Python para isolar o ponto da falha."
-        ),
-    },
-    "vault": {
-        "nome": "Vault",
-        "display_name": "O Arquiteto de Segurança",
-        "bloco": "Firmware e UEFI",
-        "description": "Integridade e Chain of Trust: Secure Boot, chaves PK/KEK/db/dbx e especificação UEFI.",
-        "exemplo": "O Access Denied indica que o binário não foi assinado com uma chave presente na db. Deseja o passo a passo para provisionar chaves de teste no QEMU?",
-        "prompt_modifier": (
-            "Você é Vault, arquiteto de segurança de firmware. Seja sério, preventivo e rigoroso, "
-            "obcecado por integridade e cadeia de confiança. Raciocine em termos de Secure Boot "
-            "(PK, KEK, db, dbx), assinatura de binários, measured boot/TPM e as especificações do UEFI "
-            "Forum. Nunca recomende desativar uma proteção como solução definitiva; se for preciso para "
-            "teste, deixe claro que é só em ambiente de laboratório. Quando ajudar, mostre comandos "
-            "(sbsign, efitools, openssl) e scripts de provisionamento."
-        ),
-    },
-}
 
 
 @app.get("/api/suporte-personas")
@@ -1709,7 +951,7 @@ class SuporteReq(BaseModel):
 
 @app.post("/api/suporte-atendimento")
 async def suporte_atendimento(req: SuporteReq, request: Request):
-    _limitar_llm(request)
+    await _limitar_llm(request)
     persona = SUPORTE_PERSONAS.get(req.persona_id)
     if not persona:
         raise HTTPException(400, f"Persona desconhecida: '{req.persona_id}'.")
@@ -1742,31 +984,6 @@ async def suporte_atendimento(req: SuporteReq, request: Request):
     }
 
 
-# Personas do "Professor Sabe Tudo" — "professor" é a padrão original; as demais
-# são as personalidades extras e os 3 professores por nível, selecionáveis na aba
-# (aba Perguntar usa "padrao").
-PERSONA_PROMPTS: dict[str, str] = {
-    "padrao": SYSTEM_PROMPT_PERGUNTA,
-    "professor": SYSTEM_PROMPT_PROFESSOR,
-    "academico": SYSTEM_PROMPT_ACADEMICO,
-    "ironista": SYSTEM_PROMPT_IRONISTA,
-    "showman": SYSTEM_PROMPT_SHOWMAN,
-    "dogmatico": SYSTEM_PROMPT_DOGMATICO,
-    "enciclopedico": SYSTEM_PROMPT_ENCICLOPEDICO,
-    # Perfis por comportamento
-    "pratico": SYSTEM_PROMPT_PRATICO,
-    "socratico": SYSTEM_PROMPT_SOCRATICO,
-    "visual": SYSTEM_PROMPT_VISUAL,
-    "preparatorio": SYSTEM_PROMPT_PREPARATORIO,
-    "reforco": SYSTEM_PROMPT_REFORCO,
-    "desafio": SYSTEM_PROMPT_DESAFIO,
-    # Professores por nível do aluno
-    "nivel_inicial": SYSTEM_PROMPT_NIVEL_INICIAL,
-    "nivel_intermediario": SYSTEM_PROMPT_NIVEL_INTERMEDIARIO,
-    "nivel_avancado": SYSTEM_PROMPT_NIVEL_AVANCADO,
-}
-
-
 class PerguntaReq(BaseModel):
     pergunta: str
     provider: str = "nous"
@@ -1774,25 +991,28 @@ class PerguntaReq(BaseModel):
     persona: str = "padrao"  # ver PERSONA_PROMPTS
 
 
-@app.post("/api/perguntar")
-async def perguntar(req: PerguntaReq, request: Request):
-    _limitar_llm(request)
+async def _preparar_pergunta(req: PerguntaReq, request: Request) -> tuple[list[dict], str, float, str, str]:
+    """Tudo o que vem antes da geração: limite, busca no material e validação.
+
+    Compartilhado pela rota normal e pela de streaming — assim os erros (pergunta
+    vazia, banco vazio, modelo inválido, limite) saem com o status HTTP certo
+    antes de o stream começar.
+    """
+    await _limitar_llm(request)
     if not req.pergunta.strip():
         raise HTTPException(400, "Pergunta vazia.")
+    modelo = resolver_modelo(req.provider, req.modelo)
     emb = (await gerar_embeddings([req.pergunta]))[0]
     chunks = await buscar_chunks(emb, n=6)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
-
     contexto, media = montar_contexto(chunks)
-    modelo = resolver_modelo(req.provider, req.modelo)
     system_prompt = PERSONA_PROMPTS.get(req.persona, SYSTEM_PROMPT_PERGUNTA)
-    resposta = await chamar_llm(
-        req.provider, modelo, system_prompt, f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
-    )
+    return chunks, contexto, media, modelo, system_prompt
 
+
+def _meta_pergunta(req: PerguntaReq, chunks: list[dict], media: float, modelo: str) -> dict:
     return {
-        "resposta": resposta,
         "contexto": [
             {"conteudo": c["content"], "fonte": c["source"], "pagina": c["page"], "relevancia": round(c["similarity"], 3)}
             for c in chunks
@@ -1804,66 +1024,47 @@ async def perguntar(req: PerguntaReq, request: Request):
     }
 
 
-def _slug_arquivo(texto: str) -> str:
-    normalizado = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
-    normalizado = re.sub(r"[^a-zA-Z0-9]+", "-", normalizado).strip("-").lower()
-    return normalizado[:60] or "apostila"
+@app.post("/api/perguntar")
+async def perguntar(req: PerguntaReq, request: Request):
+    chunks, contexto, media, modelo, system_prompt = await _preparar_pergunta(req, request)
+    resposta = await chamar_llm(
+        req.provider, modelo, system_prompt, f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
+    )
+    return {"resposta": resposta, **_meta_pergunta(req, chunks, media, modelo)}
 
 
-def _markdown_para_docx(texto: str, titulo: str) -> bytes:
-    doc = DocxDocument()
-    doc.add_heading(titulo, level=0)
-    for linha in texto.splitlines():
-        linha = linha.strip()
-        if not linha:
-            continue
-        if linha.startswith("### "):
-            doc.add_heading(linha[4:].strip(), level=3)
-        elif linha.startswith("## "):
-            doc.add_heading(linha[3:].strip(), level=2)
-        elif linha.startswith("# "):
-            doc.add_heading(linha[2:].strip(), level=1)
-        elif linha.startswith(("- ", "* ")):
-            doc.add_paragraph(linha[2:].strip(), style="List Bullet")
-        else:
-            doc.add_paragraph(linha)
-    buf = io.BytesIO()
-    doc.save(buf)
-    return buf.getvalue()
+@app.post("/api/perguntar/stream")
+async def perguntar_stream(req: PerguntaReq, request: Request):
+    """Mesma resposta de /api/perguntar, mas em NDJSON conforme o modelo escreve.
 
+    Uma linha JSON por evento: `meta` (fontes e confiança, logo de cara),
+    `texto` (cada pedaço gerado), e por fim `fim` ou `erro`. O aluno começa a
+    ler em ~1 s em vez de esperar a resposta inteira.
+    """
+    chunks, contexto, media, modelo, system_prompt = await _preparar_pergunta(req, request)
+    user_prompt = f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
 
-def _markdown_para_pdf(texto: str, titulo: str) -> bytes:
-    from fpdf import FPDF  # import local: só carregado quando o formato pedido é pdf
+    def linha(evento: dict) -> str:
+        return json.dumps(evento, ensure_ascii=False) + "\n"
 
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
+    async def eventos():
+        yield linha({"tipo": "meta", **_meta_pergunta(req, chunks, media, modelo)})
+        try:
+            async for pedaco in chamar_llm_stream(req.provider, modelo, system_prompt, user_prompt):
+                yield linha({"tipo": "texto", "t": pedaco})
+        except HTTPException as e:
+            yield linha({"tipo": "erro", "mensagem": str(e.detail)})
+            return
+        except Exception as e:  # rede caiu no meio do stream
+            yield linha({"tipo": "erro", "mensagem": f"{type(e).__name__}: {e}"[:300]})
+            return
+        yield linha({"tipo": "fim"})
 
-    def linha_pdf(tamanho: float, altura: float, conteudo: str, negrito: bool = False):
-        # new_x="LMARGIN" é necessário: o padrão do fpdf2 deixa o cursor na borda
-        # direita após multi_cell, e a chamada seguinte com largura 0 quebra
-        # ("Not enough horizontal space") por não sobrar espaço até a margem.
-        pdf.set_font("Helvetica", "B" if negrito else "", tamanho)
-        pdf.multi_cell(0, altura, conteudo, new_x="LMARGIN", new_y="NEXT")
-
-    linha_pdf(16, 10, titulo, negrito=True)
-    pdf.ln(2)
-    for linha in texto.splitlines():
-        linha = linha.strip()
-        if not linha:
-            pdf.ln(2)
-            continue
-        if linha.startswith("### "):
-            linha_pdf(12, 8, linha[4:].strip(), negrito=True)
-        elif linha.startswith("## "):
-            linha_pdf(13, 8, linha[3:].strip(), negrito=True)
-        elif linha.startswith("# "):
-            linha_pdf(15, 9, linha[2:].strip(), negrito=True)
-        elif linha.startswith(("- ", "* ")):
-            linha_pdf(11, 7, f"-  {linha[2:].strip()}")
-        else:
-            linha_pdf(11, 7, linha)
-    return bytes(pdf.output())
+    return StreamingResponse(
+        eventos(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 class ApostilaReq(BaseModel):
@@ -1881,7 +1082,7 @@ async def gerar_apostila(req: ApostilaReq, request: Request):
     conhecimento geral quando a base estiver vazia ou indisponível — nunca
     bloqueia a geração por falta de material indexado.
     """
-    _limitar_llm(request)
+    await _limitar_llm(request)
     tema = req.tema.strip()
     if not tema:
         raise HTTPException(400, "Tema vazio.")
@@ -1937,7 +1138,7 @@ async def resumir_apostila(
     Fase reduce: uma última chamada compõe o resumo didático final a partir
     desses pontos-chave.
     """
-    _limitar_llm(request)
+    await _limitar_llm(request)
     nome = Path(file.filename or "").name
     if not nome.lower().endswith(EXTENSOES_DOCUMENTO):
         raise HTTPException(400, f"Formato não suportado (aceito: {', '.join(EXTENSOES_DOCUMENTO)}).")
@@ -2007,7 +1208,7 @@ class SimplificarReq(BaseModel):
 
 @app.post("/api/simplificar")
 async def simplificar(req: SimplificarReq, request: Request):
-    _limitar_llm(request)
+    await _limitar_llm(request)
     contexto = contexto_para_texto([e.model_dump() for e in req.contexto])
     modelo = resolver_modelo(req.provider, req.modelo)
     resposta = await chamar_llm(
@@ -2030,7 +1231,7 @@ class VerificarReq(BaseModel):
 
 @app.post("/api/verificar")
 async def verificar(req: VerificarReq, request: Request):
-    _limitar_llm(request)
+    await _limitar_llm(request)
     contexto = contexto_para_texto([e.model_dump() for e in req.contexto])
     modelo = resolver_modelo(req.provider, req.modelo)
     bruto = limpar_resposta(
@@ -2058,38 +1259,6 @@ async def verificar(req: VerificarReq, request: Request):
 # O aluno escolhe o nível da explicação, reexplica com as próprias palavras e
 # recebe uma avaliação do entendimento contra o material das apostilas.
 
-_BASE_APRENDER = (
-    "Você é um professor do curso de Engenharia de Prompt. Explique o TEMA usando o CONTEXTO das "
-    "apostilas como base; se o contexto não cobrir algo, diga isso em vez de inventar. "
-    "Responda em português do Brasil, em Markdown.\n\n"
-)
-
-NIVEIS_APRENDER = {
-    "simples": _BASE_APRENDER
-    + "NÍVEL SIMPLES: explique como para uma criança de 10 anos. Frases curtas, zero jargão, "
-    "uma analogia com algo do dia a dia e um exemplo bem concreto. No máximo 3 parágrafos curtos.",
-    "estudante": _BASE_APRENDER
-    + "NÍVEL ESTUDANTE: estruture em **O que é**, **Como funciona**, **Exemplo** e **Erro comum**. "
-    "Explique cada termo técnico na primeira vez que aparecer.",
-    "tecnico": _BASE_APRENDER
-    + "NÍVEL TÉCNICO: use a terminologia correta, detalhe o funcionamento, limitações e trade-offs, "
-    "e inclua um exemplo prático (código ou prompt) quando fizer sentido.",
-}
-
-SYSTEM_PROMPT_AVALIAR_FEYNMAN = (
-    "Você é um professor exigente e gentil aplicando a técnica Feynman. O aluno tentou explicar o "
-    "TEMA com as próprias palavras. Compare a EXPLICAÇÃO DO ALUNO com o CONTEXTO das apostilas e "
-    "avalie o entendimento — não a gramática nem o estilo. Linguagem simples é qualidade, não defeito.\n\n"
-    "Responda SEMPRE e SOMENTE em JSON, sem texto fora dele, no formato:\n"
-    '{"nota": 0-100, "acertos": ["..."], "lacunas": ["..."], "confusoes": ["..."], '
-    '"proxima_pergunta": "..."}\n'
-    "- acertos: o que ele explicou corretamente;\n"
-    "- lacunas: pontos importantes que faltaram;\n"
-    "- confusoes: o que está errado ou misturado, dizendo o certo;\n"
-    "- proxima_pergunta: uma pergunta curta que o faça pensar na maior lacuna.\n"
-    "Itens curtos (uma frase cada), em português do Brasil."
-)
-
 
 class AprenderExplicarReq(BaseModel):
     tema: str
@@ -2105,7 +1274,7 @@ async def aprender_explicar(req: AprenderExplicarReq, request: Request):
     system_prompt = NIVEIS_APRENDER.get(req.nivel)
     if system_prompt is None:
         raise HTTPException(400, f"Nível desconhecido: {req.nivel}.")
-    _limitar_llm(request)
+    await _limitar_llm(request)
     emb = (await gerar_embeddings([req.tema]))[0]
     chunks = await buscar_chunks(emb, n=6)
     if not chunks:
@@ -2145,7 +1314,7 @@ def _lista_de_textos(valor) -> list[str]:
 async def aprender_avaliar(req: AprenderAvaliarReq, request: Request):
     if not req.explicacao_aluno.strip():
         raise HTTPException(400, "Escreva sua explicação antes de pedir a avaliação.")
-    _limitar_llm(request)
+    await _limitar_llm(request)
     contexto = contexto_para_texto([e.model_dump() for e in req.contexto])
     modelo = resolver_modelo(req.provider, req.modelo)
     bruto = limpar_resposta(
@@ -2203,7 +1372,7 @@ async def auditar(req: AuditarReq, request: Request):
     depois que a resposta aparece. Por isso tem o mesmo limite de uso das rotas
     que gastam chave.
     """
-    _limitar_llm(request)
+    await _limitar_llm(request)
     resposta = (req.resposta or "").strip()
     if not resposta:
         raise HTTPException(400, "Resposta vazia.")
@@ -2256,7 +1425,7 @@ class GlossarioReq(BaseModel):
 
 @app.post("/api/glossario")
 async def glossario(req: GlossarioReq, request: Request):
-    _limitar_llm(request)
+    await _limitar_llm(request)
     texto_usuario = req.tema.strip()
     query = texto_usuario or "principais conceitos, termos técnicos e siglas do curso"
     emb = (await gerar_embeddings([query]))[0]
@@ -2322,7 +1491,7 @@ class ResolverReq(BaseModel):
 
 @app.post("/api/resolver")
 async def resolver(req: ResolverReq, request: Request):
-    _limitar_llm(request)
+    await _limitar_llm(request)
     texto = req.texto.strip()
     questao, alternativas = extrair_alternativas(texto)
 
@@ -2406,7 +1575,7 @@ async def comparar(req: CompararReq, request: Request):
     que dá uma conclusão curta e comparável — comparar o texto completo seria
     comparar formatação, não conteúdo.
     """
-    _limitar_llm(request)
+    await _limitar_llm(request)
     pergunta = req.pergunta.strip()
     if not pergunta:
         raise HTTPException(400, "Pergunta vazia.")
@@ -2571,6 +1740,8 @@ class IngerirReq(BaseModel):
     arquivo: str
     offset: int = 0
     forcar: bool = False
+    # Maior id dos chunks antigos, devolvido pelo lote 0 (ver `ingerir`).
+    corte_id: Optional[int] = None
 
 
 async def _risco_de_perda(fonte: str, data: bytes, nome_arquivo: str) -> Optional[dict]:
@@ -2609,7 +1780,7 @@ async def _risco_de_perda(fonte: str, data: bytes, nome_arquivo: str) -> Optiona
 
     return {
         "mensagem": (
-            f"Substituir '{fonte}' apaga os chunks atuais antes de indexar o arquivo novo. "
+            f"Substituir '{fonte}' troca os chunks atuais pelos do arquivo novo, que rende menos texto. "
             "Reenvie com forcar=true se for mesmo isso."
         ),
         "arquivo": nome_arquivo,
@@ -2671,8 +1842,12 @@ async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
             "avisos": (analise or {}).get("avisos", []),
         }
 
-    if req.offset == 0:
-        await apagar_chunks_por_fonte(req.arquivo)  # evita duplicar ao reindexar
+    # Troca sem janela vazia: antes o primeiro lote APAGAVA tudo e os lotes
+    # seguintes reinseriam. Se um lote falhasse no meio, o documento ficava
+    # pela metade (ou vazio) no índice. Agora os chunks antigos continuam lá
+    # enquanto os novos entram, e só são apagados (id <= corte) no último lote.
+    # O corte é calculado no lote 0 e o cliente o devolve nos lotes seguintes.
+    corte = await maior_id_da_fonte(req.arquivo) if req.offset == 0 else (req.corte_id or 0)
 
     fatia = linhas[req.offset : req.offset + LOTE_INGESTAO]
     if fatia:
@@ -2684,13 +1859,17 @@ async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
         await inserir_chunks(rows)
 
     proximo = req.offset + len(fatia)
+    done = proximo >= len(linhas)
+    if done and corte > 0:
+        await apagar_chunks_ate_id(req.arquivo, corte)
     return {
         "ok": True,
         "arquivo": req.arquivo,
         "processado": len(fatia),
         "total": len(linhas),
         "proximo_offset": proximo,
-        "done": proximo >= len(linhas),
+        "done": done,
+        "corte_id": corte,
     }
 
 
@@ -2707,10 +1886,10 @@ async def upload(
 
     Regras (evitam indexar o mesmo documento duas vezes):
     - mesmo conteúdo + mesmo nome  → ignora (já está lá)
-    - mesmo conteúdo + outro nome  → SOBRESCREVE: apaga o antigo (arquivo e
-      chunks) e mantém só o novo nome, para não haver dois iguais no índice
-    - mesmo nome + conteúdo novo   → versão atualizada: apaga os chunks antigos
-      (senão sobrariam chunks das duas versões)
+    - mesmo conteúdo + outro nome  → SOBRESCREVE: renomeia os chunks para o nome
+      novo e remove o arquivo antigo, para não haver dois iguais no índice
+    - mesmo nome + conteúdo novo   → versão atualizada: a ingestão seguinte troca
+      os chunks antigos pelos novos (sem sobrar chunks das duas versões)
     - arquivo novo                 → salva
 
     Antes de apagar chunks de uma fonte que já está indexada, compara quanto
@@ -2753,16 +1932,23 @@ async def upload(
             if bloqueio:
                 raise HTTPException(409, bloqueio)
 
+        # O upload não apaga chunks: a ingestão que vem em seguida troca os
+        # antigos pelos novos sem deixar o documento vazio no meio do caminho.
         if igual:
-            # Mesmo documento com nome diferente → substitui o existente.
-            await apagar_chunks_por_fonte(igual["nome"])
+            # Mesmo documento com nome diferente → os chunks passam a responder
+            # pelo nome novo (um PATCH só), e o arquivo antigo sai do Storage
+            # depois que o novo já foi gravado.
+            await upload_documento_storage(nome, data, _mimetype(nome))
+            await renomear_fonte_chunks(igual["nome"], nome)
             await remover_documento_storage(igual["nome"])
             por_nome.pop(igual["nome"], None)
+            por_md5[md5] = {"nome": nome, "md5": md5}
+            por_nome[nome] = {"nome": nome, "md5": md5}
             substituidos.append({"arquivo": nome, "substituiu": igual["nome"],
                                  "motivo": "mesmo conteúdo, nome diferente"})
+            continue
         elif nome in por_nome:
             # Mesmo nome, conteúdo novo → versão atualizada.
-            await apagar_chunks_por_fonte(nome)
             substituidos.append({"arquivo": nome, "substituiu": nome,
                                  "motivo": "versão atualizada do mesmo arquivo"})
         else:

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Shield, TriangleAlert, Copy, CircleCheck, History, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { useRequisicao } from '@/lib/useRequisicao'
 import { useProviderModel } from '@/lib/useProviderModel'
 import { useHistorico } from '@/lib/useHistorico'
 import type { ProvidersResp, PerfilComportamental } from '@/lib/types'
@@ -23,11 +24,10 @@ export default function PerfisComportamentaisTab({ providers }: { providers: Pro
   const [temperamentId, setTemperamentId] = useState('estoico')
   const [contexto, setContexto] = useState('')
   const [mensagem, setMensagem] = useState('')
-  const [loading, setLoading] = useState(false)
   const [ocrLoading, setOcrLoading] = useState(false)
   const [anexoReset, setAnexoReset] = useState(0)
-  const [erro, setErro] = useState('')
-  const [resposta, setResposta] = useState('')
+  const { dados: resposta, setDados: setResposta, carregando: loading, erro, setErro, executar } =
+    useRequisicao('')
   const [copiado, setCopiado] = useState(false)
   const {
     itens: historico,
@@ -52,19 +52,10 @@ export default function PerfisComportamentaisTab({ providers }: { providers: Pro
 
   async function gerar() {
     if (!mensagem.trim()) return
-    setLoading(true)
-    setErro('')
     setResposta('')
     setCopiado(false)
-    try {
-      const d = await api.perfilComportamental(contexto, mensagem, temperamentId, provider, modelo)
-      setResposta(d.resposta)
-      adicionarHistorico(d.resposta, contexto || mensagem)
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao gerar resposta')
-    } finally {
-      setLoading(false)
-    }
+    const texto = await executar(() => api.perfilComportamental(contexto, mensagem, temperamentId, provider, modelo).then((d) => d.resposta), 'Erro ao gerar resposta')
+    if (texto) adicionarHistorico(texto, contexto || mensagem)
   }
 
   async function copiar() {

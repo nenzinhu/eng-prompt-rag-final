@@ -44,15 +44,19 @@ def montar(monkeypatch, *, analises: list, chunks: list[dict]):
     async def _inserir(rows):
         chamadas["inseridos"] += len(rows)
 
-    async def _apagar(_nome):
-        chamadas["apagou"] = True
+    async def _maior_id(_nome):
+        return 500  # chunks antigos têm id <= 500
+
+    async def _apagar_ate(_nome, corte):
+        chamadas.setdefault("apagou", []).append((corte, chamadas["inseridos"]))
 
     monkeypatch.setattr(index, "_analisar_ingestao", _analisar)
     monkeypatch.setattr(index, "baixar_documento_storage", _baixar)
     monkeypatch.setattr(index, "extrair_paginas", _extrair)
     monkeypatch.setattr(index, "gerar_embeddings", _emb)
     monkeypatch.setattr(index, "inserir_chunks", _inserir)
-    monkeypatch.setattr(index, "apagar_chunks_por_fonte", _apagar)
+    monkeypatch.setattr(index, "maior_id_da_fonte", _maior_id)
+    monkeypatch.setattr(index, "apagar_chunks_ate_id", _apagar_ate)
     return chamadas
 
 
@@ -69,6 +73,49 @@ def test_lotes_seguintes_nao_reanalisam(monkeypatch):
     assert r2["processado"] == 24
     assert r3["processado"] == 2
     assert r3["done"] is True
+
+
+def test_chunks_antigos_so_saem_depois_do_ultimo_lote(monkeypatch):
+    """Sem janela vazia: nada é apagado até todos os lotes novos entrarem."""
+    chamadas = montar(monkeypatch, analises=[], chunks=[{}] * 50)
+
+    r1 = asyncio.run(index.ingerir(index.IngerirReq(arquivo="doc.pdf", offset=0)))
+    assert r1["corte_id"] == 500
+    assert "apagou" not in chamadas, "o primeiro lote não pode apagar nada"
+    asyncio.run(index.ingerir(index.IngerirReq(arquivo="doc.pdf", offset=24, corte_id=r1["corte_id"])))
+    assert "apagou" not in chamadas
+    asyncio.run(index.ingerir(index.IngerirReq(arquivo="doc.pdf", offset=48, corte_id=r1["corte_id"])))
+    # Apagou uma vez só, com o corte certo, e depois dos 50 chunks novos inseridos.
+    assert chamadas["apagou"] == [(500, 50)]
+
+
+def test_documento_de_um_lote_troca_no_mesmo_pedido(monkeypatch):
+    chamadas = montar(monkeypatch, analises=[], chunks=[{}] * 5)
+    r = asyncio.run(index.ingerir(index.IngerirReq(arquivo="doc.pdf", offset=0)))
+    assert r["done"] is True
+    assert chamadas["apagou"] == [(500, 5)]
+
+
+def test_medir_indice_falha_fechada(monkeypatch):
+    """Erro do banco ao medir não pode virar 'nada indexado' e liberar a troca."""
+    import httpx
+
+    class _Cliente:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, **k):
+            return httpx.Response(503, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(index.httpx, "AsyncClient", _Cliente)
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(index.medir_indice_atual("doc.pdf"))
 
 
 def test_primeiro_lote_ainda_bloqueia_com_409(monkeypatch):

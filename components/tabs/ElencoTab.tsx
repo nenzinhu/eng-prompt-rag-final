@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { PartyPopper, TriangleAlert, Copy, CircleCheck, History, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { useRequisicao } from '@/lib/useRequisicao'
 import { useProviderModel } from '@/lib/useProviderModel'
 import { useHistorico } from '@/lib/useHistorico'
 import type { ProvidersResp, ElencoPersona } from '@/lib/types'
@@ -27,11 +28,10 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
   const [personaId, setPersonaId] = useState('debatedor')
   const [contexto, setContexto] = useState('')
   const [mensagem, setMensagem] = useState('')
-  const [loading, setLoading] = useState(false)
   const [ocrLoading, setOcrLoading] = useState(false)
   const [anexoReset, setAnexoReset] = useState(0)
-  const [erro, setErro] = useState('')
-  const [resposta, setResposta] = useState('')
+  const { dados: resposta, setDados: setResposta, carregando: loading, erro, setErro, executar } =
+    useRequisicao('')
   const [copiado, setCopiado] = useState(false)
   const { itens: historico, adicionar: adicionarHistorico, limpar: limparHistorico } = useHistorico('elenco')
 
@@ -54,19 +54,10 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
 
   async function gerar() {
     if (!contexto.trim() && !mensagem.trim()) return
-    setLoading(true)
-    setErro('')
     setResposta('')
     setCopiado(false)
-    try {
-      const d = await api.elencoConversa(contexto, mensagem, personaId, provider, modelo)
-      setResposta(d.resposta)
-      adicionarHistorico(d.resposta, contexto || mensagem)
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao gerar mensagem')
-    } finally {
-      setLoading(false)
-    }
+    const texto = await executar(() => api.elencoConversa(contexto, mensagem, personaId, provider, modelo).then((d) => d.resposta), 'Erro ao gerar mensagem')
+    if (texto) adicionarHistorico(texto, contexto || mensagem)
   }
 
   async function copiar() {

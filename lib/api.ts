@@ -122,7 +122,83 @@ async function baixarArquivo(url: string, body: unknown, nomePadrao: string): Pr
   URL.revokeObjectURL(objUrl)
 }
 
+/** Eventos do /api/perguntar/stream (uma linha JSON cada). */
+type EventoPergunta =
+  | ({ tipo: 'meta' } & Omit<PerguntarResp, 'resposta'>)
+  | { tipo: 'texto'; t: string }
+  | { tipo: 'fim' }
+  | { tipo: 'erro'; mensagem: string }
+
+/**
+ * Pergunta com a resposta chegando aos pedaços. `onMeta` recebe fontes e
+ * confiança antes do texto; `onTexto`, a resposta acumulada até o momento.
+ * Resolve com a resposta completa; rejeita com ApiError em qualquer falha.
+ */
+async function perguntarStream(
+  pergunta: string,
+  provider: string,
+  modelo: string,
+  persona: string,
+  onMeta: (meta: Omit<PerguntarResp, 'resposta'>) => void,
+  onTexto: (acumulado: string) => void,
+): Promise<PerguntarResp> {
+  const r = await fetch('/api/perguntar/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pergunta, provider, modelo, persona }),
+  })
+  if (!r.ok || !r.body) {
+    const texto = await r.text()
+    let data: unknown = null
+    try {
+      data = texto ? JSON.parse(texto) : null
+    } catch {
+      data = null
+    }
+    throw new ApiError(mensagemDe(data, r.status, texto), r.status, (data as { detail?: unknown })?.detail)
+  }
+
+  const leitor = r.body.pipeThrough(new TextDecoderStream()).getReader()
+  let meta: Omit<PerguntarResp, 'resposta'> | null = null
+  let resposta = ''
+  let pendente = ''
+  let terminou = false
+
+  const tratar = (linha: string) => {
+    if (!linha.trim()) return
+    const e = JSON.parse(linha) as EventoPergunta
+    if (e.tipo === 'meta') {
+      const { tipo: _tipo, ...resto } = e
+      meta = resto
+      onMeta(resto)
+    } else if (e.tipo === 'texto') {
+      resposta += e.t
+      onTexto(resposta)
+    } else if (e.tipo === 'erro') {
+      throw new ApiError(e.mensagem, 502, e.mensagem)
+    } else {
+      terminou = true
+    }
+  }
+
+  for (;;) {
+    const { value, done } = await leitor.read()
+    if (done) break
+    pendente += value
+    const linhas = pendente.split('\n')
+    pendente = linhas.pop() ?? ''
+    linhas.forEach(tratar)
+  }
+  tratar(pendente)
+
+  if (!meta || !terminou) {
+    throw new ApiError('A conexão caiu antes de a resposta terminar. Tente de novo.', 502, null)
+  }
+  return { ...(meta as Omit<PerguntarResp, 'resposta'>), resposta }
+}
+
 export const api = {
+  perguntarStream,
   // ── Leitura pública ──────────────────────────────────────────────────────
   status: () => pedir<StatusResp>('/api/status'),
   config: () => pedir<ConfigResp>('/api/config'),
@@ -217,8 +293,8 @@ export const api = {
   pdfs: (token: string) => pedir<PdfsResp>('/api/pdfs', { headers: { 'X-Admin-Token': token } }),
   previaIngestao: (arquivo: string, token: string) =>
     postJson<PreviaIngestaoResp>('/api/ingerir/previa', { arquivo, offset: 0 }, token),
-  ingerir: (arquivo: string, offset: number, token: string, forcar = false) =>
-    postJson<IngerirResp>('/api/ingerir', { arquivo, offset, forcar }, token),
+  ingerir: (arquivo: string, offset: number, token: string, forcar = false, corteId?: number) =>
+    postJson<IngerirResp>('/api/ingerir', { arquivo, offset, forcar, corte_id: corteId ?? null }, token),
   upload: (files: File[], token: string, forcar = false) => {
     const form = new FormData()
     files.forEach((f) => form.append('files', f))

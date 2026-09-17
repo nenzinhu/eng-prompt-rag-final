@@ -170,9 +170,11 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
         let done = false
         let ultimoTotal = 0
         let tentativas = 0
+        let corteId: number | undefined
         while (!done) {
           try {
-            const d = await api.ingerir(nome, offset, token, forcar && offset === 0)
+            const d = await api.ingerir(nome, offset, token, forcar && offset === 0, corteId)
+            if (offset === 0) corteId = d.corte_id
             tentativas = 0
             offset = d.proximo_offset ?? d.total ?? 0
             done = !!d.done
@@ -190,7 +192,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
             }
             tentativas++
             if (tentativas > 5) {
-              logLine('err', `✗ ${nome}: falhou após várias tentativas`)
+              logLine('err', `✗ ${nome}: falhou após várias tentativas — o conteúdo antigo continua no índice`)
               break
             }
           }
@@ -376,7 +378,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
                 <button
                   onClick={() =>
                     window.confirm(
-                      'Confirmar mesmo assim? Os chunks atuais deste documento serão apagados.',
+                      'Confirmar mesmo assim? Os chunks atuais deste documento serão trocados pelos do arquivo novo.',
                     ) && enviar(true)
                   }
                   className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-4 py-2 text-[0.8rem] font-medium text-rose-300 transition-colors hover:bg-rose-400/20"
@@ -417,8 +419,8 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
                   <p className="mb-2 flex items-start gap-1.5 text-[0.8rem] leading-relaxed text-amber-300">
                     <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                     <span>
-                      Esta operação apaga os chunks atuais desses documentos antes de recriá-los. Se a
-                      extração cobrir menos texto que o índice atual, conteúdo se perde — foi assim que 384
+                      Ao fim da reindexação, os chunks atuais desses documentos são trocados pelos novos. Se
+                      a extração cobrir menos texto que o índice atual, conteúdo se perde — foi assim que 384
                       chunks de um PDF ausente ficaram em risco.
                     </span>
                   </p>
@@ -426,7 +428,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
                     <button
                       onClick={() =>
                         window.confirm(
-                          'Confirmar a reindexação MESMO com risco de perda de conteúdo? Os chunks atuais serão apagados antes de serem recriados.',
+                          'Confirmar a reindexação MESMO com risco de perda de conteúdo? Os chunks atuais serão substituídos pelos novos.',
                         ) && runIngest(analises.map((a) => a.arquivo), true)
                       }
                       className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-4 py-2 text-[0.8rem] font-medium text-rose-300 transition-colors hover:bg-rose-400/20"

@@ -30,6 +30,10 @@ export default function PerguntarTab({
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
   const [resultado, setResultado] = useState<PerguntarResp | null>(null)
+  // Enquanto o texto ainda chega em pedaços: as ações sobre a resposta esperam o fim.
+  const [recebendo, setRecebendo] = useState(false)
+  // Muda uma vez por pergunta — a animação de entrada não repete a cada pedaço.
+  const [rodada, setRodada] = useState(0)
 
   // Auditoria de fidelidade (frase por frase).
   const [auditando, setAuditando] = useState(false)
@@ -57,7 +61,8 @@ export default function PerguntarTab({
       { autoAlpha: 0, y: 16 },
       { autoAlpha: 1, y: 0, duration: 0.5, ease: 'power2.out' }
     )
-  }, [resultado])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rodada])
 
   async function enviar() {
     if (!pergunta.trim()) return
@@ -67,8 +72,22 @@ export default function PerguntarTab({
     setPerguntasVerificacao([])
     setRespostasVerificacao({})
     setAuditoria(null)
+    setResultado(null)
     try {
-      const d = await api.perguntar(pergunta, provider, modelo, persona)
+      const d = await api.perguntarStream(
+        pergunta,
+        provider,
+        modelo,
+        persona,
+        (meta) => {
+          // Fontes chegam antes do texto: o card aparece e o texto vai enchendo.
+          setResultado({ ...meta, resposta: '' })
+          setRodada((n) => n + 1)
+          setRecebendo(true)
+          setLoading(false)
+        },
+        (acumulado) => setResultado((r) => (r ? { ...r, resposta: acumulado } : r)),
+      )
       setResultado(d)
       // Dispara a auditoria frase por frase automaticamente, se ligada.
       if (auditarAuto && d.resposta) {
@@ -79,6 +98,7 @@ export default function PerguntarTab({
       setResultado(null)
     } finally {
       setLoading(false)
+      setRecebendo(false)
     }
   }
 
@@ -240,7 +260,14 @@ export default function PerguntarTab({
                 <Markdown>{resultado.resposta}</Markdown>
               </div>
 
-              <div className="mb-4 flex flex-wrap items-center gap-2">
+              {recebendo && (
+                <div className="mb-4 flex items-center gap-2 text-[0.75rem] text-muted" aria-live="polite">
+                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-violet/30 border-t-violet" />
+                  Escrevendo…
+                </div>
+              )}
+
+              <div className={`mb-4 flex flex-wrap items-center gap-2 ${recebendo ? 'hidden' : ''}`}>
                 <button
                   onClick={explicarMaisSimples}
                   disabled={simplificando}

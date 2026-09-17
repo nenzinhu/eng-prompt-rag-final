@@ -139,6 +139,8 @@ export interface IngerirResp {
   total?: number
   proximo_offset?: number
   done?: boolean
+  /** Maior id dos chunks antigos; reenviado nos lotes seguintes ao primeiro. */
+  corte_id?: number
   avisos?: string[]
   erro?: string
 }
