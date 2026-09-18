@@ -53,6 +53,21 @@ export default function PerguntarTab({
   const resultCardRef = useRef<HTMLDivElement>(null)
   const enviarBtnRef = useRef<HTMLButtonElement>(null)
 
+  // Uma pergunta por vez (análise de 17/09/2026, A1-11): o botão voltava a ficar
+  // ativo no meio do stream, e duas respostas — ou a auditoria atrasada da
+  // anterior — escreviam na mesma tela. Cada envio abre uma rodada nova; tudo o
+  // que chega de rodada antiga é descartado, e o stream anterior é cancelado.
+  const rodadaAtualRef = useRef(0)
+  const cancelarRef = useRef<AbortController | null>(null)
+  // A pergunta que gerou a resposta na tela — a caixa de texto pode já ter outra.
+  const [perguntaFeita, setPerguntaFeita] = useState('')
+
+  function encerrarRodada() {
+    cancelarRef.current?.abort()
+    cancelarRef.current = null
+    return ++rodadaAtualRef.current
+  }
+
   // Entrada suave do card de resposta sempre que um novo resultado chega.
   useLayoutEffect(() => {
     if (!resultado || !resultCardRef.current || prefersReducedMotion()) return
@@ -66,28 +81,42 @@ export default function PerguntarTab({
 
   async function enviar() {
     if (!pergunta.trim()) return
+    const minha = encerrarRodada()
+    const vale = () => rodadaAtualRef.current === minha
+    const cancelar = new AbortController()
+    cancelarRef.current = cancelar
+    const texto = pergunta
+    setPerguntaFeita(texto)
     setLoading(true)
     setErro('')
     setRespostaSimples('')
     setPerguntasVerificacao([])
     setRespostasVerificacao({})
     setAuditoria(null)
+    setAuditando(false)
+    setSimplificando(false)
+    setVerificando(false)
     setResultado(null)
     try {
       const d = await api.perguntarStream(
-        pergunta,
+        texto,
         provider,
         modelo,
         persona,
         (meta) => {
+          if (!vale()) return
           // Fontes chegam antes do texto: o card aparece e o texto vai enchendo.
           setResultado({ ...meta, resposta: '' })
           setRodada((n) => n + 1)
           setRecebendo(true)
           setLoading(false)
         },
-        (acumulado) => setResultado((r) => (r ? { ...r, resposta: acumulado } : r)),
+        (acumulado) => {
+          if (vale()) setResultado((r) => (r ? { ...r, resposta: acumulado } : r))
+        },
+        cancelar.signal,
       )
+      if (!vale()) return
       setResultado(d)
       // Dispara a auditoria frase por frase automaticamente, se ligada. Resposta
       // interrompida não é auditada sozinha: gastaria cota verificando meio texto.
@@ -95,67 +124,92 @@ export default function PerguntarTab({
         void auditar(d.resposta)
       }
     } catch (e) {
+      if (!vale()) return
       setErro(e instanceof Error ? e.message : 'Erro ao gerar resposta')
       setResultado(null)
     } finally {
-      setLoading(false)
-      setRecebendo(false)
+      if (vale()) {
+        setLoading(false)
+        setRecebendo(false)
+        cancelarRef.current = null
+      }
     }
   }
 
+  function limpar() {
+    encerrarRodada()
+    setPergunta('')
+    setPerguntaFeita('')
+    setResultado(null)
+    setErro('')
+    setLoading(false)
+    setRecebendo(false)
+    setAuditando(false)
+    setAuditoria(null)
+    setAnexoReset((t) => t + 1)
+  }
+
   async function auditar(texto: string) {
+    const minha = rodadaAtualRef.current
     setAuditando(true)
     try {
       const a = await api.auditar(texto)
-      setAuditoria(a)
+      if (rodadaAtualRef.current === minha) setAuditoria(a)
     } catch {
       // Auditoria é um extra — se falhar, não quebra a resposta exibida.
-      setAuditoria(null)
+      if (rodadaAtualRef.current === minha) setAuditoria(null)
     } finally {
-      setAuditando(false)
+      if (rodadaAtualRef.current === minha) setAuditando(false)
     }
   }
 
   async function explicarMaisSimples() {
     if (!resultado) return
+    const minha = rodadaAtualRef.current
     setSimplificando(true)
     try {
-      const d = await api.simplificar(pergunta, resultado.resposta, resultado.contexto, provider, modelo)
-      setRespostaSimples(d.resposta)
+      const d = await api.simplificar(perguntaFeita, resultado.resposta, resultado.contexto, provider, modelo)
+      if (rodadaAtualRef.current === minha) setRespostaSimples(d.resposta)
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao simplificar resposta')
+      if (rodadaAtualRef.current === minha) setErro(e instanceof Error ? e.message : 'Erro ao simplificar resposta')
     } finally {
-      setSimplificando(false)
+      if (rodadaAtualRef.current === minha) setSimplificando(false)
     }
   }
 
   async function testarEntendimento() {
     if (!resultado) return
+    const minha = rodadaAtualRef.current
     setVerificando(true)
     try {
-      const d = await api.verificar(pergunta, resultado.resposta, resultado.contexto, provider, modelo)
+      const d = await api.verificar(perguntaFeita, resultado.resposta, resultado.contexto, provider, modelo)
+      if (rodadaAtualRef.current !== minha) return
       setPerguntasVerificacao(d.perguntas)
       setRespostasVerificacao({})
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao gerar perguntas de verificação')
+      if (rodadaAtualRef.current === minha) {
+        setErro(e instanceof Error ? e.message : 'Erro ao gerar perguntas de verificação')
+      }
     } finally {
-      setVerificando(false)
+      if (rodadaAtualRef.current === minha) setVerificando(false)
     }
   }
 
   async function responderVerificacao(idx: number, perguntaVerificacao: string) {
     if (respostasVerificacao[idx] || carregandoVerificacaoIdx !== null) return
+    const minha = rodadaAtualRef.current
     setCarregandoVerificacaoIdx(idx)
     try {
       const d = await api.perguntar(perguntaVerificacao, provider, modelo, persona)
-      setRespostasVerificacao((r) => ({ ...r, [idx]: d.resposta }))
+      if (rodadaAtualRef.current === minha) setRespostasVerificacao((r) => ({ ...r, [idx]: d.resposta }))
     } catch (e) {
+      if (rodadaAtualRef.current !== minha) return
       setRespostasVerificacao((r) => ({
         ...r,
         [idx]: e instanceof Error ? e.message : 'Erro ao gerar resposta',
       }))
     } finally {
-      setCarregandoVerificacaoIdx(null)
+      if (rodadaAtualRef.current === minha) setCarregandoVerificacaoIdx(null)
     }
   }
 
@@ -164,7 +218,7 @@ export default function PerguntarTab({
     const linhas = [
       `# Pergunta`,
       '',
-      pergunta,
+      perguntaFeita,
       '',
       `# Resposta (${resultado.provider} / ${resultado.modelo})`,
       '',
@@ -220,18 +274,13 @@ export default function PerguntarTab({
           onMouseLeave={() => gsap.to(enviarBtnRef.current, { scale: 1, duration: 0.25, ease: 'power2.out' })}
           onMouseDown={() => gsap.to(enviarBtnRef.current, { scale: 0.96, duration: 0.1 })}
           onMouseUp={() => gsap.to(enviarBtnRef.current, { scale: 1.03, duration: 0.15 })}
-          disabled={loading || ocrLoading || !pronto}
+          disabled={loading || recebendo || ocrLoading || !pronto}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {loading ? 'Pensando…' : 'Perguntar'}
+          {loading ? 'Pensando…' : recebendo ? 'Escrevendo…' : 'Perguntar'}
         </button>
         <button
-          onClick={() => {
-            setPergunta('')
-            setResultado(null)
-            setErro('')
-            setAnexoReset((t) => t + 1)
-          }}
+          onClick={limpar}
           className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
         >
           Limpar

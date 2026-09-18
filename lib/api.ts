@@ -147,11 +147,14 @@ async function perguntarStream(
   persona: string,
   onMeta: (meta: Omit<PerguntarResp, 'resposta'>) => void,
   onTexto: (acumulado: string) => void,
+  /** Cancela o stream (nova pergunta ou "Limpar"): a conexão fecha e a promessa rejeita com AbortError. */
+  signal?: AbortSignal,
 ): Promise<PerguntarResp> {
   const r = await fetch('/api/perguntar/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pergunta, provider, modelo, persona }),
+    signal,
   })
   if (!r.ok || !r.body) {
     const texto = await r.text()
@@ -207,6 +210,10 @@ async function perguntarStream(
   } catch {
     erro = erro || 'A conexão caiu antes de a resposta terminar.'
   }
+  // Cancelado por quem chamou: não é "resposta interrompida", é resposta descartada.
+  if (signal?.aborted) throw new DOMException('Pergunta cancelada.', 'AbortError')
+  // Parou por erro antes do fim do corpo: fecha a conexão em vez de deixá-la pendurada.
+  if (erro) void leitor.cancel().catch(() => undefined)
   if (!erro) tratar(pendente)
   if (!erro && !terminou) erro = 'A conexão caiu antes de a resposta terminar.'
 

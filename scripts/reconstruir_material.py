@@ -95,53 +95,84 @@ def escrever_txt(destino: Path, paginas: dict[int, str]) -> None:
     destino.write_text("\n".join(partes), encoding="utf-8")
 
 
+FONTE_PDF = RAIZ / "api" / "_app" / "fonts" / "DejaVuSans.ttf"
+TAMANHO_FONTE_MAXIMO = 10.0
+TAMANHO_FONTE_MINIMO = 5.0
+
+
 def escrever_pdf(destino: Path, paginas: dict[int, str]) -> None:
-    """Um PDF com uma página por página original, que o extrator relê com os números certos."""
-    try:
-        from reportlab.lib.pagesizes import A4
-        from reportlab.pdfgen import canvas
-    except ImportError:
-        raise SystemExit(
-            "reportlab não instalado — necessário para gerar o PDF.\n"
-            "  .venv/Scripts/python.exe -m pip install reportlab"
-        )
+    """Um PDF em que a folha N contém exatamente a página original N.
 
-    largura, altura = A4
-    margem, entrelinha, tamanho_fonte = 45, 11.5, 9
-    linhas_por_pagina = int((altura - 2 * margem) / entrelinha)
-    pdf = canvas.Canvas(str(destino), pagesize=A4)
-    pdf.setFont("Courier", tamanho_fonte)
+    O extrator numera as páginas pela posição da folha, e é isso que vira a
+    citação "[Fonte: x, página N]". Por isso (análise de 17/09/2026, A3-13):
+    - nenhum texto extra entra na folha — a versão anterior escrevia
+      "[página N]" no topo, e o marcador ia parar no índice;
+    - a página nunca transborda para a folha seguinte: se o texto não cabe, a
+      letra diminui; se nem assim couber, o script para com erro em vez de
+      deslocar todas as citações seguintes;
+    - número de página que falta vira folha em branco, pelo mesmo motivo.
+    """
+    from fpdf import FPDF  # já é dependência do app (gera as apostilas)
 
-    for pagina, texto in sorted(paginas.items()):
-        palavras = normalizar_espacos(texto).split()
-        linhas: list[str] = []
-        atual = ""
-        for palavra in palavras:
-            tentativa = f"{atual} {palavra}".strip()
-            if pdf.stringWidth(tentativa, "Courier", tamanho_fonte) <= largura - 2 * margem:
-                atual = tentativa
-            else:
-                linhas.append(atual)
-                atual = palavra
-        if atual:
-            linhas.append(atual)
+    pdf = FPDF(format="A4", unit="pt")
+    pdf.set_auto_page_break(False)
+    pdf.set_margins(45, 45, 45)
+    if FONTE_PDF.exists():
+        pdf.add_font("DejaVu", "", str(FONTE_PDF))
+        familia = "DejaVu"
+        preparar = str
+    else:  # sem a fonte, só Latin-1; o que não couber vira "?"
+        familia = "Helvetica"
+        preparar = lambda t: t.encode("latin-1", "replace").decode("latin-1")  # noqa: E731
+    largura_util = pdf.w - 2 * 45
+    altura_util = pdf.h - 2 * 45
 
-        for i in range(0, max(len(linhas), 1), linhas_por_pagina):
-            if i:
-                pdf.showPage()
-                pdf.setFont("Courier", tamanho_fonte)
-            y = altura - margem
-            # Marca a página original no alto: ajuda a conferir a numeração depois.
-            pdf.setFont("Courier-Bold", tamanho_fonte)
-            pdf.drawString(margem, y, f"[página {pagina}]")
-            pdf.setFont("Courier", tamanho_fonte)
-            y -= entrelinha * 1.5
-            for linha in linhas[i : i + linhas_por_pagina]:
-                pdf.drawString(margem, y, linha)
-                y -= entrelinha
-        pdf.showPage()
+    ultima = max(paginas) if paginas else 0
+    for numero in range(1, ultima + 1):
+        pdf.add_page()
+        texto = preparar(normalizar_espacos(paginas.get(numero, "")))
+        if not texto:
+            continue
+        tamanho = TAMANHO_FONTE_MAXIMO
+        while True:
+            pdf.set_font(familia, size=tamanho)
+            entrelinha = tamanho * 1.3
+            linhas = pdf.multi_cell(largura_util, entrelinha, texto, dry_run=True, output="LINES")
+            if len(linhas) * entrelinha <= altura_util:
+                break
+            if tamanho <= TAMANHO_FONTE_MINIMO:
+                raise SystemExit(
+                    f"A página {numero} não cabe numa folha nem com letra {TAMANHO_FONTE_MINIMO} pt "
+                    f"({len(texto)} caracteres). Gerar assim deslocaria as citações seguintes."
+                )
+            tamanho -= 0.5
+        pdf.multi_cell(largura_util, entrelinha, texto)
 
-    pdf.save()
+    pdf.output(str(destino))
+
+
+def conferir_pdf(destino: Path, paginas: dict[int, str]) -> float:
+    """Relê o PDF como o app faz e compara página a página com o texto original.
+
+    Devolve a menor semelhança encontrada (1,0 = idêntico). Falha se o número de
+    folhas não bater ou se sobrar o marcador antigo "[página N]".
+    """
+    import difflib
+
+    from pypdf import PdfReader
+
+    folhas = [(p.extract_text() or "") for p in PdfReader(str(destino)).pages]
+    esperado = max(paginas) if paginas else 0
+    if len(folhas) != esperado:
+        raise SystemExit(f"{destino.name}: {len(folhas)} folhas, esperado {esperado}.")
+    pior = 1.0
+    for numero, original in paginas.items():
+        lido = normalizar_espacos(folhas[numero - 1])
+        if "[página" in lido:
+            raise SystemExit(f"{destino.name}: marcador de página no texto da folha {numero}.")
+        semelhanca = difflib.SequenceMatcher(None, normalizar_espacos(original), lido, autojunk=False).ratio()
+        pior = min(pior, semelhanca)
+    return pior
 
 
 def nome_seguro(fonte: str) -> str:
@@ -173,7 +204,8 @@ def main() -> int:
         linha = f"  {nome}: {qtd_chunks} chunks → {len(paginas)} páginas"
         if not args.sem_pdf:
             escrever_pdf(SAIDA / f"{nome}.pdf", paginas)
-            linha += " (.txt + .pdf)"
+            pior = conferir_pdf(SAIDA / f"{nome}.pdf", paginas)
+            linha += f" (.txt + .pdf, semelhança mínima ao reler: {pior:.4f})"
         print(linha)
         total_paginas += len(paginas)
 

@@ -122,6 +122,25 @@ test('bloco <think> não aparece na resposta, nem enquanto chega', async () => {
   assert.deepEqual(parciais, ['', 'Resposta'])
 })
 
+test('pergunta cancelada é descartada, não vira "resposta interrompida"', async () => {
+  // O backend falso só fecha o corpo quando o pedido é cancelado, como o fetch real.
+  globalThis.fetch = async (_url, init) =>
+    new Response(
+      new ReadableStream({
+        start(c) {
+          const enc = new TextEncoder()
+          c.enqueue(enc.encode(JSON.stringify(META) + '\n' + JSON.stringify({ tipo: 'texto', t: 'metade' }) + '\n'))
+          init?.signal?.addEventListener('abort', () => c.error(new DOMException('abortado', 'AbortError')))
+        },
+      }),
+    )
+  const cancelar = new AbortController()
+  await assert.rejects(
+    api.perguntarStream('p', 'groq', 'm', 'padrao', () => {}, () => cancelar.abort(), cancelar.signal),
+    (e: unknown) => e instanceof DOMException && e.name === 'AbortError',
+  )
+})
+
 test('erro HTTP antes do stream usa o detail do backend', async () => {
   globalThis.fetch = async () =>
     new Response(JSON.stringify({ detail: 'Pergunta vazia.' }), { status: 400 })

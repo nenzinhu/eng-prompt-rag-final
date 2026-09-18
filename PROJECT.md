@@ -234,7 +234,8 @@ Fatos observados nos arquivos desta cópia. **O estado em produção não foi ve
 
 - **Pendências registradas em 10/09/2026:** preencher `SUPABASE_SERVICE_ROLE_KEY`, aplicar a migração de RLS e reenviar o PDF reconstruído. Não há registro posterior dizendo se foram concluídas.
 - **Migração de 16/09/2026** (`cota-de-uso.sql`): o código já depende dela para os tetos diários. Não há registro de que foi aplicada.
-- **Material perdido:** 384 dos 526 trechos (73%) vêm de `Empreendedorismo_Inovacao_Tecnologia_completo.pdf`, que não está no Storage. Existe uma versão reconstruída em `supabase-backup/reconstruido/`.
+- **Material perdido:** 384 dos 526 trechos (73%) vêm de `Empreendedorismo_Inovacao_Tecnologia_completo.pdf`, que não está no Storage. A versão reconstruída em `supabase-backup/reconstruido/` foi gerada de novo em 18/09/2026: sem o marcador "[página N]" no texto, com a folha N sempre igual à página original N, e relida com semelhança mínima de 0,9997. Simulando a reindexação com o código do app: mesmo nome de fonte, 113 páginas, 98,7% do texto atual (a guarda só bloqueia abaixo de 60%), 384 → 228 trechos. Seis páginas ficam sem trecho porque só têm títulos soltos ("SAIBA MAIS"), que o divisor descarta de propósito.
+  - **Para reenviar:** na aba PDFs, enviar esse arquivo e esperar "✓ Concluído". Se aparecer "Terminou com pendências", ler o motivo no registro antes de repetir. Pré-requisito: `SUPABASE_SERVICE_ROLE_KEY` configurada. Sem ela, o envio usa a chave pública, e o bucket `ementas` é privado, sem permissão para essa chave; o esperado é o Storage recusar (não testado em produção).
 - **Pouco texto extraído:** `Logica_Programacao_Python.pdf` rendeu 1 trecho no backup.
 - **Acervo misto:** um resumo de preços de modelos do Nous Portal está indexado junto com as apostilas.
 - **Documentação divergente do código:**
