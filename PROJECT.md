@@ -10,11 +10,9 @@ comparação entre modelos), produção de apostilas e utilitários de arquivo.
 | **Produção** | Vercel — `eng-prompt-rag-final-nenzinhus-projects.vercel.app` |
 | **Código** | GitHub `nenzinhu/eng-prompt-rag-final` (privado) |
 | **Banco** | Supabase, projeto `eng-prompt-rag` |
-| **Esta cópia** | download de 17/09/2026, sem pasta `.git` |
 
 > Este documento descreve o projeto a partir do código e da documentação existentes.
-> Afirmações sobre o estado de produção vêm de [CORRECOES-2026-09-10.md](CORRECOES-2026-09-10.md)
-> e não foram reverificadas aqui.
+> O estado de produção da seção 10 foi conferido em 18/09/2026, só com leituras.
 
 ---
 
@@ -230,12 +228,13 @@ Outros scripts: `backup_dump.py`, `medir_latencia.sh`, `saude_dos_pdfs.py`,
 
 ## 10. Estado atual e pontos em aberto
 
-Fatos observados nos arquivos desta cópia. **O estado em produção não foi verificado.**
+Produção conferida em 18/09/2026, só com leituras (`/api/config`, REST e catálogo do Postgres):
 
-- **Pendências registradas em 10/09/2026:** preencher `SUPABASE_SERVICE_ROLE_KEY`, aplicar a migração de RLS e reenviar o PDF reconstruído. Não há registro posterior dizendo se foram concluídas.
-- **Migração de 16/09/2026** (`cota-de-uso.sql`): o código já depende dela para os tetos diários. Não há registro de que foi aplicada.
+- **Concluído:** a `service_role` está configurada na Vercel (`/api/config` responde `escrita_via: service_role`); o RLS está ligado em `ementas_chunks`, `glossario_termos` e `cota_uso`, com política só de leitura; a migração de cota de 16/09 foi aplicada (`cota_uso` e `consumir_cota` existem); a sequência de ids está à frente do maior id.
+- **Ainda sem `REVOKE`:** a chave pública mantém os privilégios de tabela de INSERT/UPDATE/DELETE. O RLS já nega essas escritas; o `REVOKE` seria só uma proteção a mais.
+- **Documentos no Storage sem nenhum trecho no índice:** `Praticas_Gerenciais_Inovacao_Empresarial.pdf` (tinha 132 trechos no backup de 10/09; um buraco de exatamente 24 ids, o tamanho de um lote, sugere uma reindexação que falhou por volta de 13/09) e `Playbook do Curso de Prompt Engineering no ChatGPT - DataWay - v1.3.pdf` (nunca indexado). Os arquivos existem, então basta reindexar pela aba PDFs ("Verificar antes de reindexar"). Reenviar o mesmo arquivo não resolve: o upload compara com o Storage e responde "conteúdo idêntico".
 - **Material perdido:** 384 dos 526 trechos (73%) vêm de `Empreendedorismo_Inovacao_Tecnologia_completo.pdf`, que não está no Storage. A versão reconstruída em `supabase-backup/reconstruido/` foi gerada de novo em 18/09/2026: sem o marcador "[página N]" no texto, com a folha N sempre igual à página original N, e relida com semelhança mínima de 0,9997. Simulando a reindexação com o código do app: mesmo nome de fonte, 113 páginas, 98,7% do texto atual (a guarda só bloqueia abaixo de 60%), 384 → 228 trechos. Seis páginas ficam sem trecho porque só têm títulos soltos ("SAIBA MAIS"), que o divisor descarta de propósito.
-  - **Para reenviar:** na aba PDFs, enviar esse arquivo e esperar "✓ Concluído". Se aparecer "Terminou com pendências", ler o motivo no registro antes de repetir. Pré-requisito: `SUPABASE_SERVICE_ROLE_KEY` configurada. Sem ela, o envio usa a chave pública, e o bucket `ementas` é privado, sem permissão para essa chave; o esperado é o Storage recusar (não testado em produção).
+  - **Para reenviar:** na aba PDFs, enviar esse arquivo e esperar "✓ Concluído". Se aparecer "Terminou com pendências", ler o motivo no registro antes de repetir. O pré-requisito (`SUPABASE_SERVICE_ROLE_KEY` na Vercel) já está atendido.
 - **Pouco texto extraído:** `Logica_Programacao_Python.pdf` rendeu 1 trecho no backup.
 - **Acervo misto:** um resumo de preços de modelos do Nous Portal está indexado junto com as apostilas.
 - **Documentação divergente do código:**
