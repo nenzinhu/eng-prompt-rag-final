@@ -82,6 +82,7 @@ from _app.documentos import (  # noqa: E402
     _markdown_para_docx,
     _markdown_para_pdf,
     _mimetype,
+    nome_para_storage,
 )
 from rag_core import (  # noqa: E402
     calcular_concordancia,
@@ -204,7 +205,13 @@ async def falha_inesperada(request: Request, exc: Exception):
         # Falha do Supabase/Storage/provedor: o mais comum e o mais acionável.
         alvo = f"{exc.request.url.host}{exc.request.url.path}"
         detalhe = f"o serviço {alvo} respondeu {exc.response.status_code}: {exc.response.text[:200]}"
-        dica = "Isso é do Supabase/Storage, não da sua pergunta. Tente de novo; se persistir, confira as chaves e o RLS."
+        if "InvalidKey" in exc.response.text:
+            # Nome de arquivo recusado pelo Storage: repetir não adianta, e chave/RLS não têm nada a ver.
+            dica = "O Storage recusou o NOME do arquivo. Renomeie sem acentos nem símbolos e envie de novo."
+        elif 400 <= exc.response.status_code < 500 and exc.response.status_code not in (408, 429):
+            dica = "Isso é do Supabase/Storage, não da sua pergunta. Repetir não deve resolver: confira o pedido, as chaves e o RLS."
+        else:
+            dica = "Isso é do Supabase/Storage, não da sua pergunta. Tente de novo; se persistir, confira as chaves e o RLS."
     elif isinstance(exc, httpx.TimeoutException):
         detalhe = f"o serviço externo não respondeu a tempo ({type(exc).__name__})"
         dica = "Tente de novo — costuma ser lentidão momentânea do Supabase."
@@ -1933,9 +1940,13 @@ async def upload(
     salvos: list[str] = []
     substituidos: list[dict] = []
     ignorados: list[dict] = []
+    renomeados: list[dict] = []
 
     for f in files:
-        nome = Path(f.filename or "").name  # descarta caminhos vindos do cliente
+        original = Path(f.filename or "").name  # descarta caminhos vindos do cliente
+        nome = nome_para_storage(original)
+        if nome != original:
+            renomeados.append({"de": original, "para": nome})
         if not nome.lower().endswith(EXTENSOES_DOCUMENTO):
             ignorados.append({"arquivo": nome, "motivo": f"formato não suportado (aceito: {', '.join(EXTENSOES_DOCUMENTO)})"})
             continue
@@ -2007,7 +2018,7 @@ async def upload(
         por_md5[md5] = {"nome": nome, "md5": md5}
         por_nome[nome] = {"nome": nome, "md5": md5}
 
-    return {"salvos": salvos, "substituidos": substituidos, "ignorados": ignorados}
+    return {"salvos": salvos, "substituidos": substituidos, "ignorados": ignorados, "renomeados": renomeados}
 
 
 @app.get("/api/duplicatas")

@@ -195,3 +195,29 @@ def test_upload_mesmo_conteudo_com_nome_novo_continua_renomeando(monkeypatch):
     r, alteracoes = _upload(monkeypatch, storage=storage, nome="A-v2.pdf", dados=x)
     assert r.status_code == 200
     assert ("renomeou", "A.pdf", "A-v2.pdf") in alteracoes
+
+
+@pytest.mark.parametrize(
+    ("enviado", "salvo"),
+    [
+        ("Infográfico_RAG_final.pdf", "Infografico_RAG_final.pdf"),
+        ("Introdução à Programação.pdf", "Introducao a Programacao.pdf"),
+        ("Playbook do Curso - v1.3.pdf", "Playbook do Curso - v1.3.pdf"),
+        ("relatório #2 (final)!.docx", "relatorio _2 (final)_.docx"),
+        ("ção.pdf", "cao.pdf"),
+        ("🚀.pdf", "documento.pdf"),
+    ],
+)
+def test_nome_para_storage(enviado, salvo):
+    from _app.documentos import nome_para_storage
+
+    assert nome_para_storage(enviado) == salvo
+
+
+def test_upload_troca_nome_com_acento_e_avisa(monkeypatch):
+    """Storage respondia 400 InvalidKey para "Infográfico_RAG_final.pdf"."""
+    r, alteracoes = _upload(monkeypatch, storage=[], nome="Infográfico_RAG_final.pdf", dados=b"conteudo novo")
+    assert r.status_code == 200
+    assert ("gravou", "Infografico_RAG_final.pdf") in alteracoes
+    assert r.json()["salvos"] == ["Infografico_RAG_final.pdf"]
+    assert r.json()["renomeados"] == [{"de": "Infográfico_RAG_final.pdf", "para": "Infografico_RAG_final.pdf"}]

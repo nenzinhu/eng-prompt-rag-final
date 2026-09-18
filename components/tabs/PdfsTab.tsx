@@ -219,6 +219,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
         const forcar = f.name === forcarArquivo
         try {
           const d = await api.upload([f], token, forcar)
+          for (const r of d.renomeados ?? []) logLine('info', `✎ ${r.de}: salvo como "${r.para}" (o Storage não aceita acento nem símbolo no nome)`)
           for (const nome of d.salvos) logLine('ok', `✓ ${nome}: novo arquivo salvo no Storage`)
           for (const s of d.substituidos ?? []) {
             logLine(

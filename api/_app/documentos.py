@@ -80,6 +80,24 @@ def _slug_arquivo(texto: str) -> str:
     return normalizado[:60] or "apostila"
 
 
+def nome_para_storage(nome: str) -> str:
+    """Nome de arquivo que o Storage do Supabase aceita.
+
+    O Storage recusa com 400 "InvalidKey" nomes com acento ou símbolo fora do
+    ASCII ("Infográfico_RAG_final.pdf"), e o erro chegava ao admin como se fosse
+    problema de chave ou de RLS. Aqui o acento sai ("á" → "a") e o que sobrar
+    fora de letras, números, espaço e `._-()` vira "_". O mesmo nome é usado no
+    Storage e como fonte no índice, então as citações mostram o nome limpo.
+    """
+    base = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode("ascii")
+    base = re.sub(r"[^A-Za-z0-9 ._()\-]+", "_", base)
+    base = re.sub(r"_{2,}", "_", base).strip(" _")
+    raiz, ponto, extensao = base.rpartition(".")
+    if ponto and not raiz.strip(" ._"):
+        base = f"documento.{extensao}"
+    return base or "documento"
+
+
 def _markdown_para_docx(texto: str, titulo: str) -> bytes:
     doc = DocxDocument()
     doc.add_heading(titulo, level=0)

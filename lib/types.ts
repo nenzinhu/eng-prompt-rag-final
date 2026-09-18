@@ -187,6 +187,8 @@ export interface UploadResp {
   salvos: string[]
   substituidos?: UploadSubstituicao[]
   ignorados?: UploadIgnorado[]
+  /** Nomes trocados porque o Storage não aceita acento nem símbolo. */
+  renomeados?: { de: string; para: string }[]
 }
 
 // ── Comparação entre modelos ────────────────────────────────────────────────
