@@ -24,6 +24,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sys
 import time
@@ -136,6 +137,13 @@ LIMIAR_CONFIANCA = 0.35  # abaixo disso, avisamos que a resposta é pouco embasa
 #   - MAX_UPLOAD_MB no ambiente sobrepõe os dois.
 LIMITE_UPLOAD_PLATAFORMA_MB = 4
 LIMITE_UPLOAD_LOCAL_MB = 25
+
+# Envio direto: acima do teto acima, o navegador manda o arquivo ao Storage por
+# uma URL assinada, sem passar pela Vercel, e o servidor só confirma (baixa do
+# Storage, aplica as mesmas regras do /api/upload e grava no nome final).
+# 50 MB é o teto por arquivo do plano gratuito do Supabase.
+LIMITE_ENVIO_DIRETO_MB = 50
+PREFIXO_ENVIO = "_envios"
 
 
 def limite_upload_mb() -> int:
@@ -667,6 +675,23 @@ async def baixar_documento_storage(filename: str) -> bytes:
     return r.content
 
 
+async def url_envio_assinada(caminho: str) -> str:
+    """URL de uso único para o navegador enviar `caminho` direto ao Storage.
+
+    O Storage devolve a URL relativa a /storage/v1 (é assim que o supabase-js
+    monta o `uploadToSignedUrl`). Vale 2 horas e só serve para este caminho.
+    """
+    _checar_config_supabase()
+    async with _http(_TIMEOUT) as client:
+        r = await client.post(
+            f"{SUPABASE_URL}/storage/v1/object/upload/sign/ementas/{quote(caminho)}",
+            headers={**_h_documentos(), "Content-Type": "application/json"},
+            json={},
+        )
+    r.raise_for_status()
+    return f"{SUPABASE_URL}/storage/v1{r.json()['url']}"
+
+
 async def salvar_termos_glossario(termos: list[dict], origem: str = "") -> Optional[str]:
     """Grava os termos. Devolve None em caso de sucesso, ou o motivo da falha.
 
@@ -774,6 +799,8 @@ def config_publica():
         # código rodar, então anunciar 25 MB fazia o aluno tomar um 413 sem
         # entender. O front mostra este texto junto do campo de upload.
         "limite_upload_motivo": motivo_limite_upload(),
+        # Arquivos maiores que max_upload_mb (e até este teto) vão pelo envio direto.
+        "envio_direto_mb": LIMITE_ENVIO_DIRETO_MB,
     }
 
 
@@ -1921,6 +1948,94 @@ async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
 # ── Upload ──────────────────────────────────────────────────────────────────
 
 
+class _Envio:
+    """Estado de uma rodada de envio: o Storage atual e o que já mudou."""
+
+    def __init__(self, existentes: list[dict]):
+        self.por_md5 = {a["md5"]: a for a in existentes if a["md5"]}
+        self.por_nome = {a["nome"]: a for a in existentes}
+        self.salvos: list[str] = []
+        self.substituidos: list[dict] = []
+        self.ignorados: list[dict] = []
+        self.renomeados: list[dict] = []
+
+    def resposta(self) -> dict:
+        return {
+            "salvos": self.salvos,
+            "substituidos": self.substituidos,
+            "ignorados": self.ignorados,
+            "renomeados": self.renomeados,
+        }
+
+
+async def _gravar_documento(envio: _Envio, nome: str, data: bytes, forcar: bool) -> None:
+    """Aplica as regras de duplicata e de perda a um arquivo e grava no Storage.
+
+    Usada pelo /api/upload e pelo envio direto (/api/upload/confirmar), para que
+    os dois caminhos tenham exatamente as mesmas regras. Levanta 409 quando o
+    envio misturaria documentos ou apagaria conteúdo sem confirmação.
+    """
+    md5 = hashlib.md5(data).hexdigest()
+
+    igual = envio.por_md5.get(md5)
+    atual = envio.por_nome.get(nome)
+    if (igual and igual["nome"] == nome) or (atual and atual["md5"] == md5):
+        envio.ignorados.append({"arquivo": nome, "motivo": "conteúdo idêntico já indexado"})
+        return
+
+    # Conteúdo de A com o nome de B, sendo que B já existe com outro conteúdo:
+    # renomear os chunks de A para B misturava os dois documentos e apagava
+    # o arquivo de B sem a guarda olhar para ele (análise de 17/09/2026, A1-08).
+    # Não há "forçar" que torne isso seguro: o arquivo precisa de outro nome.
+    if igual and atual:
+        raise HTTPException(
+            409,
+            {
+                "mensagem": (
+                    f"'{nome}' já existe com outro conteúdo, e o arquivo enviado é igual a "
+                    f"'{igual['nome']}'. Enviar misturaria os dois documentos."
+                ),
+                "arquivo": nome,
+                "fonte_afetada": nome,
+                "avisos": [f"Renomeie o arquivo ou apague '{nome}' ou '{igual['nome']}' antes."],
+                "sem_forcar": True,
+            },
+        )
+
+    # Qual fonte teria os chunks apagados, e o que o arquivo novo oferece.
+    fonte_afetada = igual["nome"] if igual else (nome if nome in envio.por_nome else None)
+    if fonte_afetada and not forcar:
+        bloqueio = await _risco_de_perda(fonte_afetada, data, nome)
+        if bloqueio:
+            raise HTTPException(409, bloqueio)
+
+    # O upload não apaga chunks: a ingestão que vem em seguida troca os
+    # antigos pelos novos sem deixar o documento vazio no meio do caminho.
+    if igual:
+        # Mesmo documento com nome diferente → os chunks passam a responder
+        # pelo nome novo (um PATCH só), e o arquivo antigo sai do Storage
+        # depois que o novo já foi gravado.
+        await upload_documento_storage(nome, data, _mimetype(nome))
+        await renomear_fonte_chunks(igual["nome"], nome)
+        await remover_documento_storage(igual["nome"])
+        envio.por_nome.pop(igual["nome"], None)
+        envio.por_md5[md5] = {"nome": nome, "md5": md5}
+        envio.por_nome[nome] = {"nome": nome, "md5": md5}
+        envio.substituidos.append({"arquivo": nome, "substituiu": igual["nome"],
+                                   "motivo": "mesmo conteúdo, nome diferente"})
+        return
+    elif nome in envio.por_nome:
+        # Mesmo nome, conteúdo novo → versão atualizada.
+        envio.substituidos.append({"arquivo": nome, "substituiu": nome,
+                                   "motivo": "versão atualizada do mesmo arquivo"})
+    else:
+        envio.salvos.append(nome)
+
+    await upload_documento_storage(nome, data, _mimetype(nome))
+    envio.por_md5[md5] = {"nome": nome, "md5": md5}
+    envio.por_nome[nome] = {"nome": nome, "md5": md5}
+
+
 @app.post("/api/upload")
 async def upload(
     files: list[UploadFile] = File(...),
@@ -1942,92 +2057,99 @@ async def upload(
     de 60% do texto, exige `forcar=true` — é este o caminho em que o material
     de um documento pode ser destruído por um upload mal extraído.
     """
-    existentes = await listar_arquivos_storage()
-    por_md5 = {a["md5"]: a for a in existentes if a["md5"]}
-    por_nome = {a["nome"]: a for a in existentes}
-
-    salvos: list[str] = []
-    substituidos: list[dict] = []
-    ignorados: list[dict] = []
-    renomeados: list[dict] = []
+    envio = _Envio(await listar_arquivos_storage())
 
     for f in files:
         original = Path(f.filename or "").name  # descarta caminhos vindos do cliente
         nome = nome_para_storage(original)
         if nome != original:
-            renomeados.append({"de": original, "para": nome})
+            envio.renomeados.append({"de": original, "para": nome})
         if not nome.lower().endswith(EXTENSOES_DOCUMENTO):
-            ignorados.append({"arquivo": nome, "motivo": f"formato não suportado (aceito: {', '.join(EXTENSOES_DOCUMENTO)})"})
+            envio.ignorados.append({"arquivo": nome, "motivo": f"formato não suportado (aceito: {', '.join(EXTENSOES_DOCUMENTO)})"})
             continue
 
         data = await f.read()
         if not data:
-            ignorados.append({"arquivo": nome, "motivo": "arquivo vazio"})
+            envio.ignorados.append({"arquivo": nome, "motivo": "arquivo vazio"})
             continue
         if len(data) > limite_upload_bytes():
-            ignorados.append({"arquivo": nome, "motivo": f"maior que {limite_upload_mb()} MB"})
+            envio.ignorados.append({"arquivo": nome, "motivo": f"maior que {limite_upload_mb()} MB"})
             continue
-        md5 = hashlib.md5(data).hexdigest()
+        await _gravar_documento(envio, nome, data, forcar)
 
-        igual = por_md5.get(md5)
-        atual = por_nome.get(nome)
-        if (igual and igual["nome"] == nome) or (atual and atual["md5"] == md5):
-            ignorados.append({"arquivo": nome, "motivo": "conteúdo idêntico já indexado"})
-            continue
+    return envio.resposta()
 
-        # Conteúdo de A com o nome de B, sendo que B já existe com outro conteúdo:
-        # renomear os chunks de A para B misturava os dois documentos e apagava
-        # o arquivo de B sem a guarda olhar para ele (análise de 17/09/2026, A1-08).
-        # Não há "forçar" que torne isso seguro: o arquivo precisa de outro nome.
-        if igual and atual:
-            raise HTTPException(
-                409,
-                {
-                    "mensagem": (
-                        f"'{nome}' já existe com outro conteúdo, e o arquivo enviado é igual a "
-                        f"'{igual['nome']}'. Enviar misturaria os dois documentos."
-                    ),
-                    "arquivo": nome,
-                    "fonte_afetada": nome,
-                    "avisos": [f"Renomeie o arquivo ou apague '{nome}' ou '{igual['nome']}' antes."],
-                    "sem_forcar": True,
-                },
-            )
 
-        # Qual fonte teria os chunks apagados, e o que o arquivo novo oferece.
-        fonte_afetada = igual["nome"] if igual else (nome if nome in por_nome else None)
-        if fonte_afetada and not forcar:
-            bloqueio = await _risco_de_perda(fonte_afetada, data, nome)
-            if bloqueio:
-                raise HTTPException(409, bloqueio)
+# ── Envio direto (arquivos acima do teto da Vercel) ─────────────────────────
+#
+# 1. /api/upload/url       → o servidor devolve uma URL assinada para uma área
+#                            provisória do bucket (_envios/<id>/<nome>);
+# 2. o navegador envia o arquivo direto ao Storage por essa URL;
+# 3. /api/upload/confirmar → o servidor baixa o provisório, aplica as regras do
+#                            /api/upload e grava no nome final. A requisição
+#                            limitada a 4,5 MB da Vercel nunca carrega o arquivo.
+#
+# O provisório só é apagado quando a confirmação termina (gravado ou ignorado).
+# Num 409 ele fica, para o "confirmar mesmo assim" não exigir reenviar o arquivo.
 
-        # O upload não apaga chunks: a ingestão que vem em seguida troca os
-        # antigos pelos novos sem deixar o documento vazio no meio do caminho.
-        if igual:
-            # Mesmo documento com nome diferente → os chunks passam a responder
-            # pelo nome novo (um PATCH só), e o arquivo antigo sai do Storage
-            # depois que o novo já foi gravado.
-            await upload_documento_storage(nome, data, _mimetype(nome))
-            await renomear_fonte_chunks(igual["nome"], nome)
-            await remover_documento_storage(igual["nome"])
-            por_nome.pop(igual["nome"], None)
-            por_md5[md5] = {"nome": nome, "md5": md5}
-            por_nome[nome] = {"nome": nome, "md5": md5}
-            substituidos.append({"arquivo": nome, "substituiu": igual["nome"],
-                                 "motivo": "mesmo conteúdo, nome diferente"})
-            continue
-        elif nome in por_nome:
-            # Mesmo nome, conteúdo novo → versão atualizada.
-            substituidos.append({"arquivo": nome, "substituiu": nome,
-                                 "motivo": "versão atualizada do mesmo arquivo"})
-        else:
-            salvos.append(nome)
+_CAMINHO_ENVIO = re.compile(rf"^{PREFIXO_ENVIO}/[0-9a-f]{{32}}/[^/]+$")
 
-        await upload_documento_storage(nome, data, _mimetype(nome))
-        por_md5[md5] = {"nome": nome, "md5": md5}
-        por_nome[nome] = {"nome": nome, "md5": md5}
 
-    return {"salvos": salvos, "substituidos": substituidos, "ignorados": ignorados, "renomeados": renomeados}
+class EnvioUrlReq(BaseModel):
+    nome: str
+    tamanho: int
+
+
+class EnvioConfirmarReq(BaseModel):
+    caminho: str
+    forcar: bool = False
+
+
+@app.post("/api/upload/url")
+async def upload_url(req: EnvioUrlReq, _: None = Depends(exigir_admin)):
+    original = Path(req.nome or "").name
+    nome = nome_para_storage(original)
+    if not nome.lower().endswith(EXTENSOES_DOCUMENTO):
+        raise HTTPException(400, f"Formato não suportado (aceito: {', '.join(EXTENSOES_DOCUMENTO)}).")
+    if req.tamanho <= 0:
+        raise HTTPException(400, "Arquivo vazio.")
+    if req.tamanho > LIMITE_ENVIO_DIRETO_MB * 1024 * 1024:
+        raise HTTPException(
+            400,
+            f"Arquivo maior que {LIMITE_ENVIO_DIRETO_MB} MB, o teto por arquivo do Supabase no plano gratuito. "
+            "Use a aba Comprimir Arquivos ou divida o PDF.",
+        )
+    caminho = f"{PREFIXO_ENVIO}/{secrets.token_hex(16)}/{nome}"
+    return {
+        "caminho": caminho,
+        "url": await url_envio_assinada(caminho),
+        "nome": nome,
+        "renomeado": nome != original,
+    }
+
+
+@app.post("/api/upload/confirmar")
+async def upload_confirmar(req: EnvioConfirmarReq, _: None = Depends(exigir_admin)):
+    # O caminho vem do cliente: só aceita o formato que /api/upload/url gera,
+    # para a rota não virar um jeito de ler ou apagar outros objetos do bucket.
+    if not _CAMINHO_ENVIO.match(req.caminho):
+        raise HTTPException(400, "Caminho de envio inválido.")
+    nome = req.caminho.rsplit("/", 1)[1]
+
+    try:
+        data = await baixar_documento_storage(req.caminho)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code in (400, 404):
+            raise HTTPException(404, "O arquivo não chegou ao Storage. Envie de novo.") from e
+        raise
+    if not data:
+        await remover_documento_storage(req.caminho)
+        raise HTTPException(400, "Arquivo vazio.")
+
+    envio = _Envio(await listar_arquivos_storage())
+    await _gravar_documento(envio, nome, data, req.forcar)  # um 409 mantém o provisório
+    await remover_documento_storage(req.caminho)
+    return envio.resposta()
 
 
 @app.get("/api/duplicatas")

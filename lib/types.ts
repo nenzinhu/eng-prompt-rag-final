@@ -14,6 +14,8 @@ export interface ConfigResp {
   max_upload_mb: number
   /** Por que o teto de upload é esse (ex.: limite da plataforma na Vercel). */
   limite_upload_motivo?: string
+  /** Teto do envio direto ao Storage, usado acima de `max_upload_mb`. */
+  envio_direto_mb?: number
 }
 
 export interface ProviderInfo {
@@ -189,6 +191,14 @@ export interface UploadResp {
   ignorados?: UploadIgnorado[]
   /** Nomes trocados porque o Storage não aceita acento nem símbolo. */
   renomeados?: { de: string; para: string }[]
+}
+
+/** URL assinada para o navegador enviar um arquivo grande direto ao Storage. */
+export interface EnvioUrlResp {
+  caminho: string
+  url: string
+  nome: string
+  renomeado: boolean
 }
 
 // ── Comparação entre modelos ────────────────────────────────────────────────

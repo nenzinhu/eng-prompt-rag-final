@@ -12,6 +12,7 @@ import type {
   IngerirResp,
   PreviaIngestaoResp,
   UploadResp,
+  EnvioUrlResp,
   CompararAlvo,
   CompararResp,
   Evidencia,
@@ -335,4 +336,18 @@ export const api = {
       body: form,
     })
   },
+
+  // Envio direto (arquivos acima do teto da Vercel): pede a URL assinada, manda o
+  // arquivo ao Storage sem passar pelo servidor e depois pede a confirmação.
+  uploadUrl: (nome: string, tamanho: number, token: string) =>
+    postJson<EnvioUrlResp>('/api/upload/url', { nome, tamanho }, token),
+  enviarAoStorage: (url: string, file: File) => {
+    // Mesmo formato do uploadToSignedUrl do supabase-js.
+    const form = new FormData()
+    form.append('cacheControl', '3600')
+    form.append('', file)
+    return pedir<unknown>(url, { method: 'PUT', headers: { 'x-upsert': 'true' }, body: form })
+  },
+  uploadConfirmar: (caminho: string, token: string, forcar = false) =>
+    postJson<UploadResp>('/api/upload/confirmar', { caminho, forcar }, token),
 }

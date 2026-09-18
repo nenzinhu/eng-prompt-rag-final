@@ -149,6 +149,7 @@ ficam em [supabase-backup/migracoes/](supabase-backup/migracoes/).
 - **Administrador:** usuário e senha geram uma sessão assinada válida por 8 h, enviada no header `X-Admin-Token`. Sem `ADMIN_TOKEN` configurado, as rotas de escrita respondem `503`.
 - **CORS:** restrito às origens de `ALLOWED_ORIGINS`.
 - **Upload:** 4 MB na Vercel, porque a plataforma recusa corpos acima de 4,5 MB, e 25 MB rodando localmente. `MAX_UPLOAD_MB` substitui os dois.
+- **Envio direto (arquivos grandes):** acima desse teto, a aba PDFs pede uma URL assinada (`/api/upload/url`), o navegador envia o arquivo direto ao Storage em `_envios/<id>/<nome>` e `/api/upload/confirmar` aplica as mesmas regras do upload comum e grava no nome final. Teto de 50 MB por arquivo (limite do Supabase no plano gratuito). Um envio abandonado no meio pode deixar um provisório em `_envios/`, que não é indexado e pode ser apagado no painel.
 - **Limite de uso da IA:** 20 chamadas por minuto por IP na instância; tetos por IP e global compartilhados no Supabase quando a `service_role` e a migração de 16/09/2026 estão ativas. O IP é gravado como hash (HMAC), nunca em claro.
 - **Tempo:** os timeouts das chamadas de IA são derivados do orçamento de 60 s da função.
 - **Aviso na interface:** o cabeçalho mostra "⚠ escrita insegura" enquanto o backend grava com a chave pública.

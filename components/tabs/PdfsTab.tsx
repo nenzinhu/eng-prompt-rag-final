@@ -6,7 +6,7 @@ import { api, ApiError } from '@/lib/api'
 import { lerTokenAdmin, salvarTokenAdmin, limparTokenAdmin } from '@/lib/admin'
 import { ingerirArquivo, resumirIngestao, type ResultadoIngestao } from '@/lib/ingestao'
 import { nomeParaStorage } from '@/lib/texto'
-import type { PreviaIngestaoResp } from '@/lib/types'
+import type { PreviaIngestaoResp, UploadResp } from '@/lib/types'
 import AdminToken from '../AdminToken'
 
 interface LogEntry {
@@ -44,6 +44,11 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
   const [valido, setValido] = useState(false)
   const [maxMb, setMaxMb] = useState(25)
   const [motivoLimite, setMotivoLimite] = useState('')
+  // Acima de maxMb (teto da Vercel), o arquivo vai direto ao Storage até este teto.
+  const [envioDiretoMb, setEnvioDiretoMb] = useState(0)
+  // Envio direto já feito e ainda não confirmado (ex.: bloqueado por 409): o
+  // "confirmar mesmo assim" reaproveita o arquivo provisório em vez de reenviar.
+  const provisorios = useRef(new Map<string, string>())
   const [extensoes, setExtensoes] = useState<string[]>(['.pdf'])
 
   // Resultado da prévia: a reindexação só roda depois de o usuário ver os números.
@@ -57,6 +62,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
       .then((c) => {
         setMaxMb(c.max_upload_mb)
         setMotivoLimite(c.limite_upload_motivo ?? '')
+        setEnvioDiretoMb(c.envio_direto_mb ?? 0)
         setExtensoes(c.extensoes)
       })
       .catch(() => undefined)
@@ -74,6 +80,9 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
     }
   }, [])
 
+  // Teto efetivo por arquivo: o envio direto, quando o servidor oferece.
+  const tetoMb = Math.max(maxMb, envioDiretoMb)
+
   function addFiles(files: File[]) {
     const aceitos: File[] = []
     const recusas: string[] = []
@@ -84,10 +93,12 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
       }
       // Recusar aqui, e não no servidor: acima do teto a requisição nem chega ao
       // código (a plataforma corta antes), e o erro que voltava não dizia nada.
-      if (f.size > maxMb * 1024 * 1024) {
+      if (f.size > tetoMb * 1024 * 1024) {
         const tamanho = (f.size / 1024 / 1024).toFixed(1)
         recusas.push(
-          `⛔ ${f.name}: ${tamanho} MB — o limite é ${maxMb} MB por arquivo. ${motivoLimite}`,
+          envioDiretoMb > maxMb
+            ? `⛔ ${f.name}: ${tamanho} MB — o limite é ${tetoMb} MB por arquivo (teto do Supabase). Comprima ou divida o PDF.`
+            : `⛔ ${f.name}: ${tamanho} MB — o limite é ${maxMb} MB por arquivo. ${motivoLimite}`,
         )
         continue
       }
@@ -202,6 +213,31 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
   }
 
   /**
+   * Envio direto ao Storage, para arquivos acima do teto da Vercel. O servidor
+   * só recebe o caminho e aplica as mesmas regras do upload comum.
+   */
+  async function enviarDireto(f: File, forcar: boolean): Promise<UploadResp> {
+    let caminho = provisorios.current.get(f.name)
+    if (!caminho) {
+      logLine('info', `⬆ ${f.name}: ${(f.size / 1024 / 1024).toFixed(1)} MB — enviando direto ao Storage…`)
+      const u = await api.uploadUrl(f.name, f.size, token)
+      await api.enviarAoStorage(u.url, f)
+      caminho = u.caminho
+      provisorios.current.set(f.name, caminho)
+    }
+    try {
+      const d = await api.uploadConfirmar(caminho, token, forcar)
+      provisorios.current.delete(f.name)
+      const nome = nomeParaStorage(f.name)
+      return nome === f.name ? d : { ...d, renomeados: [{ de: f.name, para: nome }] }
+    } catch (e) {
+      // 404: o provisório sumiu; na próxima tentativa o arquivo é enviado de novo.
+      if (e instanceof ApiError && e.status === 404) provisorios.current.delete(f.name)
+      throw e
+    }
+  }
+
+  /**
    * Envia um arquivo por requisição. Antes, todos iam juntos: um bloqueio no
    * meio deixava os anteriores no Storage sem indexar. `forcarArquivo` libera
    * só o arquivo que o usuário confirmou, nunca os outros da fila.
@@ -219,7 +255,8 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
         const f = pending[i]
         const forcar = f.name === forcarArquivo
         try {
-          const d = await api.upload([f], token, forcar)
+          const d =
+            f.size > maxMb * 1024 * 1024 ? await enviarDireto(f, forcar) : await api.upload([f], token, forcar)
           for (const r of d.renomeados ?? []) logLine('info', `✎ ${r.de}: salvo como "${r.para}" (o Storage não aceita acento nem símbolo no nome)`)
           for (const nome of d.salvos) logLine('ok', `✓ ${nome}: novo arquivo salvo no Storage`)
           for (const s of d.substituidos ?? []) {
@@ -298,12 +335,19 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
             <p className="text-[0.85rem] text-muted">
               <strong className="font-medium text-text">Arraste arquivos ou clique para selecionar</strong>
               <br />
-              {extensoes.join(' · ')} (até {maxMb} MB cada) vão para o Supabase Storage e são indexados
+              {extensoes.join(' · ')} (até {tetoMb} MB cada) vão para o Supabase Storage e são indexados
               <br />
               <span className="text-[0.78rem]">
                 Arquivo repetido é ignorado; mesmo conteúdo com nome diferente substitui o anterior.
               </span>
-              {motivoLimite && (
+              {envioDiretoMb > maxMb ? (
+                <>
+                  <br />
+                  <span className="text-[0.75rem] text-muted">
+                    Acima de {maxMb} MB o arquivo vai direto do navegador ao Storage.
+                  </span>
+                </>
+              ) : motivoLimite && (
                 <>
                   <br />
                   <span className="text-[0.75rem] text-amber-300/90">Limite de {maxMb} MB porque {motivoLimite}.</span>
