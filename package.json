@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test:js": "node --experimental-strip-types --import ./tests-js/registrar.mjs --test tests-js/predictor.test.ts tests-js/pdf.test.ts tests-js/dimensoes.test.ts tests-js/api-stream.test.ts tests-js/ingestao.test.ts tests-js/nome-arquivo.test.ts",
+    "test:js": "node --experimental-strip-types --import ./tests-js/registrar.mjs --test tests-js/predictor.test.ts tests-js/pdf.test.ts tests-js/dimensoes.test.ts tests-js/api-stream.test.ts tests-js/ingestao.test.ts tests-js/nome-arquivo.test.ts tests-js/conta.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

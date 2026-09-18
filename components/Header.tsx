@@ -6,6 +6,7 @@ import { TriangleAlert } from 'lucide-react'
 import { api } from '@/lib/api'
 import { prefersReducedMotion } from '@/lib/reducedMotion'
 import InstalarApp from './InstalarApp'
+import Conta from './Conta'
 
 export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'offline'>('loading')
@@ -157,6 +158,7 @@ export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }
       </div>
       <div className="flex items-center gap-2">
         <InstalarApp />
+        <Conta />
         {inseguro && (
           <div
             className="hidden items-center gap-1.5 rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-1 font-mono text-[0.68rem] font-medium text-amber-300 sm:flex"

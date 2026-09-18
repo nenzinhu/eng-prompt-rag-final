@@ -3,7 +3,19 @@
 Registro de trabalho para retomar sem reler a conversa. O estado geral do projeto está em
 [PROJECT.md](PROJECT.md); a análise completa em `.analise-4-agentes/2026-09-17_0817/RELATORIO.md`.
 
-## Feito nesta sessão
+## Feito nesta sessão (18/09, noite)
+
+- **Criar conta (opcional)** — e-mail e senha pelo Supabase Auth, só para identificar o
+  aluno; nenhuma rota exige login. O navegador fala direto com o Supabase Auth; o backend
+  só expõe `auth_url` e `auth_chave` (anon) em `/api/config`. Arquivos: `lib/conta.ts`,
+  `components/Conta.tsx` (botão no `Header`), testes em `tests-js/conta.test.ts` e
+  `tests/test_envio_direto.py`. Fluxos: entrar, criar conta (com confirmação por e-mail),
+  reenviar confirmação, esqueci a senha, trocar senha, sair.
+- **Pendente no painel do Supabase** (Authentication → URL Configuration): Site URL =
+  produção e Redirect URLs com a produção e `http://localhost:3000`. O SMTP padrão manda
+  poucos e-mails por hora — configurar SMTP próprio antes de divulgar.
+
+## Feito na sessão anterior
 
 - **Embeddings com erro 546 (`WORKER_RESOURCE_LIMIT`)** — a ingestão de
   `EMPREENDEDORISMO_ INOVACAO E TECNOLOGIA.pdf` falhava porque a Edge Function

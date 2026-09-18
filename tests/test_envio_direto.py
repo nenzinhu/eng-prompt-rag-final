@@ -160,3 +160,19 @@ def test_confirmar_sem_arquivo_no_storage_da_404(storage):
 def test_config_anuncia_envio_direto():
     corpo = TestClient(index.app).get("/api/config").json()
     assert corpo["envio_direto_mb"] == index.LIMITE_ENVIO_DIRETO_MB
+
+
+def test_config_anuncia_auth_so_com_chave_publica(monkeypatch):
+    monkeypatch.setattr(index, "SUPABASE_URL", "https://ref.supabase.co")
+    monkeypatch.setattr(index, "SUPABASE_ANON_KEY", "chave-publica")
+    monkeypatch.setattr(index, "SUPABASE_SERVICE_ROLE_KEY", "segredo-de-servico")
+    corpo = TestClient(index.app).get("/api/config").json()
+    assert corpo["auth_url"] == "https://ref.supabase.co/auth/v1"
+    assert corpo["auth_chave"] == "chave-publica"
+    assert "segredo-de-servico" not in str(corpo)
+
+
+def test_config_sem_supabase_desliga_contas(monkeypatch):
+    monkeypatch.setattr(index, "SUPABASE_URL", "")
+    corpo = TestClient(index.app).get("/api/config").json()
+    assert corpo["auth_url"] is None

@@ -801,6 +801,10 @@ def config_publica():
         "limite_upload_motivo": motivo_limite_upload(),
         # Arquivos maiores que max_upload_mb (e até este teto) vão pelo envio direto.
         "envio_direto_mb": LIMITE_ENVIO_DIRETO_MB,
+        # Contas de aluno (opcionais): o navegador fala direto com o Supabase Auth.
+        # A chave anon é pública por definição; nunca expor a service_role aqui.
+        "auth_url": f"{SUPABASE_URL}/auth/v1" if SUPABASE_URL and SUPABASE_ANON_KEY else None,
+        "auth_chave": SUPABASE_ANON_KEY or None,
     }
 
 

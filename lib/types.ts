@@ -16,6 +16,10 @@ export interface ConfigResp {
   limite_upload_motivo?: string
   /** Teto do envio direto ao Storage, usado acima de `max_upload_mb`. */
   envio_direto_mb?: number
+  /** Endereço do Supabase Auth; `null` quando o servidor não tem Supabase configurado. */
+  auth_url?: string | null
+  /** Chave pública (anon) exigida pelo Supabase Auth. */
+  auth_chave?: string | null
 }
 
 export interface ProviderInfo {
