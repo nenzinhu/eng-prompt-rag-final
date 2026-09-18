@@ -113,7 +113,11 @@ commit;
 
 -- ============================================================================
 -- Verificação depois de aplicar (esperado):
---   DELETE /ementas_chunks com a chave anon   → 401/403 (antes: 204)
+--   ATENÇÃO (análise de 17/09/2026, A1-20): o DELETE com a anon pode responder
+--   204 sem apagar nada, porque o RLS filtra as linhas em silêncio. O status não
+--   prova o efeito: confira pelas consultas de leitura do fim de
+--   recriar-banco.sql, ou contando as linhas antes e depois.
+--   DELETE /ementas_chunks com a chave anon   → 401/403, ou 204 SEM mudar a contagem
 --   INSERT /glossario_termos com a chave anon → 401/403 (antes: passava)
 --   GET    /ementas_chunks com a chave anon   → 200 (leitura segue pública)
 --   /api/status, /api/perguntar e /api/pdfs continuam funcionando.

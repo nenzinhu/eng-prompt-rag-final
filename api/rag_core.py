@@ -120,22 +120,64 @@ def chunk_texto(
 
 # ── Questões de múltipla escolha ────────────────────────────────────────────
 
-_RE_ALTERNATIVA = re.compile(r"(?:^|\n)\s*([A-Ea-e])\s*[).\-]\s*(.+?)(?=(?:\n\s*[A-Ea-e]\s*[).\-])|\Z)", re.DOTALL)
-_RE_INICIO_ALTERNATIVA = re.compile(r"\n?\s*[A-Ea-e]\s*[).\-]")
+# Marcador de alternativa no início da linha: "A)", "a.", "(A)", "A - texto".
+# O hífen só conta seguido de espaço, senão "E-commerce" viraria a alternativa E.
+_RE_MARCADOR = re.compile(r"(?m)^[ \t]*\(?([A-Ea-e])[ \t]*(?:[).]|-(?=[ \t]))")
+
+
+def _listas_de_alternativas(texto: str) -> list[list[re.Match]]:
+    """Sequências de marcadores A, B, C… em ordem, com pelo menos duas letras.
+
+    A versão anterior tomava o primeiro "a." ou "e-" de qualquer ponto como
+    início das alternativas e cortava o enunciado ali ("Sobre a Inteligência
+    Artificial (I"; "Uma empresa usa" de "e-mail"). Marcadores fora de ordem
+    ("E. coli", "A. Smith" no meio do texto) não formam lista e ficam como
+    conteúdo. Maiúsculas e minúsculas não se misturam na mesma lista, para que
+    afirmativas "a) b)" no enunciado não se colem às alternativas "C) D)".
+    """
+    marcadores = list(_RE_MARCADOR.finditer(texto))
+    listas: list[list[re.Match]] = []
+    for i, marcador in enumerate(marcadores):
+        if marcador.group(1) not in "Aa":
+            continue
+        lista = [marcador]
+        for seguinte in marcadores[i + 1 :]:
+            if seguinte.group(1) == marcador.group(1):
+                break  # outro "A": começa outra lista (ou "A. Smith" era só texto)
+            if seguinte.group(1) == chr(ord(lista[-1].group(1)) + 1):
+                lista.append(seguinte)
+        if len(lista) >= 2:
+            listas.append(lista)
+    return listas
 
 
 def extrair_alternativas(texto: str) -> tuple[str, dict[str, str]]:
     """Separa o enunciado das alternativas de uma questão colada.
 
-    Devolve `(enunciado, {"A": "texto", ...})`. O dicionário vem vazio quando
-    nenhuma alternativa é reconhecida — quem chama decide o que fazer.
+    Usa a ÚLTIMA lista de alternativas em ordem: tudo antes dela é enunciado,
+    inclusive afirmativas "a) b)" e linhas como "E. coli". Devolve
+    `(enunciado, {"A": "texto", ...})`. O dicionário vem vazio quando nenhuma
+    lista é reconhecida — quem chama decide o que fazer.
     """
     texto = texto or ""
-    achadas = _RE_ALTERNATIVA.findall(texto)
-    alternativas = {letra.upper(): conteudo.strip() for letra, conteudo in achadas}
-    inicio = _RE_INICIO_ALTERNATIVA.search(texto)
-    enunciado = texto[: inicio.start()].strip() if inicio else texto.strip()
+    listas = _listas_de_alternativas(texto)
+    if not listas:
+        return texto.strip(), {}
+    lista = listas[-1]
+    # O "(" que sobra de "(A)" depois da formatação do navegador é descartado.
+    enunciado = texto[: lista[0].start()].strip().rstrip("(").strip()
+    alternativas: dict[str, str] = {}
+    for atual, seguinte in zip(lista, [*lista[1:], None]):
+        fim = seguinte.start() if seguinte else len(texto)
+        alternativas[atual.group(1).upper()] = texto[atual.end() : fim].strip().rstrip("(").strip()
     return enunciado, alternativas
+
+
+def varias_listas_de_alternativas(texto: str) -> bool:
+    """Verdadeiro quando o texto tem mais de uma lista A, B, C… — duas questões
+    coladas juntas, ou afirmativas "a) b)" no enunciado. `extrair_alternativas`
+    usa a última; a interface avisa para o aluno conferir o enunciado usado."""
+    return len(_listas_de_alternativas(texto or "")) > 1
 
 
 def formatar_alternativas(alternativas: dict[str, str]) -> str:
@@ -212,15 +254,18 @@ def quebrar_frases(texto: str, tamanho_minimo: int = 40) -> list[str]:
     return frases
 
 
+def _sem_acento(texto: str) -> str:
+    t = unicodedata.normalize("NFKD", (texto or "").lower())
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
 def _nucleo_palavras(texto: str) -> set[str]:
     """Conjunto de palavras significativas (>=4 letras), sem acento nem stopwords.
 
     Usado para conferir se uma frase realmente aparece no chunk que ela casou.
     Palavras curtas e stopwords não distinguem conteúdo, então ficam de fora.
     """
-    t = unicodedata.normalize("NFKD", (texto or "").lower())
-    t = "".join(c for c in t if not unicodedata.combining(c))
-    return {p for p in re.findall(r"[a-z0-9]{4,}", t) if p not in STOPWORDS}
+    return {p for p in re.findall(r"[a-z0-9]{4,}", _sem_acento(texto)) if p not in STOPWORDS}
 
 
 def frase_tem_apoio_textual(frase: str, chunks: list[dict]) -> str:
@@ -241,7 +286,10 @@ def frase_tem_apoio_textual(frase: str, chunks: list[dict]) -> str:
         return "total"  # frase curta demais para conferir — não acusa sem prova
     melhor = 0
     for c in chunks:
-        texto_chunk = (c.get("content") or "").lower()
+        # Os dois lados sem acento: antes só a frase era normalizada, e
+        # "inovacao" nunca batia com "inovação" do material — frases copiadas
+        # da apostila eram acusadas de invenção (análise de 17/09/2026, A1-09).
+        texto_chunk = _sem_acento(c.get("content") or "")
         melhor = max(melhor, sum(1 for p in palavras if p in texto_chunk))
     fracao = melhor / len(palavras)
     if fracao >= 0.5:
@@ -348,6 +396,18 @@ def normalizar_numero(tok: str) -> str:
     else:
         t = t.replace(",", ".")
     return t
+
+
+# Citações de fonte/página: "[Fonte: a.pdf, página 3]", "(pág. 12)", "página 7".
+# Dois modelos que citam páginas diferentes do mesmo trecho não discordam.
+_RE_CITACAO = re.compile(
+    r"\[[^\]]*\b(?:fonte|p[aá]g)[^\]]*\]|\(\s*p[aá]g(?:ina)?s?\.?\s*[\d\s,e-]+\)|\bp[aá]g(?:ina)?s?\.?\s*\d+",
+    re.IGNORECASE,
+)
+
+
+def _sem_citacoes(texto: str) -> str:
+    return _RE_CITACAO.sub(" ", texto or "")
 
 
 def extrair_numeros(texto: str) -> set[str]:
@@ -465,7 +525,7 @@ def calcular_concordancia(diretas: dict[str, str]) -> dict:
     pontuavam MAIS que respostas concordantes, porque falar do mesmo assunto já
     compartilha vocabulário.
     """
-    numeros_por_modelo = {rot: extrair_numeros(d) for rot, d in diretas.items()}
+    numeros_por_modelo = {rot: extrair_numeros(_sem_citacoes(d)) for rot, d in diretas.items()}
     nomes_por_modelo = {rot: extrair_nomes(d) for rot, d in diretas.items()}
 
     numeros_comuns, numeros_exclusivos = dividir_fatos(numeros_por_modelo)
@@ -480,7 +540,10 @@ def calcular_concordancia(diretas: dict[str, str]) -> dict:
     similaridade = round(sum(similaridades) / len(similaridades), 3) if similaridades else 0.0
 
     # Divergência de número na conclusão = conflito concreto (26 mi vs 460 mil).
-    divergencia_numerica = len(diretas) >= 2 and bool(numeros_exclusivos)
+    # Só conta quando dois ou mais modelos citam números: "5" contra "cinco"
+    # (um escreveu por extenso) não é conflito (análise de 17/09/2026, A1-10).
+    com_numeros = sum(1 for ns in numeros_por_modelo.values() if ns)
+    divergencia_numerica = com_numeros >= 2 and bool(numeros_exclusivos)
 
     if len(diretas) < 2:
         nivel = "indefinida"

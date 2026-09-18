@@ -59,23 +59,67 @@ test('junta linhas cortadas ao meio entre pedaços', async () => {
   assert.deepEqual(parciais, ['Olá, ', 'Olá, mundo ✓'])
 })
 
-test('evento de erro no meio do stream vira ApiError', async () => {
+test('evento de erro antes de qualquer texto vira ApiError', async () => {
   responderEmPedacos([
     JSON.stringify(META) + '\n',
     JSON.stringify({ tipo: 'erro', mensagem: 'provedor caiu' }) + '\n',
   ])
   await assert.rejects(
     api.perguntarStream('p', 'groq', 'm', 'padrao', () => {}, () => {}),
-    (e: unknown) => e instanceof ApiError && e.message === 'provedor caiu',
+    (e: unknown) => e instanceof ApiError && e.message.startsWith('provedor caiu'),
   )
+})
+
+test('erro no meio do texto preserva o parcial e marca como interrompida', async () => {
+  responderEmPedacos([
+    JSON.stringify(META) + '\n',
+    JSON.stringify({ tipo: 'texto', t: 'metade' }) + '\n',
+    JSON.stringify({ tipo: 'erro', mensagem: 'provedor caiu' }) + '\n',
+  ])
+  const r = await api.perguntarStream('p', 'groq', 'm', 'padrao', () => {}, () => {})
+  assert.equal(r.resposta, 'metade')
+  assert.equal(r.interrompida, 'provedor caiu')
 })
 
 test('conexão encerrada sem "fim" não passa por resposta completa', async () => {
   responderEmPedacos([JSON.stringify(META) + '\n', JSON.stringify({ tipo: 'texto', t: 'metade' }) + '\n'])
-  await assert.rejects(
-    api.perguntarStream('p', 'groq', 'm', 'padrao', () => {}, () => {}),
-    /conexão caiu/,
-  )
+  const r = await api.perguntarStream('p', 'groq', 'm', 'padrao', () => {}, () => {})
+  assert.equal(r.resposta, 'metade')
+  assert.match(r.interrompida ?? '', /conexão caiu/)
+})
+
+test('linha cortada no fim não vira SyntaxError', async () => {
+  responderEmPedacos([
+    JSON.stringify(META) + '\n',
+    JSON.stringify({ tipo: 'texto', t: 'metade' }) + '\n',
+    '{"tipo":"te',
+  ])
+  const r = await api.perguntarStream('p', 'groq', 'm', 'padrao', () => {}, () => {})
+  assert.equal(r.resposta, 'metade')
+  assert.match(r.interrompida ?? '', /conexão caiu/)
+})
+
+test('resposta completa não é marcada como interrompida', async () => {
+  responderEmPedacos([
+    JSON.stringify(META) + '\n',
+    JSON.stringify({ tipo: 'texto', t: 'inteira' }) + '\n',
+    JSON.stringify({ tipo: 'fim' }) + '\n',
+  ])
+  const r = await api.perguntarStream('p', 'groq', 'm', 'padrao', () => {}, () => {})
+  assert.equal(r.interrompida, undefined)
+})
+
+test('bloco <think> não aparece na resposta, nem enquanto chega', async () => {
+  responderEmPedacos([
+    JSON.stringify(META) + '\n',
+    JSON.stringify({ tipo: 'texto', t: '<think>pensando' }) + '\n',
+    JSON.stringify({ tipo: 'texto', t: ' mais</think>\n\nResposta' }) + '\n',
+    JSON.stringify({ tipo: 'fim' }) + '\n',
+  ])
+  const parciais: string[] = []
+  const r = await api.perguntarStream('p', 'groq', 'm', 'padrao', () => {}, (t) => parciais.push(t))
+  assert.equal(r.resposta, 'Resposta')
+  assert.deepEqual(parciais, ['', 'Resposta'])
 })
 
 test('erro HTTP antes do stream usa o detail do backend', async () => {

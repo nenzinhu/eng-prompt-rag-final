@@ -20,6 +20,28 @@ interface ResultadoLote {
   erro?: string
 }
 
+/** Mostra o enunciado que foi para a busca e para a IA — um corte errado deixa de passar despercebido. */
+function EnunciadoUsado({ resultado }: { resultado: ResolverResp }) {
+  return (
+    <details
+      open={resultado.varias_listas}
+      className="mb-4 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 text-[0.8rem]"
+    >
+      <summary className="cursor-pointer font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+        Enunciado que a IA recebeu
+      </summary>
+      {resultado.varias_listas && (
+        <div className="mt-2 flex items-start gap-1.5 text-amber-300">
+          <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          Encontrei mais de uma lista de alternativas (A, B, C…) e usei a última. Confira se o enunciado abaixo é o
+          da questão certa.
+        </div>
+      )}
+      <p className="mt-2 whitespace-pre-wrap leading-relaxed text-text">{resultado.questao}</p>
+    </details>
+  )
+}
+
 export default function ResolverTab({
   providers,
   onEnviarGlossario,
@@ -232,6 +254,7 @@ export default function ResolverTab({
                   A IA não conseguiu identificar a alternativa correta com confiança.
                 </p>
                 <div className="text-left">
+                  <EnunciadoUsado resultado={resultado} />
                   <Markdown>{resultado.explicacao_rapida || resultado.explicacao}</Markdown>
                 </div>
               </div>
@@ -243,6 +266,7 @@ export default function ResolverTab({
                 </div>
                 <div className="p-5">
                   {resultado.pouco_embasado && <WarnBanner confianca={resultado.confianca_media} />}
+                  <EnunciadoUsado resultado={resultado} />
                   <div className="mb-4 flex items-start gap-3.5 rounded-xl border border-cyan/25 bg-cyan/[0.06] p-4">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet to-cyan font-mono text-lg font-bold text-[#08070c]">
                       {resultado.resposta}

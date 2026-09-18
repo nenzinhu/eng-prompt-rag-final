@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import re
 import unicodedata
+from pathlib import Path
 
 from docx import Document as DocxDocument
 from pptx import Presentation
@@ -101,6 +102,30 @@ def _markdown_para_docx(texto: str, titulo: str) -> bytes:
     return buf.getvalue()
 
 
+# Fonte Unicode para o PDF. A Helvetica embutida no fpdf2 só aceita Latin-1, e
+# o PDF quebrava (erro 500, depois de pagar a chamada de IA) com travessão,
+# aspas curvas e "•", que os modelos usam o tempo todo (análise de 17/09/2026).
+PASTA_FONTES = Path(__file__).resolve().parent / "fonts"
+FONTE_PDF = PASTA_FONTES / "DejaVuSans.ttf"
+FONTE_PDF_NEGRITO = PASTA_FONTES / "DejaVuSans-Bold.ttf"
+
+# Plano B, sem a fonte: equivalentes em Latin-1 para os caracteres mais comuns.
+# O que sobrar fora do Latin-1 (emoji, por exemplo) vira "?" em vez de erro.
+_TROCAS_LATIN1 = str.maketrans({
+    "—": "-", "–": "-", "‒": "-", "‐": "-", "‑": "-", "−": "-",
+    "“": '"', "”": '"', "„": '"', "‘": "'", "’": "'", "‚": "'",
+    "•": "-", "●": "-", "▪": "-", "…": "...",
+    "→": "->", "←": "<-", "⇒": "=>", "↔": "<->",
+    "≤": "<=", "≥": ">=", "≠": "!=", "≈": "~",
+    "✓": "v", "✔": "v", "✗": "x", "✘": "x",
+    "­": "", "​": "", "‌": "", "‍": "", "﻿": "",
+})
+
+
+def _para_latin1(texto: str) -> str:
+    return texto.translate(_TROCAS_LATIN1).encode("latin-1", "replace").decode("latin-1")
+
+
 def _markdown_para_pdf(texto: str, titulo: str) -> bytes:
     from fpdf import FPDF  # import local: só carregado quando o formato pedido é pdf
 
@@ -108,17 +133,27 @@ def _markdown_para_pdf(texto: str, titulo: str) -> bytes:
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
+    familia, preparar = "Helvetica", _para_latin1
+    if FONTE_PDF.exists() and FONTE_PDF_NEGRITO.exists():
+        try:
+            pdf.add_font("DejaVu", "", str(FONTE_PDF))
+            pdf.add_font("DejaVu", "B", str(FONTE_PDF_NEGRITO))
+            familia, preparar = "DejaVu", str
+        except Exception:  # fonte corrompida: segue com o plano B em vez de falhar
+            pass
+
     def linha_pdf(tamanho: float, altura: float, conteudo: str, negrito: bool = False):
         # new_x="LMARGIN" é necessário: o padrão do fpdf2 deixa o cursor na borda
         # direita após multi_cell, e a chamada seguinte com largura 0 quebra
         # ("Not enough horizontal space") por não sobrar espaço até a margem.
-        pdf.set_font("Helvetica", "B" if negrito else "", tamanho)
-        pdf.multi_cell(0, altura, conteudo, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font(familia, "B" if negrito else "", tamanho)
+        pdf.multi_cell(0, altura, preparar(conteudo), new_x="LMARGIN", new_y="NEXT")
 
     linha_pdf(16, 10, titulo, negrito=True)
     pdf.ln(2)
     for linha in texto.splitlines():
-        linha = linha.strip()
+        # O PDF não interpreta negrito do Markdown; sem isso os "**" saem impressos.
+        linha = linha.replace("**", "").strip()
         if not linha:
             pdf.ln(2)
             continue

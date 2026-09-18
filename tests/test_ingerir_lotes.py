@@ -96,6 +96,71 @@ def test_documento_de_um_lote_troca_no_mesmo_pedido(monkeypatch):
     assert chamadas["apagou"] == [(500, 5)]
 
 
+def _banco_simulado(monkeypatch, *, antigos: int, chunks: int, falhar_apagar_uma_vez=False):
+    """Índice em memória com ids crescentes, para ver o estado final de verdade."""
+    banco = {"ids": list(range(1, antigos + 1)), "proximo": antigos + 1, "falhou": False}
+    montar(monkeypatch, analises=[], chunks=[{}] * chunks)
+
+    async def _inserir(rows):
+        for _ in rows:
+            banco["ids"].append(banco["proximo"])
+            banco["proximo"] += 1
+
+    async def _maior_id(_nome):
+        return max(banco["ids"], default=0)
+
+    async def _apagar_ate(_nome, corte):
+        if falhar_apagar_uma_vez and not banco["falhou"]:
+            banco["falhou"] = True
+            raise RuntimeError("Supabase fora do ar")
+        banco["ids"] = [i for i in banco["ids"] if i > corte]
+
+    async def _apagar_acima(_nome, piso):
+        banco["ids"] = [i for i in banco["ids"] if i <= piso]
+
+    monkeypatch.setattr(index, "inserir_chunks", _inserir)
+    monkeypatch.setattr(index, "maior_id_da_fonte", _maior_id)
+    monkeypatch.setattr(index, "apagar_chunks_ate_id", _apagar_ate)
+    monkeypatch.setattr(index, "apagar_chunks_acima_de_id", _apagar_acima)
+    return banco
+
+
+def _lote(offset, corte=None, ultimo=None):
+    req = index.IngerirReq(arquivo="doc.pdf", offset=offset, corte_id=corte, ultimo_id=ultimo)
+    return asyncio.run(index.ingerir(req))
+
+
+def test_retentativa_do_ultimo_lote_nao_duplica(monkeypatch):
+    """Análise de 17/09/2026 (A1-06): o último lote inseria, o apagar falhava, e a
+    retentativa inseria o lote de novo — 52 chunks onde deviam ser 50."""
+    banco = _banco_simulado(monkeypatch, antigos=10, chunks=50, falhar_apagar_uma_vez=True)
+    r1 = _lote(0)
+    r2 = _lote(24, r1["corte_id"], r1["ultimo_id"])
+    with pytest.raises(RuntimeError):
+        _lote(48, r1["corte_id"], r2["ultimo_id"])
+    r3 = _lote(48, r1["corte_id"], r2["ultimo_id"])  # mesma tentativa, repetida
+    assert r3["done"] is True
+    assert len(banco["ids"]) == 50, "só os 50 chunks novos, sem duplicata e sem os antigos"
+    assert min(banco["ids"]) > 10
+
+
+def test_retentativa_de_lote_do_meio_nao_duplica(monkeypatch):
+    banco = _banco_simulado(monkeypatch, antigos=10, chunks=50)
+    r1 = _lote(0)
+    _lote(24, r1["corte_id"], r1["ultimo_id"])  # inseriu, mas a resposta "se perdeu"
+    r2 = _lote(24, r1["corte_id"], r1["ultimo_id"])
+    _lote(48, r1["corte_id"], r2["ultimo_id"])
+    assert len(banco["ids"]) == 50
+
+
+def test_limpeza_nunca_toca_nos_chunks_antigos(monkeypatch):
+    """Um ultimo_id errado (abaixo do corte) não pode apagar o índice antigo."""
+    banco = _banco_simulado(monkeypatch, antigos=10, chunks=50)
+    r1 = _lote(0)
+    _lote(24, r1["corte_id"], ultimo=0)
+    assert set(range(1, 11)) <= set(banco["ids"])
+
+
 def test_medir_indice_falha_fechada(monkeypatch):
     """Erro do banco ao medir não pode virar 'nada indexado' e liberar a troca."""
     import httpx

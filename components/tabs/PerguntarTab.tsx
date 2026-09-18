@@ -89,8 +89,9 @@ export default function PerguntarTab({
         (acumulado) => setResultado((r) => (r ? { ...r, resposta: acumulado } : r)),
       )
       setResultado(d)
-      // Dispara a auditoria frase por frase automaticamente, se ligada.
-      if (auditarAuto && d.resposta) {
+      // Dispara a auditoria frase por frase automaticamente, se ligada. Resposta
+      // interrompida não é auditada sozinha: gastaria cota verificando meio texto.
+      if (auditarAuto && d.resposta && !d.interrompida) {
         void auditar(d.resposta)
       }
     } catch (e) {
@@ -169,6 +170,7 @@ export default function PerguntarTab({
       '',
       resultado.resposta,
       '',
+      ...(resultado.interrompida ? [`> ⚠ Resposta incompleta: ${resultado.interrompida}`, ''] : []),
       `# Fontes`,
       '',
       ...resultado.contexto.map(
@@ -259,6 +261,19 @@ export default function PerguntarTab({
               <div className="mb-4">
                 <Markdown>{resultado.resposta}</Markdown>
               </div>
+
+              {resultado.interrompida && (
+                <div
+                  role="alert"
+                  className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.8rem] text-amber-300"
+                >
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>
+                    <strong className="font-semibold">Resposta incompleta:</strong> a IA parou no meio (
+                    {resultado.interrompida}). O texto acima está cortado — pergunte de novo ou troque de modelo.
+                  </span>
+                </div>
+              )}
 
               {recebendo && (
                 <div className="mb-4 flex items-center gap-2 text-[0.75rem] text-muted" aria-live="polite">

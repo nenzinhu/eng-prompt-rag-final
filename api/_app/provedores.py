@@ -22,6 +22,12 @@ from .http_util import TIMEOUT_LLM, _http
 # Regras da ordenação: entre gratuitos primeiro (o aluno não deve gastar nada por
 # padrão) e, dentro de cada grupo, do mais rápido para o mais lento. Modelos que
 # responderam erro foram removidos, com a medição anotada.
+#
+# `notas` aparece ao lado do modelo no dropdown: quem escolhe precisa saber o
+# que é pago e o que é lento (análise de 17/09/2026, A3-25 e A2-65: 4 modelos
+# pagos do Nous estavam sem marcação). `aviso` aparece abaixo do seletor quando
+# o provedor está escolhido. Preços do catálogo do Nous em 17/09/2026, em US$
+# por 1 milhão de tokens de saída.
 PROVIDERS = {
     "groq": {
         "label": "Groq",
@@ -62,6 +68,16 @@ PROVIDERS = {
             "openai/gpt-oss-120b",
             "deepseek/deepseek-v4-flash-0731",
         ],
+        "notas": {
+            "meituan/longcat-2.0:free": "lento, ~17 s",
+            "meta-llama/llama-3.1-8b-instruct": "pago, ~$0,04/1M",
+            "amazon/nova-micro-v1": "pago, ~$0,14/1M",
+            "mistralai/mistral-nemo": "pago, ~$0,03/1M",
+            "openai/gpt-oss-20b": "pago, ~$0,10/1M",
+            "qwen/qwen3.7-flash": "pago, ~$0,13/1M",
+            "openai/gpt-oss-120b": "pago, ~$0,17/1M",
+            "deepseek/deepseek-v4-flash-0731": "pago, ~$0,10/1M",
+        },
     },
     "nvidia": {
         "label": "NVIDIA NIM",
@@ -69,7 +85,8 @@ PROVIDERS = {
         "env_key": "NVIDIA_API_KEY",
         "models": [
             "nvidia/nemotron-3-super-120b-a12b",        # 4,8 s
-            "nvidia/nemotron-3.5-lightning-30b-a3b",    # 47,7 s — lento demais para o glossário
+            # nemotron-3.5-lightning-30b-a3b removido em 17/09/2026: 47,7 s numa
+            # pergunta trivial, não cabe no orçamento de ~52 s com contexto real.
         ],
     },
     "anyapi": {
@@ -126,8 +143,10 @@ PROVIDERS = {
             "nvidia/nemotron-3-super-120b-a12b:free",
             "poolside/laguna-xs-2.1:free",
             "openrouter/free",
-            "nvidia/nemotron-3.5-lightning:free",  # lento (~90 s)
+            # nvidia/nemotron-3.5-lightning:free removido em 17/09/2026: ~90 s,
+            # passa do tempo máximo da função (60 s).
         ],
+        "aviso": "Conta gratuita: só 50 respostas por dia no total, somando todos os modelos.",
     },
 }
 
@@ -234,8 +253,15 @@ async def chamar_llm_stream(
     Erros ANTES do primeiro pedaço viram HTTPException (a rota ainda pode
     responder com status de erro); sem retentativa aqui, porque parte do texto
     pode já ter chegado ao aluno.
+
+    Também vira HTTPException o que antes passava como resposta completa
+    (análise de 17/09/2026, A1-05): objeto `error` no meio do stream (formato do
+    OpenRouter), `finish_reason` de corte (`length`, `error`, `content_filter`)
+    e stream que termina sem `[DONE]` nem `finish_reason: stop`.
     """
     cfg, api_key, limite = _preparar_chamada(provider, modelo, timeout)
+    inicio = time.monotonic()
+    terminou = False
     try:
         async with _http(httpx.Timeout(limite, connect=10.0)) as client:
             async with client.stream(
@@ -256,23 +282,53 @@ async def chamar_llm_stream(
                     texto = (await r.aread()).decode("utf-8", "replace")
                     raise HTTPException(502, f"Erro do provedor {provider}: {texto[:300]}")
                 async for linha in r.aiter_lines():
+                    # O timeout do httpx vale entre pedaços, não para a resposta
+                    # inteira: um modelo lento e constante passaria do orçamento.
+                    if time.monotonic() - inicio > limite:
+                        raise HTTPException(504, f"O modelo '{modelo}' passou de {round(limite)}s escrevendo.")
                     if not linha.startswith("data:"):
                         continue
                     dado = linha[5:].strip()
                     if dado == "[DONE]":
-                        return
+                        terminou = True
+                        break
                     try:
-                        delta = json.loads(dado)["choices"][0].get("delta") or {}
-                    except (ValueError, KeyError, IndexError):
+                        evento = json.loads(dado)
+                    except ValueError:
                         continue
+                    if not isinstance(evento, dict):
+                        continue
+                    if evento.get("error"):
+                        erro = evento["error"]
+                        detalhe = erro.get("message") if isinstance(erro, dict) else erro
+                        raise HTTPException(502, f"Erro do provedor {provider}: {str(detalhe)[:300]}")
+                    escolhas = evento.get("choices") or [{}]
+                    escolha = escolhas[0] if isinstance(escolhas[0], dict) else {}
+                    delta = escolha.get("delta") or {}
                     if delta.get("content"):
                         yield delta["content"]
+                    motivo = escolha.get("finish_reason")
+                    if motivo == "stop":
+                        terminou = True
+                    elif motivo in _MOTIVOS_DE_CORTE:
+                        raise HTTPException(502, _MOTIVOS_DE_CORTE[motivo])
     except httpx.TimeoutException:
         raise HTTPException(
             504,
             f"O modelo '{modelo}' não respondeu em {round(limite)}s. Tente outro modelo "
             f"ou uma pergunta mais curta.",
         )
+    except httpx.TransportError as e:
+        raise HTTPException(502, f"A conexão com o provedor {provider} caiu: {type(e).__name__}")
+    if not terminou:
+        raise HTTPException(502, f"A conexão com o provedor {provider} caiu antes do fim da resposta.")
+
+
+_MOTIVOS_DE_CORTE = {
+    "length": "O modelo parou no limite de tamanho da resposta.",
+    "error": "O provedor interrompeu a resposta com um erro.",
+    "content_filter": "O filtro de conteúdo do provedor interrompeu a resposta.",
+}
 
 
 def resolver_modelo(provider: str, modelo: Optional[str]) -> str:

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FileText, Upload, Search, X, TriangleAlert } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { lerTokenAdmin, salvarTokenAdmin, limparTokenAdmin } from '@/lib/admin'
+import { ingerirArquivo, resumirIngestao, type ResultadoIngestao } from '@/lib/ingestao'
 import type { PreviaIngestaoResp } from '@/lib/types'
 import AdminToken from '../AdminToken'
 
@@ -14,6 +15,10 @@ interface LogEntry {
 
 /** Corpo do 409 devolvido quando o upload apagaria conteúdo indexado. */
 interface BloqueioUpload {
+  /** Arquivo da fila que foi bloqueado — é só ele que a confirmação libera. */
+  arquivo?: string
+  /** Bloqueio que nenhuma confirmação resolve (ex.: nome de outro documento). */
+  sem_forcar?: boolean
   mensagem?: string
   fonte_afetada?: string
   chunks_existentes?: number
@@ -159,95 +164,95 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
     }
   }
 
-  /** Indexa de fato. `forcar` é obrigatório quando a prévia acusou perda. */
-  async function runIngest(arquivos: string[], forcar = false) {
+  /**
+   * Indexa de fato. `forcar` (todos, ou a lista de nomes) é obrigatório quando a
+   * prévia ou o upload acusaram perda. "Concluído" só aparece se TODOS os
+   * arquivos entraram: bloqueio, falha e extração vazia viram pendência.
+   */
+  async function runIngest(arquivos: string[], forcar: boolean | string[] = false) {
     setIndexing(true)
     try {
-      let totalChunks = 0
+      const resultados: ResultadoIngestao[] = []
       for (const nome of arquivos) {
         logLine('info', `🔄 Indexando "${nome}"…`)
-        let offset = 0
-        let done = false
-        let ultimoTotal = 0
-        let tentativas = 0
-        let corteId: number | undefined
-        while (!done) {
-          try {
-            const d = await api.ingerir(nome, offset, token, forcar && offset === 0, corteId)
-            if (offset === 0) corteId = d.corte_id
-            tentativas = 0
-            offset = d.proximo_offset ?? d.total ?? 0
-            done = !!d.done
-            ultimoTotal = d.total ?? 0
-            if (ultimoTotal > 0) logLine('info', `  … ${offset}/${ultimoTotal} chunks`)
-          } catch (e) {
-            if (e instanceof ApiError && e.status === 409) {
-              // O servidor recusou por risco de perda: exige confirmação explícita.
-              const detalhe = e.detalhe as { mensagem?: string; avisos?: string[] } | undefined
-              logLine('alert', `⛔ ${nome}: ${detalhe?.mensagem ?? 'reindexação bloqueada'}`)
-              for (const a of detalhe?.avisos ?? []) logLine('alert', `   ⚠ ${a}`)
-              setBloqueado(true)
-              done = true
-              break
-            }
-            tentativas++
-            if (tentativas > 5) {
-              logLine('err', `✗ ${nome}: falhou após várias tentativas — o conteúdo antigo continua no índice`)
-              break
-            }
-          }
-        }
-        if (done) {
-          totalChunks += ultimoTotal
-          logLine('ok', `✓ ${nome}: ${ultimoTotal} chunks`)
-        }
+        const forcarEste = forcar === true || (Array.isArray(forcar) && forcar.includes(nome))
+        resultados.push(
+          await ingerirArquivo(nome, forcarEste, {
+            ingerir: (a, offset, f, corte, ultimo) => api.ingerir(a, offset, token, f, corte, ultimo),
+            log: logLine,
+          }),
+        )
       }
-      logLine('ok', `✓ Concluído — ${totalChunks} chunks no total`)
-      setAnalises([])
-      setBloqueado(false)
+      const resumo = resumirIngestao(resultados)
+      if (resumo.concluido) {
+        logLine('ok', `✓ Concluído — ${resumo.totalChunks} chunks no total`)
+      } else {
+        logLine('err', '✗ Terminou com pendências — não está tudo indexado:')
+        for (const p of resumo.pendencias) logLine('err', `   • ${p}`)
+      }
+      // Bloqueados voltam para o painel de confirmação em vez de sumirem.
+      const bloqueados = resultados.flatMap((r) => (r.situacao === 'bloqueado' && r.analise ? [r.analise] : []))
+      setAnalises(bloqueados)
+      setBloqueado(bloqueados.length > 0)
       onStatusChange?.()
-    } catch (e) {
-      logLine('err', `✗ ${e instanceof Error ? e.message : 'Erro de conexão'}`)
     } finally {
       setIndexing(false)
     }
   }
 
-  async function enviar(forcar = false) {
+  /**
+   * Envia um arquivo por requisição. Antes, todos iam juntos: um bloqueio no
+   * meio deixava os anteriores no Storage sem indexar. `forcarArquivo` libera
+   * só o arquivo que o usuário confirmou, nunca os outros da fila.
+   */
+  async function enviar(forcarArquivo?: string) {
     if (!pending.length) return
     setUploading(true)
+    setBloqueioUpload(null)
     logLine('info', `⬆ Enviando ${pending.length} arquivo(s)…`)
+    const mudou: string[] = []
+    const forcados: string[] = []
+    const ficam: File[] = []
     try {
-      const d = await api.upload(pending, token, forcar)
-
-      for (const nome of d.salvos) logLine('ok', `✓ ${nome}: novo arquivo salvo no Storage`)
-      for (const s of d.substituidos ?? []) {
-        logLine(
-          'info',
-          s.arquivo === s.substituiu
-            ? `↻ ${s.arquivo}: versão atualizada substituiu a anterior`
-            : `↻ ${s.arquivo}: mesclado com "${s.substituiu}" (mesmo conteúdo, nome diferente)`,
-        )
+      for (let i = 0; i < pending.length; i++) {
+        const f = pending[i]
+        const forcar = f.name === forcarArquivo
+        try {
+          const d = await api.upload([f], token, forcar)
+          for (const nome of d.salvos) logLine('ok', `✓ ${nome}: novo arquivo salvo no Storage`)
+          for (const s of d.substituidos ?? []) {
+            logLine(
+              'info',
+              s.arquivo === s.substituiu
+                ? `↻ ${s.arquivo}: versão atualizada substituiu a anterior`
+                : `↻ ${s.arquivo}: mesclado com "${s.substituiu}" (mesmo conteúdo, nome diferente)`,
+            )
+          }
+          for (const ig of d.ignorados ?? []) logLine('info', `⏭ ${ig.arquivo}: ignorado — ${ig.motivo}`)
+          const alterados = [...d.salvos, ...(d.substituidos ?? []).map((s) => s.arquivo)]
+          mudou.push(...alterados)
+          if (forcar) forcados.push(...alterados)
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409) {
+            // Para aqui: o bloqueado e os que vêm depois continuam na fila.
+            const detalhe = (e.detalhe as BloqueioUpload | undefined) ?? {}
+            logLine('alert', `⛔ ${f.name}: ${detalhe.mensagem ?? 'upload bloqueado para não perder conteúdo.'}`)
+            for (const a of detalhe.avisos ?? []) logLine('alert', `   ⚠ ${a}`)
+            setBloqueioUpload({ ...detalhe, arquivo: f.name })
+            ficam.push(...pending.slice(i))
+            break
+          }
+          logLine('err', `✗ ${f.name}: ${e instanceof Error ? e.message : 'erro no upload'} — continua na fila`)
+          ficam.push(f)
+        }
       }
-      for (const i of d.ignorados ?? []) logLine('info', `⏭ ${i.arquivo}: ignorado — ${i.motivo}`)
-
-      const mudou = [...d.salvos, ...(d.substituidos ?? []).map((s) => s.arquivo)]
-      setPending([])
-      setBloqueioUpload(null)
-      if (!mudou.length) {
+      setPending(ficam)
+      if (mudou.length) {
+        // O upload confirmado precisa da mesma confirmação na indexação, senão
+        // a ingestão aplica o mesmo critério e bloqueia (análise de 17/09, A1-07).
+        await runIngest(mudou, forcados)
+      } else if (!ficam.length) {
         logLine('info', '⏭ Nada a reindexar — nenhum arquivo mudou.')
-        return
-      }
-      await runIngest(mudou)
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409) {
-        // O arquivo substituiria um documento indexado cobrindo menos texto.
-        const detalhe = e.detalhe as BloqueioUpload | undefined
-        logLine('alert', `⛔ ${detalhe?.mensagem ?? 'Upload bloqueado para não perder conteúdo.'}`)
-        for (const a of detalhe?.avisos ?? []) logLine('alert', `   ⚠ ${a}`)
-        setBloqueioUpload(detalhe ?? {})
-      } else {
-        logLine('err', `✗ ${e instanceof Error ? e.message : 'Erro no upload'}`)
       }
     } finally {
       setUploading(false)
@@ -358,7 +363,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
               <p className="mb-2 text-[0.8rem] leading-relaxed text-muted">
                 {bloqueioUpload.mensagem ?? 'O arquivo enviado substituiria um documento já indexado.'}
               </p>
-              {bloqueioUpload.fonte_afetada && (
+              {bloqueioUpload.fonte_afetada && bloqueioUpload.chunks_existentes !== undefined && (
                 <div className="mb-2 font-mono text-[0.75rem] text-text">
                   {bloqueioUpload.fonte_afetada}: {bloqueioUpload.chunks_existentes} chunks indexados hoje
                   {bloqueioUpload.perda_texto_percentual
@@ -375,16 +380,18 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
                 ))}
               </ul>
               <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() =>
-                    window.confirm(
-                      'Confirmar mesmo assim? Os chunks atuais deste documento serão trocados pelos do arquivo novo.',
-                    ) && enviar(true)
-                  }
-                  className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-4 py-2 text-[0.8rem] font-medium text-rose-300 transition-colors hover:bg-rose-400/20"
-                >
-                  Confirmar substituição de qualquer forma
-                </button>
+                {!bloqueioUpload.sem_forcar && bloqueioUpload.arquivo && (
+                  <button
+                    onClick={() =>
+                      window.confirm(
+                        `Confirmar mesmo assim? Os chunks atuais serão trocados pelos de "${bloqueioUpload.arquivo}". Os outros arquivos da fila continuam passando pela verificação normal.`,
+                      ) && enviar(bloqueioUpload.arquivo)
+                    }
+                    className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-4 py-2 text-[0.8rem] font-medium text-rose-300 transition-colors hover:bg-rose-400/20"
+                  >
+                    Confirmar substituição de qualquer forma
+                  </button>
+                )}
                 <button
                   onClick={() => setBloqueioUpload(null)}
                   className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-[0.8rem] font-medium text-text transition-colors hover:bg-white/[0.06]"

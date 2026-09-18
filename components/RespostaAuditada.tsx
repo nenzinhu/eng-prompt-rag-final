@@ -19,7 +19,7 @@ const NIVEIS: Record<
     borda: 'border-rose-400/30',
     fundo: 'bg-rose-400/[0.07]',
     texto: 'text-rose-100',
-    titulo: 'Não encontrada na apostila — a IA pode ter inventado',
+    titulo: 'Não encontrada no material — pode ser conhecimento geral ou invenção',
   },
 }
 
@@ -56,7 +56,12 @@ export default function RespostaAuditada({
     return (
       <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-2.5 text-[0.8rem] text-emerald-300">
         <CircleCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
-        Todas as frases desta resposta têm apoio no material.
+        <span>
+          Todas as frases desta resposta usam o vocabulário do material.{' '}
+          <span className="text-emerald-300/70">
+            A auditoria confere palavras, não sentido: uma frase que diz o contrário da apostila passa.
+          </span>
+        </span>
       </div>
     )
   }
@@ -72,7 +77,8 @@ export default function RespostaAuditada({
       <div className="mb-1 text-[0.78rem] text-muted">
         <span className="text-emerald-300">verde</span> = na apostila ·{' '}
         <span className="text-amber-300">âmbar</span> = apoio parcial ·{' '}
-        <span className="text-rose-300">vermelho</span> = provável invenção
+        <span className="text-rose-300">vermelho</span> = não encontrada no material. A auditoria confere
+        palavras, não sentido: uma frase que diz o contrário da apostila pode aparecer como apoiada.
       </div>
       {naoApoiadas.map((a, i) => (
         <div key={i} className={`rounded-lg border ${NIVEIS[a.nivel].borda} ${NIVEIS[a.nivel].fundo} p-3`}>

@@ -101,6 +101,7 @@ from rag_core import (  # noqa: E402
     remover_linha_resposta_direta,
     rotulos_unicos,
     separar_exemplos,
+    varias_listas_de_alternativas,
 )
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
@@ -566,6 +567,18 @@ async def apagar_chunks_ate_id(nome: str, corte: int):
     r.raise_for_status()
 
 
+async def apagar_chunks_acima_de_id(nome: str, piso: int):
+    """Apaga os chunks da fonte com id > piso: sobras de um lote que foi inserido
+    mas cuja resposta se perdeu (a nova tentativa inseriria o lote de novo)."""
+    async with _http(_TIMEOUT) as client:
+        r = await client.delete(
+            f"{SUPABASE_URL}/rest/v1/ementas_chunks",
+            headers=_h_escrita(),
+            params={"source": f"eq.{nome}", "id": f"gt.{piso}"},
+        )
+    r.raise_for_status()
+
+
 async def renomear_fonte_chunks(antigo: str, novo: str):
     """Troca o `source` dos chunks numa única requisição — sem apagar nada."""
     async with _http(_TIMEOUT) as client:
@@ -784,6 +797,8 @@ def listar_providers():
         nome: {
             "label": cfg["label"],
             "models": cfg["models"],
+            "notas": cfg.get("notas", {}),
+            "aviso": cfg.get("aviso", ""),
             "configurado": bool(os.environ.get(cfg["env_key"])),
         }
         for nome, cfg in PROVIDERS.items()
@@ -1532,6 +1547,9 @@ async def resolver(req: ResolverReq, request: Request):
 
     return {
         "questao": questao,
+        # Mais de uma lista A, B, C… no texto: foi usada a última. A interface
+        # mostra o enunciado reconhecido para o aluno conferir.
+        "varias_listas": varias_listas_de_alternativas(texto),
         "alternativas": alternativas,
         "resposta": letra,
         "conteudo_resposta": alternativas.get(letra, "") if letra else "",
@@ -1742,6 +1760,8 @@ class IngerirReq(BaseModel):
     forcar: bool = False
     # Maior id dos chunks antigos, devolvido pelo lote 0 (ver `ingerir`).
     corte_id: Optional[int] = None
+    # Maior id da fonte depois do último lote confirmado (ver `ingerir`).
+    ultimo_id: Optional[int] = None
 
 
 async def _risco_de_perda(fonte: str, data: bytes, nome_arquivo: str) -> Optional[dict]:
@@ -1849,6 +1869,14 @@ async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
     # O corte é calculado no lote 0 e o cliente o devolve nos lotes seguintes.
     corte = await maior_id_da_fonte(req.arquivo) if req.offset == 0 else (req.corte_id or 0)
 
+    # Retentativa idempotente (análise de 17/09/2026, A1-06): se o lote anterior
+    # foi inserido mas a resposta se perdeu, repetir o mesmo offset inseria tudo
+    # de novo. O cliente devolve o maior id confirmado (`ultimo_id`); acima dele
+    # só pode haver sobra de tentativa falha, que sai antes de inserir. O piso
+    # nunca fica abaixo do corte, então os chunks antigos não são tocados aqui.
+    if req.offset > 0 and req.ultimo_id is not None:
+        await apagar_chunks_acima_de_id(req.arquivo, max(req.ultimo_id, corte))
+
     fatia = linhas[req.offset : req.offset + LOTE_INGESTAO]
     if fatia:
         embeddings = await gerar_embeddings([l["texto"] for l in fatia])
@@ -1870,6 +1898,7 @@ async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
         "proximo_offset": proximo,
         "done": done,
         "corte_id": corte,
+        "ultimo_id": await maior_id_da_fonte(req.arquivo) if not done else None,
     }
 
 
@@ -1921,9 +1950,29 @@ async def upload(
         md5 = hashlib.md5(data).hexdigest()
 
         igual = por_md5.get(md5)
-        if igual and igual["nome"] == nome:
+        atual = por_nome.get(nome)
+        if (igual and igual["nome"] == nome) or (atual and atual["md5"] == md5):
             ignorados.append({"arquivo": nome, "motivo": "conteúdo idêntico já indexado"})
             continue
+
+        # Conteúdo de A com o nome de B, sendo que B já existe com outro conteúdo:
+        # renomear os chunks de A para B misturava os dois documentos e apagava
+        # o arquivo de B sem a guarda olhar para ele (análise de 17/09/2026, A1-08).
+        # Não há "forçar" que torne isso seguro: o arquivo precisa de outro nome.
+        if igual and atual:
+            raise HTTPException(
+                409,
+                {
+                    "mensagem": (
+                        f"'{nome}' já existe com outro conteúdo, e o arquivo enviado é igual a "
+                        f"'{igual['nome']}'. Enviar misturaria os dois documentos."
+                    ),
+                    "arquivo": nome,
+                    "fonte_afetada": nome,
+                    "avisos": [f"Renomeie o arquivo ou apague '{nome}' ou '{igual['nome']}' antes."],
+                    "sem_forcar": True,
+                },
+            )
 
         # Qual fonte teria os chunks apagados, e o que o arquivo novo oferece.
         fonte_afetada = igual["nome"] if igual else (nome if nome in por_nome else None)

@@ -28,6 +28,7 @@ import type {
   SuportePersonasResp,
   SuporteAtendimentoResp,
 } from './types'
+import { semRaciocinio } from './texto'
 
 /** Erro de API que preserva o corpo devolvido pelo backend. */
 export class ApiError extends Error {
@@ -131,8 +132,13 @@ type EventoPergunta =
 
 /**
  * Pergunta com a resposta chegando aos pedaços. `onMeta` recebe fontes e
- * confiança antes do texto; `onTexto`, a resposta acumulada até o momento.
- * Resolve com a resposta completa; rejeita com ApiError em qualquer falha.
+ * confiança antes do texto; `onTexto`, a resposta acumulada até o momento, já
+ * sem o bloco `<think>` de raciocínio.
+ *
+ * Se a resposta parar no meio (erro do provedor, conexão caída, linha cortada)
+ * e algum texto já tiver chegado, resolve com esse texto e `interrompida` com o
+ * motivo — apagar o que o aluno já estava lendo era pior (análise de 17/09/2026,
+ * A1-05). Sem texto nenhum, rejeita com ApiError.
  */
 async function perguntarStream(
   pergunta: string,
@@ -160,41 +166,54 @@ async function perguntarStream(
 
   const leitor = r.body.pipeThrough(new TextDecoderStream()).getReader()
   let meta: Omit<PerguntarResp, 'resposta'> | null = null
-  let resposta = ''
+  let bruto = ''
   let pendente = ''
   let terminou = false
+  let erro = ''
 
   const tratar = (linha: string) => {
     if (!linha.trim()) return
-    const e = JSON.parse(linha) as EventoPergunta
+    let e: EventoPergunta
+    try {
+      e = JSON.parse(linha) as EventoPergunta
+    } catch {
+      // Linha cortada ao meio: a conexão caiu no meio de um evento.
+      erro = erro || 'A conexão caiu antes de a resposta terminar.'
+      return
+    }
     if (e.tipo === 'meta') {
       const { tipo: _tipo, ...resto } = e
       meta = resto
       onMeta(resto)
     } else if (e.tipo === 'texto') {
-      resposta += e.t
-      onTexto(resposta)
+      bruto += e.t
+      onTexto(semRaciocinio(bruto))
     } else if (e.tipo === 'erro') {
-      throw new ApiError(e.mensagem, 502, e.mensagem)
+      erro = e.mensagem
     } else {
       terminou = true
     }
   }
 
-  for (;;) {
-    const { value, done } = await leitor.read()
-    if (done) break
-    pendente += value
-    const linhas = pendente.split('\n')
-    pendente = linhas.pop() ?? ''
-    linhas.forEach(tratar)
+  try {
+    while (!erro) {
+      const { value, done } = await leitor.read()
+      if (done) break
+      pendente += value
+      const linhas = pendente.split('\n')
+      pendente = linhas.pop() ?? ''
+      linhas.forEach(tratar)
+    }
+  } catch {
+    erro = erro || 'A conexão caiu antes de a resposta terminar.'
   }
-  tratar(pendente)
+  if (!erro) tratar(pendente)
+  if (!erro && !terminou) erro = 'A conexão caiu antes de a resposta terminar.'
 
-  if (!meta || !terminou) {
-    throw new ApiError('A conexão caiu antes de a resposta terminar. Tente de novo.', 502, null)
-  }
-  return { ...(meta as Omit<PerguntarResp, 'resposta'>), resposta }
+  const resposta = semRaciocinio(bruto)
+  if (!meta) throw new ApiError(erro || 'Resposta vazia do servidor.', 502, null)
+  if (erro && !resposta.trim()) throw new ApiError(`${erro} Tente de novo.`, 502, erro)
+  return { ...(meta as Omit<PerguntarResp, 'resposta'>), resposta, ...(erro ? { interrompida: erro } : {}) }
 }
 
 export const api = {
@@ -293,8 +312,12 @@ export const api = {
   pdfs: (token: string) => pedir<PdfsResp>('/api/pdfs', { headers: { 'X-Admin-Token': token } }),
   previaIngestao: (arquivo: string, token: string) =>
     postJson<PreviaIngestaoResp>('/api/ingerir/previa', { arquivo, offset: 0 }, token),
-  ingerir: (arquivo: string, offset: number, token: string, forcar = false, corteId?: number) =>
-    postJson<IngerirResp>('/api/ingerir', { arquivo, offset, forcar, corte_id: corteId ?? null }, token),
+  ingerir: (arquivo: string, offset: number, token: string, forcar = false, corteId?: number, ultimoId?: number) =>
+    postJson<IngerirResp>(
+      '/api/ingerir',
+      { arquivo, offset, forcar, corte_id: corteId ?? null, ultimo_id: ultimoId ?? null },
+      token,
+    ),
   upload: (files: File[], token: string, forcar = false) => {
     const form = new FormData()
     files.forEach((f) => form.append('files', f))

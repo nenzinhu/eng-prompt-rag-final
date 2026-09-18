@@ -71,7 +71,13 @@ O `ADMIN_TOKEN` protege as rotas de escrita (`/api/upload`, `/api/ingerir`,
 1. Crie um projeto no Supabase e rode `supabase-backup/recriar-banco.sql`.
 2. Suba o bucket `ementas` e os PDFs de `supabase-backup/pdfs/`.
 3. Importe `ementas_chunks.csv` (coluna `embedding` no formato `[0.1,0.2,...]`).
-4. Faça o deploy da Edge Function a partir de `edge-function/embeddings_source.ts`.
+4. **Logo depois da importação, rode os dois `setval` do fim de `recriar-banco.sql`.**
+   Importar com `id` não avança a sequência, e sem isso a primeira reindexação
+   apaga o documento inteiro do índice (análise de 17/09/2026, A1-02). Outra
+   opção é importar com `scripts/reimportar_chunks.py`, que não envia `id`.
+5. Rode as migrações de `supabase-backup/migracoes/` em ordem de data.
+6. Faça o deploy da Edge Function a partir de `edge-function/embeddings_source.ts`.
+7. Confira RLS e sequência com as consultas de leitura do fim de `recriar-banco.sql`.
 
 ## ⚠️ Observações
 

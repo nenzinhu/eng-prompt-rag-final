@@ -132,3 +132,66 @@ def test_upload_libera_quando_texto_e_preservado(monkeypatch):
 def test_upload_libera_quando_fonte_nao_esta_indexada(monkeypatch):
     preparar(monkeypatch, existentes=(0, 0), paginas=[(1, "curto")])
     assert asyncio.run(index._risco_de_perda("doc.pdf", b"x", "doc.pdf")) is None
+
+
+def _upload(monkeypatch, *, storage: list[dict], nome: str, dados: bytes, forcar=False):
+    """Chama /api/upload com o Storage simulado e registra o que foi alterado."""
+    from fastapi.testclient import TestClient
+
+    alteracoes: list[tuple] = []
+
+    async def _listar():
+        return storage
+
+    async def _gravar(n, _d, _m=""):
+        alteracoes.append(("gravou", n))
+
+    async def _renomear(a, b):
+        alteracoes.append(("renomeou", a, b))
+
+    async def _remover(n):
+        alteracoes.append(("removeu", n))
+
+    async def _sem_risco(*_a):
+        return None
+
+    monkeypatch.setattr(index, "listar_arquivos_storage", _listar)
+    monkeypatch.setattr(index, "upload_documento_storage", _gravar)
+    monkeypatch.setattr(index, "renomear_fonte_chunks", _renomear)
+    monkeypatch.setattr(index, "remover_documento_storage", _remover)
+    monkeypatch.setattr(index, "_risco_de_perda", _sem_risco)
+    index.app.dependency_overrides[index.exigir_admin] = lambda: None
+    try:
+        r = TestClient(index.app).post(
+            "/api/upload", files={"files": (nome, dados)}, data={"forcar": str(forcar).lower()}
+        )
+    finally:
+        index.app.dependency_overrides.clear()
+    return r, alteracoes
+
+
+def test_upload_conteudo_de_a_com_nome_de_b_e_recusado(monkeypatch):
+    """Análise de 17/09/2026 (A1-08): renomeava os chunks de A para B, misturando
+    os dois documentos, e removia A — sem a guarda olhar para B."""
+    import hashlib
+
+    x, y = b"conteudo X", b"conteudo Y"
+    storage = [
+        {"nome": "A.pdf", "md5": hashlib.md5(x).hexdigest()},
+        {"nome": "B.pdf", "md5": hashlib.md5(y).hexdigest()},
+    ]
+    for forcar in (False, True):
+        r, alteracoes = _upload(monkeypatch, storage=storage, nome="B.pdf", dados=x, forcar=forcar)
+        assert r.status_code == 409
+        assert r.json()["detail"]["sem_forcar"] is True
+        assert alteracoes == [], "nada pode ser gravado, renomeado ou removido"
+
+
+def test_upload_mesmo_conteudo_com_nome_novo_continua_renomeando(monkeypatch):
+    import hashlib
+
+    x = b"conteudo X"
+    storage = [{"nome": "A.pdf", "md5": hashlib.md5(x).hexdigest()}]
+    r, alteracoes = _upload(monkeypatch, storage=storage, nome="A-v2.pdf", dados=x)
+    assert r.status_code == 200
+    assert ("renomeou", "A.pdf", "A-v2.pdf") in alteracoes

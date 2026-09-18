@@ -19,6 +19,10 @@ export interface ConfigResp {
 export interface ProviderInfo {
   label: string
   models: string[]
+  /** Observação curta por modelo ("pago, ~$0,04/1M", "lento, ~17 s"). */
+  notas?: Record<string, string>
+  /** Aviso do provedor inteiro, mostrado abaixo do seletor. */
+  aviso?: string
   configurado: boolean
 }
 
@@ -49,6 +53,8 @@ export interface PerguntarResp {
   confianca_media: number
   provider: string
   modelo: string
+  /** Só no streaming: motivo quando a resposta parou no meio. `resposta` está incompleta. */
+  interrompida?: string
 }
 
 export interface ResumoApostilaResp {
@@ -77,7 +83,10 @@ export interface AuditarResp {
 }
 
 export interface ResolverResp {
+  /** Enunciado que o backend reconheceu e mandou para a busca e para a IA. */
   questao: string
+  /** O texto tinha mais de uma lista A, B, C…; foi usada a última. */
+  varias_listas?: boolean
   alternativas: Record<string, string>
   resposta: string | null
   conteudo_resposta: string
@@ -141,6 +150,8 @@ export interface IngerirResp {
   done?: boolean
   /** Maior id dos chunks antigos; reenviado nos lotes seguintes ao primeiro. */
   corte_id?: number
+  /** Maior id da fonte depois deste lote; reenviado para a retentativa não duplicar. */
+  ultimo_id?: number | null
   avisos?: string[]
   erro?: string
 }

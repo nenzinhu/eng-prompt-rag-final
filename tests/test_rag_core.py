@@ -23,6 +23,7 @@ from api.rag_core import (  # noqa: E402
     conclusao_fallback,
     dividir_fatos,
     extrair_alternativas,
+    varias_listas_de_alternativas,
     extrair_bloco_json,
     extrair_nomes,
     extrair_numeros,
@@ -127,6 +128,66 @@ def test_extrair_alternativas_minusculas_e_travessao():
 
 def test_extrair_alternativas_sem_alternativas():
     assert extrair_alternativas("Só uma pergunta, sem opções.") == ("Só uma pergunta, sem opções.", {})
+
+
+_ALTERNATIVAS_PADRAO = "\n\nA) um\nB) dois\nC) tres\nD) quatro"
+
+
+@pytest.mark.parametrize(
+    "enunciado",
+    [
+        # Casos reproduzidos na análise de 17/09/2026 (A1-03): o enunciado era
+        # cortado no primeiro "a." / "e-" / "(IA)" de qualquer ponto do texto.
+        "Sobre a Inteligência Artificial (IA), assinale a alternativa correta:",
+        "Uma empresa usa e-mail marketing. Qual a principal métrica?",
+        "Leia o trecho da apostila. Em seguida, responda: o que é RAG?",
+        "Considere o cenário:\nE-commerce cresce no Brasil.\nQual o motivo?",
+        "Considere a bactéria:\nE. coli é usada em pesquisa.\nPor quê?",
+        "Segundo o autor:\nA. Smith defende a divisão do trabalho.\nO que isso significa?",
+    ],
+)
+def test_extrair_alternativas_nao_corta_enunciado(enunciado):
+    questao, alternativas = extrair_alternativas(enunciado + _ALTERNATIVAS_PADRAO)
+    assert questao == enunciado
+    assert alternativas == {"A": "um", "B": "dois", "C": "tres", "D": "quatro"}
+    assert not varias_listas_de_alternativas(enunciado + _ALTERNATIVAS_PADRAO)
+
+
+def test_extrair_alternativas_afirmativas_minusculas_ficam_no_enunciado():
+    enunciado = "Analise as afirmativas:\na) RAG usa busca.\nb) RAG dispensa contexto.\nQuais estão corretas?"
+    questao, alternativas = extrair_alternativas(enunciado + _ALTERNATIVAS_PADRAO)
+    assert questao == enunciado
+    assert list(alternativas) == ["A", "B", "C", "D"]
+    assert varias_listas_de_alternativas(enunciado + _ALTERNATIVAS_PADRAO)
+
+
+@pytest.mark.parametrize("modelo", ["{}. ", "({}) ", "{} - ", "{}) "])
+@pytest.mark.parametrize("letras", ["ABC", "abc"])
+def test_extrair_alternativas_formatos_de_marcador(modelo, letras):
+    linhas = [modelo.format(letra) + f"opção {letra}" for letra in letras]
+    questao, alternativas = extrair_alternativas("Pergunta?\n" + "\n".join(linhas))
+    assert questao == "Pergunta?"
+    assert alternativas == {letra.upper(): f"opção {letra}" for letra in letras}
+
+
+def test_extrair_alternativas_parentese_solto_da_formatacao():
+    # O navegador transforma "(A) x (B) y" em "(\n\nA) x (\n\nB) y".
+    questao, alternativas = extrair_alternativas("Pergunta? (\n\nA) um (\n\nB) dois")
+    assert questao == "Pergunta?"
+    assert alternativas == {"A": "um", "B": "dois"}
+
+
+def test_extrair_alternativas_duas_questoes_usa_a_ultima_e_avisa():
+    texto = "Primeira?\nA) um\nB) dois\n\nSegunda?\nA) tres\nB) quatro"
+    questao, alternativas = extrair_alternativas(texto)
+    assert questao.endswith("Segunda?")
+    assert alternativas == {"A": "tres", "B": "quatro"}
+    assert varias_listas_de_alternativas(texto)
+
+
+def test_extrair_alternativas_marcador_fora_de_ordem_fica_no_conteudo():
+    questao, alternativas = extrair_alternativas("Pergunta?\nA) bactéria\nE. coli\nB) vírus")
+    assert alternativas == {"A": "bactéria\nE. coli", "B": "vírus"}
 
 
 def test_formatar_alternativas():
@@ -290,6 +351,24 @@ def test_numeros_comuns_nao_geram_divergencia():
     assert set(r["numeros_comuns"]) >= {"4", "12"}
 
 
+def test_numero_por_extenso_nao_e_divergencia():
+    # Análise de 17/09/2026 (A1-10): "5" contra "cinco" era acusado de conflito.
+    r = calcular_concordancia({
+        "a/x": "O método tem 5 etapas.",
+        "b/y": "O método tem cinco etapas.",
+    })
+    assert r["divergencia_numerica"] is False
+
+
+def test_paginas_citadas_diferentes_nao_sao_divergencia():
+    r = calcular_concordancia({
+        "a/x": "O método tem 4 pilares [Fonte: apostila.pdf, página 3].",
+        "b/y": "São 4 pilares no método (pág. 12).",
+    })
+    assert r["divergencia_numerica"] is False
+    assert r["numeros_comuns"] == ["4"]
+
+
 def test_conclusoes_iguais_sao_alta():
     r = calcular_concordancia({"a/x": "Sim, o bit é a menor unidade.", "b/y": "Sim, o bit é a menor unidade."})
     assert r["nivel_concordancia"] == "alta"
@@ -411,6 +490,14 @@ def test_apoio_textual_parcial_quando_cobre_parte():
     frase = "O empreendedor deve elaborar um plano de negócios para reduzir riscos."
     chunks = [
         {"content": "passo a passo da abertura da empresa e formalização"},
-        {"content": "o plano de negócios descreve a estrutura e os riscos do empreendimento"},
+        {"content": "o plano descreve a estrutura e os riscos do empreendimento"},
     ]
     assert frase_tem_apoio_textual(frase, chunks) == "parcial"
+
+
+def test_apoio_textual_ignora_acento_nos_dois_lados():
+    # Análise de 17/09/2026 (A1-09): só a frase perdia o acento, então uma frase
+    # copiada do material era acusada de invenção.
+    frase = "A inovação tecnológica exige gestão estratégica e colaboração."
+    chunk = {"content": "Na apostila: a inovação tecnológica exige gestão estratégica e colaboração entre áreas."}
+    assert frase_tem_apoio_textual(frase, [chunk]) == "total"

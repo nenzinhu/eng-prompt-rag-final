@@ -24,6 +24,21 @@ export function formatarAlternativas(texto: string): string {
 }
 
 /**
+ * Tira o bloco `<think>…</think>` que alguns modelos emitem antes da resposta.
+ *
+ * Mesmo papel de `rag_core.limpar_resposta`, mas para o texto que chega aos
+ * pedaços: enquanto o `<think>` ainda não fechou, tudo depois dele é raciocínio
+ * e fica de fora. Sem isso o raciocínio aparecia literal na tela e ia junto
+ * para auditoria, simplificação e exportação.
+ */
+export function semRaciocinio(texto: string): string {
+  let limpo = texto.replace(/<think>[\s\S]*?<\/think>/gi, '')
+  const aberto = limpo.search(/<think>/i)
+  if (aberto >= 0) limpo = limpo.slice(0, aberto)
+  return limpo.replace(/<\/?think>/gi, '').trimStart()
+}
+
+/**
  * Limpeza conservadora do texto que sai do OCR.
  *
  * Só corrige o que é comprovadamente ruído de reconhecimento: espaço

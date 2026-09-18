@@ -19,6 +19,8 @@ export default function ProviderSelect({
   nenhumConfigurado?: boolean
 }) {
   const models = providers[provider]?.models ?? []
+  const notas = providers[provider]?.notas ?? {}
+  const aviso = providers[provider]?.aviso
 
   return (
     <div className="mb-4 flex flex-wrap gap-2">
@@ -47,10 +49,16 @@ export default function ProviderSelect({
         {models.length === 0 && <option value="">— escolha um provedor —</option>}
         {models.map((m) => (
           <option key={m} value={m} className="bg-surface">
-            {m}
+            {notas[m] ? `${m} (${notas[m]})` : m}
           </option>
         ))}
       </select>
+      {aviso && (
+        <div className="flex w-full items-start gap-1.5 text-[0.72rem] leading-relaxed text-muted">
+          <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+          <span>{aviso}</span>
+        </div>
+      )}
       {nenhumConfigurado && (
         <div className="flex w-full items-start gap-1.5 text-[0.75rem] leading-relaxed text-amber-300">
           <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />

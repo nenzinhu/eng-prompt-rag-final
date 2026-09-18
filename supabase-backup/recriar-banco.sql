@@ -121,3 +121,42 @@ create policy "leitura publica glossario"
 --     from 'glossario_termos.csv' with (format csv, header true);
 --
 -- Importante: as escritas acima precisam da service_role (RLS está ligado).
+--
+-- OBRIGATÓRIO logo depois do \copy — avançar as sequências de id:
+--
+--   select setval(pg_get_serial_sequence('public.ementas_chunks', 'id'),
+--                 coalesce((select max(id) from public.ementas_chunks), 0) + 1, false);
+--   select setval(pg_get_serial_sequence('public.glossario_termos', 'id'),
+--                 coalesce((select max(id) from public.glossario_termos), 0) + 1, false);
+--
+-- Por quê (análise de 17/09/2026, A1-02): importar com `id` explícito numa coluna
+-- identity NÃO avança a sequência. Os chunks novos nasceriam com id 1, 2, 3…
+-- (o dump vai de 942 a 1768), e a reindexação — que apaga `id <= corte` no
+-- fim, contando que os novos têm id maior — apagaria os antigos E os novos:
+-- documento vazio no índice, com "✓" na tela. No glossário, as primeiras
+-- gravações colidiriam na chave primária (ids 1 a 44 já usados).
+-- Alternativa sem esse risco: scripts/reimportar_chunks.py não envia id.
+--
+-- Depois rode as migrações de supabase-backup/migracoes/ em ordem de data
+-- (a de 16/09 cria a cota de uso que o backend usa para os tetos diários).
+
+-- ============================================================
+-- Conferência (só leitura — pode rodar a qualquer momento)
+-- ============================================================
+-- Um DELETE com a chave anon que responde 204 NÃO prova que a escrita está
+-- fechada: com RLS ligado, o Postgres filtra as linhas em silêncio e o
+-- PostgREST responde 204 sem apagar nada — e respondia 204 também quando
+-- apagava. Confira pelo catálogo:
+--
+--   -- RLS ligado nas duas tabelas (esperado: true, true)
+--   select relname, relrowsecurity from pg_class
+--    where oid in ('public.ementas_chunks'::regclass, 'public.glossario_termos'::regclass);
+--
+--   -- Políticas: só SELECT para anon/authenticated (esperado: nenhuma linha com
+--   -- cmd diferente de SELECT)
+--   select tablename, policyname, cmd, roles from pg_policies
+--    where schemaname = 'public' and tablename in ('ementas_chunks', 'glossario_termos');
+--
+--   -- A sequência está à frente do maior id (esperado: proximo_id > maior_id)
+--   select (select max(id) from public.ementas_chunks) as maior_id,
+--          (select last_value from public.ementas_chunks_id_seq) as proximo_id;

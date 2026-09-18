@@ -19,27 +19,27 @@ import index  # noqa: E402
 
 @pytest.fixture
 def config_admin(monkeypatch):
-    monkeypatch.setattr(index, "ADMIN_USER", "nenzinhu")
-    monkeypatch.setattr(index, "ADMIN_PASS", "Nei*6280760")
+    monkeypatch.setattr(index, "ADMIN_USER", "admin-teste")
+    monkeypatch.setattr(index, "ADMIN_PASS", "senha-falsa-de-teste")
     monkeypatch.setattr(index, "ADMIN_TOKEN", "segredo-de-teste")
 
 
 def test_login_valido_emite_sessao(config_admin):
-    token, exp = index.emitir_sessao("nenzinhu")
+    token, exp = index.emitir_sessao("admin-teste")
     assert token.count(".") == 1  # payload.assinatura
     assert exp > index.time.time()
     assert index.validar_sessao(token) is True
 
 
 def test_sessao_rejeita_assinatura_trocada(config_admin):
-    token, _ = index.emitir_sessao("nenzinhu")
+    token, _ = index.emitir_sessao("admin-teste")
     payload, assinatura = token.rsplit(".", 1)
     forjado = f"{payload}.{'A' * len(assinatura)}"
     assert index.validar_sessao(forjado) is False
 
 
 def test_sessao_rejeita_payload_alterado(config_admin):
-    token, _ = index.emitir_sessao("nenzinhu")
+    token, _ = index.emitir_sessao("admin-teste")
     payload, assinatura = token.rsplit(".", 1)
     # Troca o último char do payload (sem re-assinar).
     novo_payload = payload[:-1] + ("B" if payload[-1] != "B" else "C")
@@ -48,7 +48,7 @@ def test_sessao_rejeita_payload_alterado(config_admin):
 
 def test_sessao_expirada_e_rejeitada(config_admin, monkeypatch):
     monkeypatch.setattr(index, "SESSAO_ADMIN_SEGUNDOS", -1)  # expira imediatamente
-    token, _ = index.emitir_sessao("nenzinhu")
+    token, _ = index.emitir_sessao("admin-teste")
     assert index.validar_sessao(token) is False
 
 
@@ -63,7 +63,7 @@ def test_login_sem_credenciais_configuradas_falha_fechada(monkeypatch):
     monkeypatch.setattr(index, "ADMIN_PASS", "")
     monkeypatch.setattr(index, "ADMIN_TOKEN", "")
     with pytest.raises(Exception) as e:
-        index.emitir_sessao("nenzinhu")
+        index.emitir_sessao("admin-teste")
     assert "ADMIN_TOKEN" in str(e.value)
 
 
