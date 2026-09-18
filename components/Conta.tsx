@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { CircleCheck, LogOut, TriangleAlert, UserRound, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import {
@@ -257,7 +258,9 @@ export default function Conta() {
         </div>
       )}
 
-      {aberto && (
+      {/* Portal: o cabeçalho usa backdrop-blur, que prende elementos `fixed` dentro
+          dele — sem isto, a janela ficava espremida na altura do cabeçalho. */}
+      {aberto && createPortal(
         <div
           className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/60 px-4 pt-[12vh] backdrop-blur-sm"
           onMouseDown={(e) => {
@@ -403,7 +406,8 @@ export default function Conta() {
               </button>
             )}
           </form>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
