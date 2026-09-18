@@ -71,3 +71,28 @@ def test_pptx_um_slide_por_pagina():
 def test_extensoes_documento_inclui_novos_formatos():
     assert ".docx" in index.EXTENSOES_DOCUMENTO
     assert ".pptx" in index.EXTENSOES_DOCUMENTO
+
+
+def test_texto_extraido_sai_sem_caractere_nulo():
+    """Postgres recusa \u0000 em texto (22P05). Caso real em 18/09/2026:
+    model-context-protocol-mcp-...pdf travava a indexação no primeiro lote."""
+    from _app.documentos import extrair_paginas
+
+    [(pagina, texto)] = extrair_paginas("Model\x00 Con\x00text Protocol".encode(), "a.txt")
+    assert pagina == 1
+    assert "\x00" not in texto
+    assert texto == "Model Context Protocol"
+
+
+def test_texto_extraido_troca_surrogate_solto():
+    """Surrogate UTF-16 solto (PDF mal formado) também quebra a gravação."""
+    from _app import documentos
+
+    orig = documentos._extrair_paginas_bruto
+    try:
+        documentos._extrair_paginas_bruto = lambda _b, _n="": [(1, "ok \ud800 fim")]
+        [(_, texto)] = documentos.extrair_paginas(b"x", "a.pdf")
+    finally:
+        documentos._extrair_paginas_bruto = orig
+    texto.encode("utf-8")  # não pode levantar
+    assert texto.startswith("ok ") and texto.endswith(" fim")

@@ -44,8 +44,22 @@ def _extrair_paginas_pptx(dados: bytes) -> list[tuple[int, str]]:
     return paginas
 
 
+def _texto_gravavel(texto: str) -> str:
+    """Tira do texto o que o Postgres recusa numa coluna text.
+
+    O caractere nulo (U+0000) vem de alguns geradores de PDF e derrubava a
+    gravação com 22P05 (caso real em 18/09/2026). Surrogate UTF-16 solto, de PDF
+    mal formado, também não vira UTF-8 válido e passa a ser trocado por "?".
+    """
+    return texto.replace("\x00", "").encode("utf-8", "replace").decode("utf-8")
+
+
 def extrair_paginas(pdf_bytes: bytes, nome: str = "") -> list[tuple[int, str]]:
     """Devolve [(numero_da_pagina, texto)]. Aceita PDF, TXT, MD, DOCX e PPTX."""
+    return [(n, _texto_gravavel(t)) for n, t in _extrair_paginas_bruto(pdf_bytes, nome)]
+
+
+def _extrair_paginas_bruto(pdf_bytes: bytes, nome: str = "") -> list[tuple[int, str]]:
     nome_lower = nome.lower()
     if nome_lower.endswith((".txt", ".md")):
         try:
