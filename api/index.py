@@ -462,34 +462,43 @@ def _limitar_em_memoria(ip: str):
 
 # ── Supabase: embeddings, busca vetorial, chunks, storage ──────────────────
 
-EMBEDDINGS_LOTE = 8  # a Edge Function estoura WORKER_RESOURCE_LIMIT acima de ~10-12 textos por chamada
+EMBEDDINGS_LOTE = 4  # a Edge Function estourou WORKER_RESOURCE_LIMIT com 8 trechos de ~900 caracteres
+
+async def _embeddings_lote(client: httpx.AsyncClient, lote: list[str]) -> list[list[float]]:
+    # A Edge Function tem falhas passageiras (cold start, 546
+    # WORKER_RESOURCE_LIMIT, 5xx): uma segunda tentativa curta resolve a
+    # maioria sem o aluno ver erro.
+    for tentativa in (1, 2):
+        try:
+            r = await client.post(
+                f"{SUPABASE_URL}/functions/v1/embeddings",
+                headers={**_h_leitura(), "Content-Type": "application/json"},
+                json={"texts": lote},
+            )
+        except httpx.TransportError:
+            if tentativa == 2:
+                raise
+            await asyncio.sleep(0.5)
+            continue
+        # O limite de recurso depende do volume de texto, não só da contagem: um
+        # lote de trechos longos estoura mesmo abaixo de EMBEDDINGS_LOTE. Repetir
+        # o mesmo lote falha igual; dividir ao meio cabe no worker.
+        if r.status_code == 546 and len(lote) > 1:
+            meio = len(lote) // 2
+            return await _embeddings_lote(client, lote[:meio]) + await _embeddings_lote(client, lote[meio:])
+        if r.status_code < 500 or tentativa == 2:
+            break
+        await asyncio.sleep(0.5)
+    r.raise_for_status()
+    return r.json()["embeddings"]
+
 
 async def gerar_embeddings(textos: list[str]) -> list[list[float]]:
     _checar_config_supabase()
     resultado: list[list[float]] = []
     async with _http(_TIMEOUT) as client:
         for i in range(0, len(textos), EMBEDDINGS_LOTE):
-            lote = textos[i : i + EMBEDDINGS_LOTE]
-            # A Edge Function tem falhas passageiras (cold start, 546
-            # WORKER_RESOURCE_LIMIT, 5xx): uma segunda tentativa curta resolve a
-            # maioria sem o aluno ver erro.
-            for tentativa in (1, 2):
-                try:
-                    r = await client.post(
-                        f"{SUPABASE_URL}/functions/v1/embeddings",
-                        headers={**_h_leitura(), "Content-Type": "application/json"},
-                        json={"texts": lote},
-                    )
-                except httpx.TransportError:
-                    if tentativa == 2:
-                        raise
-                    await asyncio.sleep(0.5)
-                    continue
-                if r.status_code < 500 or tentativa == 2:
-                    break
-                await asyncio.sleep(0.5)
-            r.raise_for_status()
-            resultado.extend(r.json()["embeddings"])
+            resultado.extend(await _embeddings_lote(client, textos[i : i + EMBEDDINGS_LOTE]))
     return resultado
 
 

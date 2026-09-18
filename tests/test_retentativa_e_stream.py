@@ -232,3 +232,36 @@ def test_stream_valida_antes_de_comecar(monkeypatch):
         "/api/perguntar/stream", json={"pergunta": "oi", "provider": "groq", "modelo": "caro/modelo-x"}
     )
     assert r.status_code == 400
+
+
+def test_embeddings_divide_o_lote_quando_o_worker_estoura(monkeypatch):
+    """546 WORKER_RESOURCE_LIMIT repetido: o lote se divide até caber, sem perder a ordem."""
+    tamanhos = []
+
+    class _Edge:
+        def __call__(self, _timeout):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json=None, **_):
+            textos = json["texts"]
+            tamanhos.append(len(textos))
+            if len(textos) > 2:
+                return _resp(546, {"code": "WORKER_RESOURCE_LIMIT"})
+            return _resp(200, {"embeddings": [[float(t)] for t in textos]})
+
+    dormir = asyncio.sleep
+    monkeypatch.setattr(index.asyncio, "sleep", lambda _s: dormir(0))
+    monkeypatch.setattr(index, "SUPABASE_URL", "https://x")
+    monkeypatch.setattr(index, "SUPABASE_ANON_KEY", "k")
+    monkeypatch.setattr(index, "_http", _Edge())
+
+    textos = [str(i) for i in range(8)]
+    assert asyncio.run(index.gerar_embeddings(textos)) == [[float(i)] for i in range(8)]
+    # lotes de 4 estouram e se dividem na hora, sem repetir o lote que já falhou
+    assert tamanhos == [4, 2, 2, 4, 2, 2]
