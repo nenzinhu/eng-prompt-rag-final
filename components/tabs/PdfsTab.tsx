@@ -5,6 +5,7 @@ import { FileText, Upload, Search, X, TriangleAlert } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { lerTokenAdmin, salvarTokenAdmin, limparTokenAdmin } from '@/lib/admin'
 import { ingerirArquivo, resumirIngestao, type ResultadoIngestao } from '@/lib/ingestao'
+import { nomeParaStorage } from '@/lib/texto'
 import type { PreviaIngestaoResp } from '@/lib/types'
 import AdminToken from '../AdminToken'
 
@@ -324,7 +325,17 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
               {pending.map((f, i) => (
                 <div key={f.name} className="glass flex items-center gap-2 rounded-lg px-3 py-2 text-[0.82rem]">
                   <FileText className="h-4 w-4 shrink-0 text-cyan" aria-hidden="true" />
-                  <span className="flex-1 truncate font-mono text-[0.78rem] text-text">{f.name}</span>
+                  <span className="flex-1 truncate font-mono text-[0.78rem] text-text">
+                    {f.name}
+                    {nomeParaStorage(f.name) !== f.name && (
+                      <span
+                        className="ml-2 text-amber-300"
+                        title="O Storage não aceita acento nem símbolo no nome: o arquivo é salvo e citado com este nome"
+                      >
+                        → será salvo como {nomeParaStorage(f.name)}
+                      </span>
+                    )}
+                  </span>
                   <button
                     onClick={() => setPending((prev) => prev.filter((_, idx) => idx !== i))}
                     aria-label={`Remover ${f.name}`}

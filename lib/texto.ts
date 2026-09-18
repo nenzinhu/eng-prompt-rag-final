@@ -55,3 +55,23 @@ export function limparTextoOcr(bruto: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
+
+/**
+ * Nome com que o arquivo será salvo no Storage — mesma regra de
+ * `nome_para_storage` (api/_app/documentos.py). O Storage recusa acento e
+ * símbolo fora do ASCII; o servidor troca o nome sozinho, e aqui a aba PDFs
+ * mostra o nome final ANTES do envio. Os dois lados são testados com os
+ * mesmos casos (tests/test_ingestao_guard.py e tests-js/nome-arquivo.test.ts).
+ */
+export function nomeParaStorage(nome: string): string {
+  let base = nome
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^\x00-\x7F]/g, '')
+  base = base.replace(/[^A-Za-z0-9 ._()-]+/g, '_').replace(/_{2,}/g, '_').replace(/^[ _]+|[ _]+$/g, '')
+  const ponto = base.lastIndexOf('.')
+  if (ponto >= 0 && !base.slice(0, ponto).replace(/^[ ._]+|[ ._]+$/g, '')) {
+    base = `documento.${base.slice(ponto + 1)}`
+  }
+  return base || 'documento'
+}

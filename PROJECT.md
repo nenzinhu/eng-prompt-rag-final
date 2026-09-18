@@ -217,7 +217,7 @@ usar o backend de produção, defina `BACKEND_URL`.
 |---|---|
 | `python -m pytest tests -q` | 12 arquivos de teste do backend, sem rede |
 | `ruff check .` | Lint Python |
-| `npm run test:js` | 5 arquivos: leitura do streaming da API, laço de indexação da aba PDFs, redimensionamento de imagem, compressão de PDF e decodificação de preditores PNG/TIFF |
+| `npm run test:js` | 6 arquivos: leitura do streaming da API, laço de indexação da aba PDFs, nome do arquivo no Storage, redimensionamento de imagem, compressão de PDF e decodificação de preditores PNG/TIFF |
 | `npm run lint` / `npm run typecheck` / `npm run build` | eslint, tsc e build |
 | `python scripts/smoke.py [--url ...]` | Chama as rotas reais, locais ou de produção |
 
