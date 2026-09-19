@@ -200,6 +200,40 @@ def limpar_resposta(texto: str) -> str:
     return limpo.strip()
 
 
+_RE_TITULO_FALE = re.compile(
+    r"^[ \t]*(?:#{1,6}[ \t]*)?\**[ \t]*(INTEN[ÇC][ÃA]O|AN[ÁA]LISE|MENSAGEM|DICA)[ \t]*\**[ \t]*:?[ \t]*\**[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_CHAVES_FALE = {"INTENCAO": "intencao", "ANALISE": "analise", "MENSAGEM": "mensagem", "DICA": "dica"}
+# Linhas separadoras ("---", "***") que alguns modelos põem entre as seções.
+_RE_SEPARADOR_BORDA = re.compile(r"^(?:\s*[-*_]{3,}\s*$\n?)+|(?:\n?^\s*[-*_]{3,}\s*$)+\Z", re.MULTILINE)
+_RE_SEPARADOR_FIM_LINHA = re.compile(r"\s+[-*_]{3,}\s*\Z")
+
+
+def separar_secoes_fale(texto: str) -> dict[str, str]:
+    """Separa a saída da aba "Fale o que pensa" nos quatro títulos pedidos ao modelo.
+
+    Modelos gratuitos às vezes esquecem o formato. Sem o título MENSAGEM, o texto
+    inteiro vira a mensagem — o aluno ainda recebe algo para copiar.
+    """
+    secoes = {"intencao": "", "analise": "", "mensagem": "", "dica": ""}
+    limpo = limpar_resposta(texto)
+    titulos = list(_RE_TITULO_FALE.finditer(limpo))
+    for i, m in enumerate(titulos):
+        nome = unicodedata.normalize("NFKD", m.group(1).upper())
+        nome = "".join(c for c in nome if not unicodedata.combining(c))
+        fim = titulos[i + 1].start() if i + 1 < len(titulos) else len(limpo)
+        trecho = _RE_SEPARADOR_BORDA.sub("", limpo[m.end():fim].strip()).strip()
+        secoes[_CHAVES_FALE[nome]] = _RE_SEPARADOR_FIM_LINHA.sub("", trecho)
+    if not secoes["mensagem"]:
+        secoes["mensagem"] = limpo
+    msg = secoes["mensagem"]
+    # Aspas envolvendo a mensagem inteira (e nenhuma outra dentro) atrapalham o "copiar".
+    if len(msg) >= 2 and msg[0] in "\"“" and msg[-1] in "\"”" and not any(c in msg[1:-1] for c in "\"“”"):
+        secoes["mensagem"] = msg[1:-1].strip()
+    return secoes
+
+
 def extrair_resposta_direta(texto: str) -> str:
     """Pega a linha `RESPOSTA DIRETA: ...` que o modelo é instruído a emitir."""
     achadas = _RE_RESPOSTA_DIRETA.findall(texto or "")

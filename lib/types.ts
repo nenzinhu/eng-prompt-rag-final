@@ -271,6 +271,29 @@ export interface ElencoConversaResp {
   modelo: string
 }
 
+// ── Fale o que pensa (corretor de mensagens, dentro de Elenco) ───────────────
+
+export interface FalePersona {
+  persona_id: string
+  display_name: string
+  description: string
+  exemplo: string
+}
+
+export interface FalePersonasResp {
+  personas: FalePersona[]
+}
+
+export interface FaleOQuePensaResp {
+  intencao: string
+  analise: string
+  mensagem: string
+  dica: string
+  persona_id: string
+  provider: string
+  modelo: string
+}
+
 export interface SuportePersona {
   persona_id: string
   nome: string

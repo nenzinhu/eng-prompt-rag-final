@@ -32,7 +32,7 @@ import GlossarioTab from '@/components/tabs/GlossarioTab'
 import ComprimirTab from '@/components/tabs/ComprimirTab'
 import ApostilaTab from '@/components/tabs/ApostilaTab'
 import PerfisComportamentaisTab from '@/components/tabs/PerfisComportamentaisTab'
-import ElencoTab from '@/components/tabs/ElencoTab'
+import ElencoMainTab from '@/components/tabs/ElencoMainTab'
 import SuporteTab from '@/components/tabs/SuporteTab'
 
 const TABS: TabDef[] = [
@@ -47,7 +47,7 @@ const TABS: TabDef[] = [
   { id: 'comprimir', grupo: 'Arquivos', label: 'Comprimir Arquivos', labelShort: 'Comprimir', icon: FileArchive },
   { id: 'pdfs', grupo: 'Arquivos', label: 'PDFs', labelShort: 'PDFs', icon: FileStack },
   { id: 'perfis-comportamentais', grupo: 'Comunicar', label: 'Perfis Comportamentais', labelShort: 'Perfis', icon: Shield },
-  { id: 'elenco', grupo: 'Comunicar', label: 'Elenco', labelShort: 'Elenco', icon: PartyPopper },
+  { id: 'elenco', grupo: 'Comunicar', label: 'Elenco — Fale o que pensa', labelShort: 'Elenco', icon: PartyPopper },
   { id: 'suporte', grupo: 'Suporte', label: 'Tecnologia — Suporte em TI e IA', labelShort: 'Suporte TI', icon: LifeBuoy },
 ]
 
@@ -109,7 +109,7 @@ export default function Home() {
             <PerfisComportamentaisTab providers={providers} />
           </TabPanel>
           <TabPanel active={active === 'elenco'}>
-            <ElencoTab providers={providers} />
+            <ElencoMainTab providers={providers} />
           </TabPanel>
           <TabPanel active={active === 'suporte'}>
             <SuporteTab providers={providers} />

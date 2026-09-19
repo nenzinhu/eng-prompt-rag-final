@@ -26,6 +26,8 @@ import type {
   PerfilComportamentalResp,
   ElencoPersonasResp,
   ElencoConversaResp,
+  FalePersonasResp,
+  FaleOQuePensaResp,
   SuportePersonasResp,
   SuporteAtendimentoResp,
 } from './types'
@@ -275,6 +277,15 @@ export const api = {
     postJson<ElencoConversaResp>('/api/elenco-conversa', {
       contexto,
       mensagem,
+      persona_id: personaId,
+      provider,
+      modelo,
+    }),
+  falePersonas: () => pedir<FalePersonasResp>('/api/fale-personas'),
+  faleOQuePensa: (rascunho: string, contexto: string, personaId: string, provider: string, modelo: string) =>
+    postJson<FaleOQuePensaResp>('/api/fale-o-que-pensa', {
+      rascunho,
+      contexto,
       persona_id: personaId,
       provider,
       modelo,

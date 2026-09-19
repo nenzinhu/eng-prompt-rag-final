@@ -69,6 +69,8 @@ from _app.prompts import (  # noqa: E402
     PERFIS_COMPORTAMENTAIS,
     SYSTEM_PROMPT_ELENCO,
     ELENCO_PERSONAS,
+    SYSTEM_PROMPT_FALE_O_QUE_PENSA,
+    FALE_PERSONAS,
     SYSTEM_PROMPT_SUPORTE,
     SUPORTE_PERSONAS,
     PERSONA_PROMPTS,
@@ -102,6 +104,7 @@ from rag_core import (  # noqa: E402
     quebrar_frases,
     remover_linha_resposta_direta,
     rotulos_unicos,
+    separar_secoes_fale,
     separar_exemplos,
     varias_listas_de_alternativas,
 )
@@ -974,6 +977,68 @@ async def elenco_conversa(req: ElencoConversaReq, request: Request):
     resposta = await chamar_llm(req.provider, modelo, system_prompt, user_prompt)
     return {
         "resposta": limpar_resposta(resposta),
+        "persona_id": req.persona_id,
+        "provider": req.provider,
+        "modelo": modelo,
+    }
+
+
+@app.get("/api/fale-personas")
+def listar_fale_personas():
+    return {
+        "personas": [
+            {
+                "persona_id": pid,
+                "display_name": p["display_name"],
+                "description": p["description"],
+                "exemplo": p["exemplo"],
+            }
+            for pid, p in FALE_PERSONAS.items()
+        ]
+    }
+
+
+# Um rascunho de mensagem, não um documento: o teto evita prompt gigante que
+# estoura o limite de tokens por minuto dos provedores gratuitos.
+MAX_RASCUNHO_FALE = 4000
+MAX_CONTEXTO_FALE = 1500
+
+
+class FaleOQuePensaReq(BaseModel):
+    rascunho: str
+    contexto: str = ""
+    persona_id: str = "auto"
+    provider: str = "nous"
+    modelo: Optional[str] = None
+
+
+@app.post("/api/fale-o-que-pensa")
+async def fale_o_que_pensa(req: FaleOQuePensaReq, request: Request):
+    rascunho = req.rascunho.strip()
+    if not rascunho:
+        raise HTTPException(400, "Escreva o rascunho da mensagem que você quer mandar.")
+    if len(rascunho) > MAX_RASCUNHO_FALE or len(req.contexto) > MAX_CONTEXTO_FALE:
+        raise HTTPException(
+            400,
+            f"Texto longo demais: até {MAX_RASCUNHO_FALE} caracteres no rascunho "
+            f"e {MAX_CONTEXTO_FALE} no contexto.",
+        )
+    persona = FALE_PERSONAS.get(req.persona_id)
+    if not persona:
+        raise HTTPException(400, f"Personalidade desconhecida: '{req.persona_id}'.")
+    await _limitar_llm(request)
+    modelo = resolver_modelo(req.provider, req.modelo)
+    system_prompt = (
+        f"{SYSTEM_PROMPT_FALE_O_QUE_PENSA}\n\n"
+        f"PERSONALIDADE ATIVA — {persona['display_name']}:\n{persona['prompt_modifier']}"
+    )
+    user_prompt = (
+        f"Para quem é e o que aconteceu: {req.contexto.strip() or '(não informado)'}\n"
+        f'Rascunho do usuário: "{rascunho}"'
+    )
+    resposta = await chamar_llm(req.provider, modelo, system_prompt, user_prompt)
+    return {
+        **separar_secoes_fale(resposta),
         "persona_id": req.persona_id,
         "provider": req.provider,
         "modelo": modelo,

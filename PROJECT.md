@@ -61,7 +61,7 @@ A interface tem 13 abas em 5 grupos ([app/page.tsx](app/page.tsx)).
 | Aba | O que faz | Rotas |
 |---|---|---|
 | **Perfis Comportamentais** | O usuário cola uma mensagem recebida e escolhe o tom da resposta que protege seus limites: colérico, estoico, reservado, empático-firme ou protetor | `/api/perfis-comportamentais`, `/api/perfil-comportamental` |
-| **Elenco** | Gera uma mensagem com gancho de assunto no estilo da persona escolhida: debatedor, curiosa, nostálgico, resenha, paquera, prestativo, conciso ou técnico | `/api/elenco-personas`, `/api/elenco-conversa` |
+| **Elenco — Fale o que pensa** | Aba com dois modos. **Fale o que pensa**: o usuário escreve o rascunho do jeito que sair; a IA diz o que ele quis dizer, analisa como o texto pode soar e devolve a mensagem melhorada na personalidade escolhida: automático, direto, diplomata (indireto), para o(a) ex, papo de amigo, lição de moral, agir correto, desabafo sincero ou cobrança educada. **Puxar assunto**: o Elenco original, que gera uma mensagem com gancho de assunto (debatedor, curiosa, nostálgico, resenha, paquera etc.) | `/api/fale-personas`, `/api/fale-o-que-pensa`, `/api/elenco-personas`, `/api/elenco-conversa` |
 
 ### Suporte
 
