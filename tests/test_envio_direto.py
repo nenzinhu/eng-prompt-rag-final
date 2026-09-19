@@ -176,3 +176,12 @@ def test_config_sem_supabase_desliga_contas(monkeypatch):
     monkeypatch.setattr(index, "SUPABASE_URL", "")
     corpo = TestClient(index.app).get("/api/config").json()
     assert corpo["auth_url"] is None
+
+
+def test_interesses_entram_como_dado_com_teto():
+    assert index._bloco_interesses(None) == ""
+    assert index._bloco_interesses("   ") == ""
+    bloco = index._bloco_interesses('futebol,\n "games"' + "x" * 500)
+    assert bloco.startswith("UNIVERSO DO ALUNO: \"futebol, 'games'")
+    primeira = bloco.split("\n")[0]
+    assert len(primeira) <= len('UNIVERSO DO ALUNO: ""') + index.MAX_INTERESSES

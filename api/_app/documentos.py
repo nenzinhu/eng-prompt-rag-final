@@ -112,23 +112,168 @@ def nome_para_storage(nome: str) -> str:
     return base or "documento"
 
 
+# ── Markdown da apostila → blocos ───────────────────────────────────────────
+#
+# O modelo escreve a apostila em Markdown. Os dois formatos de saída (PDF e DOCX)
+# leem a mesma lista de blocos, para que um recurso novo (caixa de destaque,
+# tabela) não funcione num formato e saia cru no outro.
+
+_RE_NUMERO_TITULO = re.compile(r"^\d+(\.\d+)*[.)]?\s+")
+_RE_ITEM_NUMERADO = re.compile(r"^\d+[.)]\s+")
+_RE_SEPARADOR_TABELA = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$")
+_RE_ROTULO = re.compile(r"^\*\*([^*]{2,30}?)\s*:?\*\*\s*:?\s*")
+
+
+def _celulas(linha: str) -> list[str]:
+    return [c.strip() for c in linha.strip().strip("|").split("|")]
+
+
+def _blocos_markdown(texto: str) -> list[tuple[str, object]]:
+    """Divide o Markdown em blocos: h1/h2/h3, p, ul, ol, quote, code, table.
+
+    - quote: (rótulo, texto) — `> **Exemplo:** ...` vira uma caixa de destaque;
+    - code: texto do bloco entre crases triplas (prompts de exemplo);
+    - table: lista de linhas, a primeira é o cabeçalho.
+    """
+    blocos: list[tuple[str, object]] = []
+    linhas = texto.replace("\r\n", "\n").split("\n")
+    i = 0
+    while i < len(linhas):
+        bruta = linhas[i]
+        linha = bruta.strip()
+        if not linha or re.fullmatch(r"(-{3,}|\*{3,}|_{3,})", linha):
+            i += 1
+            continue
+        if linha.startswith("```"):
+            corpo = []
+            i += 1
+            while i < len(linhas) and not linhas[i].strip().startswith("```"):
+                corpo.append(linhas[i].rstrip())
+                i += 1
+            i += 1  # fecha a cerca (ou fim do texto)
+            blocos.append(("code", "\n".join(corpo).strip("\n")))
+            continue
+        if linha.startswith("#"):
+            nivel = len(linha) - len(linha.lstrip("#"))
+            titulo = linha[nivel:].strip()
+            if titulo:
+                blocos.append((f"h{min(max(nivel, 1), 3)}", titulo))
+            i += 1
+            continue
+        if linha.startswith("|"):
+            linhas_tabela = []
+            while i < len(linhas) and linhas[i].strip().startswith("|"):
+                if not _RE_SEPARADOR_TABELA.match(linhas[i].strip()):
+                    linhas_tabela.append(_celulas(linhas[i]))
+                i += 1
+            if linhas_tabela:
+                blocos.append(("table", linhas_tabela))
+            continue
+        if linha.startswith(">"):
+            partes = []
+            while i < len(linhas) and linhas[i].strip().startswith(">"):
+                partes.append(linhas[i].strip().lstrip(">").strip())
+                i += 1
+            corpo = " ".join(p for p in partes if p)
+            m = _RE_ROTULO.match(corpo)
+            rotulo, corpo = (m.group(1).strip(), corpo[m.end():]) if m else ("", corpo)
+            blocos.append(("quote", (rotulo, corpo.strip())))
+            continue
+        if linha.startswith(("- ", "* ", "• ")):
+            itens = []
+            while i < len(linhas) and linhas[i].strip().startswith(("- ", "* ", "• ")):
+                itens.append(linhas[i].strip()[2:].strip())
+                i += 1
+            blocos.append(("ul", itens))
+            continue
+        if _RE_ITEM_NUMERADO.match(linha):
+            itens = []
+            while i < len(linhas) and _RE_ITEM_NUMERADO.match(linhas[i].strip()):
+                itens.append(_RE_ITEM_NUMERADO.sub("", linhas[i].strip(), count=1))
+                i += 1
+            blocos.append(("ol", itens))
+            continue
+        # Parágrafo: junta linhas seguidas até uma linha vazia ou outro bloco.
+        partes = [linha]
+        i += 1
+        while i < len(linhas):
+            prox = linhas[i].strip()
+            if not prox or prox.startswith(("#", "```", "|", ">", "- ", "* ", "• ")) or _RE_ITEM_NUMERADO.match(prox):
+                break
+            partes.append(prox)
+            i += 1
+        blocos.append(("p", " ".join(partes)))
+    return blocos
+
+
+def _texto_puro(texto: str) -> str:
+    """Tira as marcas de Markdown em linha (para títulos, sumário e DOCX)."""
+    texto = texto.replace("**", "").replace("__", "").replace("`", "")
+    return re.sub(r"(?<![\w*])\*(?!\s)([^*]+?)\*(?![\w*])", r"\1", texto)
+
+
+def _texto_negrito(texto: str) -> str:
+    """Prepara o texto para o `markdown=True` do fpdf2: mantém só o **negrito**.
+
+    O fpdf2 também lê `__` (itálico) e `--` (sublinhado), que aparecem em texto
+    comum ("--flag", "nome__campo") e bagunçariam a página.
+    """
+    texto = texto.replace("__", "").replace("`", "").replace("--", "–")
+    texto = re.sub(r"(?<![\w*])\*(?!\s)([^*]+?)\*(?![\w*])", r"\1", texto)
+    if texto.count("**") % 2:  # negrito sem fechamento: sai tudo normal
+        texto = texto.replace("**", "")
+    return texto
+
+
+def _titulo_da_apostila(blocos: list[tuple[str, object]], tema: str) -> tuple[str, list[tuple[str, object]]]:
+    """Usa o primeiro `# ` como título da capa; os demais `# ` viram seções."""
+    titulo = tema
+    resto = []
+    for tipo, dado in blocos:
+        if tipo == "h1" and titulo == tema and not resto:
+            titulo = _texto_puro(str(dado))
+            continue
+        resto.append(("h2", dado) if tipo == "h1" else (tipo, dado))
+    return titulo, resto
+
+
 def _markdown_para_docx(texto: str, titulo: str) -> bytes:
+    titulo, blocos = _titulo_da_apostila(_blocos_markdown(texto), titulo)
     doc = DocxDocument()
     doc.add_heading(titulo, level=0)
-    for linha in texto.splitlines():
-        linha = linha.strip()
-        if not linha:
-            continue
-        if linha.startswith("### "):
-            doc.add_heading(linha[4:].strip(), level=3)
-        elif linha.startswith("## "):
-            doc.add_heading(linha[3:].strip(), level=2)
-        elif linha.startswith("# "):
-            doc.add_heading(linha[2:].strip(), level=1)
-        elif linha.startswith(("- ", "* ")):
-            doc.add_paragraph(linha[2:].strip(), style="List Bullet")
+    for tipo, dado in blocos:
+        if tipo in ("h2", "h3"):
+            doc.add_heading(_RE_NUMERO_TITULO.sub("", _texto_puro(str(dado))), level=int(tipo[1]) - 1)
+        elif tipo == "ul":
+            for item in dado:  # type: ignore[union-attr]
+                doc.add_paragraph(_texto_puro(item), style="List Bullet")
+        elif tipo == "ol":
+            for item in dado:  # type: ignore[union-attr]
+                doc.add_paragraph(_texto_puro(item), style="List Number")
+        elif tipo == "quote":
+            rotulo, corpo = dado  # type: ignore[misc]
+            p = doc.add_paragraph(style="Intense Quote")
+            if rotulo:
+                p.add_run(f"{rotulo}: ").bold = True
+            p.add_run(_texto_puro(corpo))
+        elif tipo == "code":
+            p = doc.add_paragraph(str(dado))
+            for run in p.runs:
+                run.font.name = "Consolas"
+        elif tipo == "table":
+            linhas = dado  # type: ignore[assignment]
+            colunas = max(len(r) for r in linhas)
+            tabela = doc.add_table(rows=0, cols=colunas)
+            tabela.style = "Light Grid Accent 1"
+            for n, r in enumerate(linhas):
+                celulas = tabela.add_row().cells
+                for c in range(colunas):
+                    celulas[c].text = _texto_puro(r[c]) if c < len(r) else ""
+                    if n == 0:
+                        for run in celulas[c].paragraphs[0].runs:
+                            run.bold = True
         else:
-            doc.add_paragraph(linha)
+            doc.add_paragraph(_texto_puro(str(dado)))
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
@@ -158,12 +303,80 @@ def _para_latin1(texto: str) -> str:
     return texto.translate(_TROCAS_LATIN1).encode("latin-1", "replace").decode("latin-1")
 
 
-def _markdown_para_pdf(texto: str, titulo: str) -> bytes:
-    from fpdf import FPDF  # import local: só carregado quando o formato pedido é pdf
+# Paleta do PDF: sóbria, para impressão (o tema escuro do app não serve em papel).
+_COR_PRIMARIA = (31, 58, 95)  # azul-marinho: capa, títulos
+_COR_DESTAQUE = (42, 157, 143)  # verde-azulado: filetes, subtítulos
+_COR_TEXTO = (40, 44, 52)
+_COR_SUAVE = (120, 126, 138)
 
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
+# Caixas de destaque: rótulo (sem acento, minúsculo) → (cor da barra, fundo).
+_CAIXAS = [
+    (("defini", "conceito"), (31, 58, 95), (234, 240, 248)),
+    (("exemplo", "na pratica", "caso"), (42, 157, 143), (230, 245, 242)),
+    (("atenc", "cuidado", "erro", "armadilha", "aviso"), (201, 125, 0), (253, 244, 225)),
+    (("analogia",), (123, 76, 194), (240, 234, 250)),
+    (("dica", "resumo", "importante", "lembre", "chave"), (46, 125, 50), (232, 245, 233)),
+]
+_CAIXA_PADRAO = ((90, 98, 110), (242, 243, 245))
+
+
+def _cores_da_caixa(rotulo: str) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    chave = unicodedata.normalize("NFKD", rotulo).encode("ascii", "ignore").decode().lower()
+    for palavras, cor, fundo in _CAIXAS:
+        if any(p in chave for p in palavras):
+            return cor, fundo
+    return _CAIXA_PADRAO
+
+
+def _data_hoje() -> str:
+    from datetime import datetime
+
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y")
+    except Exception:
+        return datetime.now().strftime("%d/%m/%Y")
+
+
+def _markdown_para_pdf(texto: str, titulo: str) -> bytes:
+    """Apostila em PDF com cara de material didático.
+
+    Capa, sumário com páginas, seções numeradas, texto justificado, caixas de
+    destaque (Definição, Exemplo, Atenção, Analogia, Dica), blocos de prompt,
+    tabelas e rodapé com número de página.
+    """
+    from fpdf import FPDF  # import local: só carregado quando o formato pedido é pdf
+    from fpdf.fonts import FontFace
+
+    titulo, blocos = _titulo_da_apostila(_blocos_markdown(texto), titulo)
+    titulo = _texto_puro(titulo)[:140] or "Apostila"
+
+    class Apostila(FPDF):
+        def header(self):
+            if self.page_no() == 1:
+                return
+            self.set_font(familia, "", 8)
+            self.set_text_color(*_COR_SUAVE)
+            self.cell(0, 6, preparar(titulo[:90]), new_x="LMARGIN", new_y="NEXT")
+            self.set_draw_color(220, 223, 228)
+            self.set_line_width(0.2)
+            self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+            self.ln(6)
+
+        def footer(self):
+            if self.page_no() == 1:
+                return
+            self.set_y(-15)
+            self.set_font(familia, "", 8)
+            self.set_text_color(*_COR_SUAVE)
+            self.cell(0, 6, preparar("Engenharia de Prompt · apostila gerada com IA"), align="L")
+            self.set_x(self.l_margin)
+            self.cell(0, 6, f"{self.page_no()}", align="R")
+
+    pdf = Apostila(format="A4")
+    pdf.set_margins(20, 20, 20)
+    pdf.set_auto_page_break(auto=True, margin=22)
 
     familia, preparar = "Helvetica", _para_latin1
     if FONTE_PDF.exists() and FONTE_PDF_NEGRITO.exists():
@@ -174,31 +387,183 @@ def _markdown_para_pdf(texto: str, titulo: str) -> bytes:
         except Exception:  # fonte corrompida: segue com o plano B em vez de falhar
             pass
 
-    def linha_pdf(tamanho: float, altura: float, conteudo: str, negrito: bool = False):
-        # new_x="LMARGIN" é necessário: o padrão do fpdf2 deixa o cursor na borda
-        # direita após multi_cell, e a chamada seguinte com largura 0 quebra
-        # ("Not enough horizontal space") por não sobrar espaço até a margem.
-        pdf.set_font(familia, "B" if negrito else "", tamanho)
-        pdf.multi_cell(0, altura, preparar(conteudo), new_x="LMARGIN", new_y="NEXT")
+    # new_x="LMARGIN" em todo multi_cell: o padrão do fpdf2 deixa o cursor na
+    # borda direita, e a chamada seguinte com largura 0 quebra por falta de espaço.
+    corpo_tam, corpo_alt = 10.5, 5.8
 
-    linha_pdf(16, 10, titulo, negrito=True)
-    pdf.ln(2)
-    for linha in texto.splitlines():
-        # O PDF não interpreta negrito do Markdown; sem isso os "**" saem impressos.
-        linha = linha.replace("**", "").strip()
-        if not linha:
+    def fonte(tamanho: float, negrito: bool = False, cor=_COR_TEXTO):
+        pdf.set_font(familia, "B" if negrito else "", tamanho)
+        pdf.set_text_color(*cor)
+
+    # ── Capa ──
+    pdf.add_page()
+    pdf.set_fill_color(*_COR_PRIMARIA)
+    pdf.rect(0, 0, pdf.w, 125, "F")
+    pdf.set_fill_color(*_COR_DESTAQUE)
+    pdf.rect(0, 125, pdf.w, 3, "F")
+    pdf.set_xy(20, 40)
+    fonte(10, True, (160, 225, 215))
+    pdf.cell(0, 6, preparar("APOSTILA · ENGENHARIA DE PROMPT"), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+    fonte(26, True, (255, 255, 255))
+    pdf.multi_cell(0, 11.5, preparar(titulo), align="L", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_y(142)
+    fonte(10.5, False, _COR_TEXTO)
+    pdf.multi_cell(
+        0, 6,
+        preparar(
+            "Material didático gerado com inteligência artificial a partir do acervo do curso. "
+            "As citações no formato [Fonte: arquivo, página N] indicam de onde veio cada informação — "
+            "confira no material original antes de usar em provas ou trabalhos."
+        ),
+        new_x="LMARGIN", new_y="NEXT",
+    )
+    pdf.ln(4)
+    fonte(9.5, False, _COR_SUAVE)
+    pdf.cell(0, 6, preparar(f"Gerada em {_data_hoje()}"), new_x="LMARGIN", new_y="NEXT")
+
+    # ── Sumário (preenchido pelo fpdf2 no fim, com as páginas reais) ──
+    n_secoes = sum(1 for t, _ in blocos if t in ("h2", "h3"))
+
+    def desenhar_sumario(pdf_, secoes):
+        pdf_.set_x(pdf_.l_margin)
+        fonte(18, True, _COR_PRIMARIA)
+        pdf_.cell(0, 10, preparar("Sumário"), new_x="LMARGIN", new_y="NEXT")
+        pdf_.set_draw_color(*_COR_DESTAQUE)
+        pdf_.set_line_width(0.8)
+        pdf_.line(pdf_.l_margin, pdf_.get_y() + 1, pdf_.l_margin + 25, pdf_.get_y() + 1)
+        pdf_.ln(7)
+        for s in secoes:
+            recuo = 8 * s.level
+            fonte(10.5 if s.level == 0 else 9.5, s.level == 0, _COR_TEXTO if s.level == 0 else _COR_SUAVE)
+            pdf_.set_x(pdf_.l_margin + recuo)
+            largura = pdf_.epw - recuo - 12
+            nome = s.name if pdf_.get_string_width(s.name) <= largura else s.name[: int(len(s.name) * largura / pdf_.get_string_width(s.name)) - 1] + "…"
+            pdf_.cell(largura, 7, preparar(nome))
+            pdf_.cell(12, 7, str(s.page_number), align="R", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.add_page()
+    if n_secoes:  # o fpdf2 já quebra a página depois do espaço reservado
+        pdf.insert_toc_placeholder(desenhar_sumario, pages=max(1, -(-n_secoes // 30)))
+
+    def caixa(rotulo: str, corpo: str, cor, fundo, codigo: bool = False):
+        pad, barra = 4, 1.6
+        largura = pdf.epw - 2 * pad - barra
+        tam, alt = (9, 4.8) if codigo else (corpo_tam, corpo_alt)
+        texto_caixa = preparar(corpo if codigo else _texto_negrito(corpo))
+        fonte(tam)
+        h_texto = pdf.multi_cell(
+            largura, alt, texto_caixa, markdown=not codigo, align="L", dry_run=True, output="HEIGHT"
+        )
+        h_rotulo = 6.5 if rotulo else 0
+        total = 2 * pad + h_rotulo + h_texto
+        cabe_numa_pagina = total <= pdf.page_break_trigger - pdf.t_margin - 10
+        if cabe_numa_pagina and pdf.will_page_break(total):
+            pdf.add_page()
+        x, y = pdf.l_margin, pdf.get_y()
+        if cabe_numa_pagina:  # caixa maior que a página: sai sem fundo, só o texto
+            pdf.set_fill_color(*fundo)
+            pdf.rect(x, y, pdf.epw, total, "F")
+            pdf.set_fill_color(*cor)
+            pdf.rect(x, y, barra, total, "F")
+        pdf.set_xy(x + barra + pad, y + pad)
+        if rotulo:
+            fonte(9, True, cor)
+            pdf.cell(largura, h_rotulo, preparar(rotulo.upper()), new_x="LEFT", new_y="NEXT")
+        fonte(tam, False, _COR_TEXTO)
+        pdf.set_x(x + barra + pad)
+        pdf.multi_cell(
+            largura, alt, texto_caixa, markdown=not codigo, align="L", new_x="LMARGIN", new_y="NEXT"
+        )
+        if cabe_numa_pagina:
+            pdf.set_y(y + total)
+        pdf.ln(4)
+
+    def lista(itens: list[str], numerada: bool):
+        for n, item in enumerate(itens, 1):
+            if pdf.will_page_break(corpo_alt):
+                pdf.add_page()
+            fonte(corpo_tam, numerada, _COR_DESTAQUE)
+            pdf.set_x(pdf.l_margin + 3)
+            pdf.cell(7, corpo_alt, f"{n}." if numerada else preparar("•"))
+            fonte(corpo_tam)
+            pdf.multi_cell(
+                pdf.epw - 10, corpo_alt, preparar(_texto_negrito(item)),
+                markdown=True, align="L", new_x="LMARGIN", new_y="NEXT",
+            )
+            pdf.ln(1)
+        pdf.ln(2)
+
+    def tabela(linhas: list[list[str]]):
+        colunas = max(len(r) for r in linhas)
+        linhas = [[preparar(_texto_puro(c)) for c in r] + [""] * (colunas - len(r)) for r in linhas]
+        fonte(9)
+        # A tabela herda a cor de preenchimento e de linha do que veio antes
+        # (a barra da última caixa pintava as linhas); fixa as duas aqui.
+        pdf.set_fill_color(245, 247, 250)
+        pdf.set_draw_color(215, 219, 225)
+        pdf.set_line_width(0.2)
+        try:
+            with pdf.table(
+                line_height=5.2,
+                text_align="LEFT",
+                borders_layout="HORIZONTAL_LINES",
+                cell_fill_color=(245, 247, 250),
+                cell_fill_mode="ROWS",
+                headings_style=FontFace(emphasis="BOLD", color=(255, 255, 255), fill_color=_COR_PRIMARIA),
+            ) as t:
+                for r in linhas:
+                    linha = t.row()
+                    for c in r:
+                        linha.cell(c)
+        except Exception:  # tabela torta demais para o fpdf2: sai como texto
+            for r in linhas:
+                pdf.multi_cell(0, corpo_alt, " | ".join(r), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(4)
+
+    n2 = n3 = 0
+    for tipo, dado in blocos:
+        if tipo == "h2":
+            n2, n3 = n2 + 1, 0
+            nome = _RE_NUMERO_TITULO.sub("", _texto_puro(str(dado)))
+            if pdf.get_y() > pdf.t_margin + 20 and pdf.will_page_break(35):
+                pdf.add_page()
+            elif pdf.get_y() > pdf.t_margin + 20:
+                pdf.ln(5)
+            pdf.start_section(preparar(f"{n2}. {nome}"), level=0)
+            fonte(15, True, _COR_PRIMARIA)
+            pdf.multi_cell(0, 8, preparar(f"{n2}. {nome}"), align="L", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_draw_color(*_COR_DESTAQUE)
+            pdf.set_line_width(0.8)
+            pdf.line(pdf.l_margin, pdf.get_y() + 1, pdf.l_margin + 25, pdf.get_y() + 1)
+            pdf.ln(5)
+        elif tipo == "h3":
+            n3 += 1
+            nome = _RE_NUMERO_TITULO.sub("", _texto_puro(str(dado)))
+            rotulo = f"{n2}.{n3} {nome}" if n2 else nome
+            if pdf.will_page_break(25):
+                pdf.add_page()
             pdf.ln(2)
-            continue
-        if linha.startswith("### "):
-            linha_pdf(12, 8, linha[4:].strip(), negrito=True)
-        elif linha.startswith("## "):
-            linha_pdf(13, 8, linha[3:].strip(), negrito=True)
-        elif linha.startswith("# "):
-            linha_pdf(15, 9, linha[2:].strip(), negrito=True)
-        elif linha.startswith(("- ", "* ")):
-            linha_pdf(11, 7, f"-  {linha[2:].strip()}")
-        else:
-            linha_pdf(11, 7, linha)
+            pdf.start_section(preparar(rotulo), level=1)
+            fonte(12, True, (32, 110, 100))
+            pdf.multi_cell(0, 7, preparar(rotulo), align="L", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(1.5)
+        elif tipo == "p":
+            fonte(corpo_tam)
+            pdf.multi_cell(
+                0, corpo_alt, preparar(_texto_negrito(str(dado))),
+                markdown=True, align="J", new_x="LMARGIN", new_y="NEXT",
+            )
+            pdf.ln(2.5)
+        elif tipo in ("ul", "ol"):
+            lista(dado, tipo == "ol")  # type: ignore[arg-type]
+        elif tipo == "quote":
+            rotulo, corpo = dado  # type: ignore[misc]
+            caixa(rotulo, corpo, *_cores_da_caixa(rotulo))
+        elif tipo == "code":
+            caixa("Prompt / exemplo", str(dado), (90, 98, 110), (246, 247, 249), codigo=True)
+        elif tipo == "table":
+            tabela(dado)  # type: ignore[arg-type]
     return bytes(pdf.output())
 
 

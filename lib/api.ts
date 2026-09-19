@@ -305,10 +305,10 @@ export const api = {
     form.append('modelo', modelo)
     return pedir<ResumoApostilaResp>('/api/resumir-apostila', { method: 'POST', body: form })
   },
-  gerarApostila: (tema: string, formato: 'pdf' | 'docx', provider: string, modelo: string) =>
+  gerarApostila: (tema: string, formato: 'pdf' | 'docx', provider: string, modelo: string, interesses = '') =>
     baixarArquivo(
       '/api/gerar-apostila',
-      { tema, formato, provider, modelo },
+      { tema, formato, provider, modelo, interesses: interesses.trim() || null },
       `apostila.${formato}`
     ),
 

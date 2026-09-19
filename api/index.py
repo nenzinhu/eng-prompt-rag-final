@@ -1134,6 +1134,28 @@ class ApostilaReq(BaseModel):
     formato: str = "pdf"  # "pdf" ou "docx"
     provider: str = "nous"
     modelo: Optional[str] = None
+    # Universo do aluno (ex.: "futebol, games") para as analogias. Opcional.
+    interesses: Optional[str] = None
+
+
+MAX_INTERESSES = 120
+
+
+def _bloco_interesses(interesses: Optional[str]) -> str:
+    """Instrução de analogias a partir dos interesses do aluno ("" se não houver).
+
+    O texto é do aluno: entra entre aspas, em uma linha e com teto de tamanho,
+    como dado — não como instrução.
+    """
+    texto = " ".join((interesses or "").split())[:MAX_INTERESSES].replace('"', "'")
+    if not texto:
+        return ""
+    return (
+        f'UNIVERSO DO ALUNO: "{texto}"\n'
+        "Explique os conceitos principais com analogias tiradas desse universo (uma por seção, "
+        "quando ajudar a entender). A analogia vem depois da explicação correta, nunca no lugar "
+        "dela; se não couber bem num conceito, não force.\n\n"
+    )
 
 
 @app.post("/api/gerar-apostila")
@@ -1164,6 +1186,7 @@ async def gerar_apostila(req: ApostilaReq, request: Request):
     prompt_usuario = f"TEMA: {tema}\n\n"
     if contexto:
         prompt_usuario += f"CONTEXTO DO CURSO:\n{contexto}\n\n"
+    prompt_usuario += _bloco_interesses(req.interesses)
     prompt_usuario += "Escreva a apostila completa sobre este tema."
 
     texto = limpar_resposta(await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_APOSTILA, prompt_usuario))

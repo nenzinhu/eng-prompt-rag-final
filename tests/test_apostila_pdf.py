@@ -64,3 +64,81 @@ def test_fonte_unicode_esta_no_pacote():
     Sem ela o PDF ainda sai, mas com símbolos trocados por equivalentes simples."""
     assert documentos.FONTE_PDF.exists(), f"faltando {documentos.FONTE_PDF}"
     assert documentos.FONTE_PDF_NEGRITO.exists(), f"faltando {documentos.FONTE_PDF_NEGRITO}"
+
+
+APOSTILA = """# Título da apostila
+
+## Objetivos de aprendizagem
+- **Entender** o tema
+- Aplicar na prática
+
+## Conceito
+Parágrafo com **negrito** e `código` que
+continua na linha seguinte.
+
+> **Definição:** texto da definição.
+
+> **Analogia:** como no futebol.
+
+```
+Pense passo a passo.
+```
+
+| Termo | Significado |
+|---|---|
+| CoT | Chain-of-Thought |
+
+### Subseção
+1. primeiro
+2. segundo
+"""
+
+
+def test_blocos_reconhecem_a_estrutura():
+    blocos = documentos._blocos_markdown(APOSTILA)
+    tipos = [t for t, _ in blocos]
+    assert tipos == ["h1", "h2", "ul", "h2", "p", "quote", "quote", "code", "table", "h3", "ol"]
+    assert blocos[4][1] == "Parágrafo com **negrito** e `código` que continua na linha seguinte."
+    assert blocos[5][1] == ("Definição", "texto da definição.")
+    assert blocos[7][1] == "Pense passo a passo."
+    assert blocos[8][1] == [["Termo", "Significado"], ["CoT", "Chain-of-Thought"]]
+
+
+def test_primeiro_h1_vira_titulo_da_capa():
+    titulo, resto = documentos._titulo_da_apostila(documentos._blocos_markdown(APOSTILA), "tema")
+    assert titulo == "Título da apostila"
+    assert all(t != "h1" for t, _ in resto)
+
+
+def test_pdf_tem_capa_sumario_e_secoes_numeradas():
+    pdf = _gerar(APOSTILA)
+    paginas = [p.extract_text() for p in PdfReader(io.BytesIO(pdf)).pages]
+    assert "Título da apostila" in paginas[0]
+    assert "Sumário" in paginas[1]
+    corpo = "".join(paginas[2:])
+    assert "1. Objetivos de aprendizagem" in corpo
+    assert "2.1 Subseção" in corpo
+    assert "DEFINIÇÃO" in corpo and "ANALOGIA" in corpo
+    assert "**" not in corpo and "`" not in corpo
+
+
+def test_pdf_longo_com_muitas_secoes_e_caixa_maior_que_a_pagina():
+    secoes = "\n\n".join(f"## Seção {n}\n\n### Parte {n}\n\ntexto" for n in range(40))
+    caixa = "> **Exemplo:** " + "palavra " * 1500
+    _gerar(f"# T\n\n{secoes}\n\n{caixa}")
+
+
+def test_pdf_sem_titulos_nao_tem_sumario():
+    paginas = PdfReader(io.BytesIO(_gerar("Só um parágrafo."))).pages
+    assert len(paginas) == 2  # capa + conteúdo
+
+
+def test_docx_usa_os_mesmos_blocos():
+    from docx import Document
+
+    doc = Document(io.BytesIO(documentos._markdown_para_docx(APOSTILA, "tema")))
+    textos = [p.text for p in doc.paragraphs]
+    assert textos[0] == "Título da apostila"
+    assert "Definição: texto da definição." in textos
+    assert not any("**" in t or t.startswith(">") for t in textos)
+    assert len(doc.tables) == 1
