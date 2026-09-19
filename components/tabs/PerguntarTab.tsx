@@ -1,10 +1,8 @@
 'use client'
 
-import { useLayoutEffect, useRef, useState } from 'react'
-import { gsap } from 'gsap'
+import { useRef, useState } from 'react'
 import { Wand2, GraduationCap, ShieldCheck, Download, TriangleAlert, MessageCircle } from 'lucide-react'
 import { api } from '@/lib/api'
-import { prefersReducedMotion } from '@/lib/reducedMotion'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { AuditarResp, ProvidersResp, PerguntarResp } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
@@ -13,11 +11,12 @@ import WarnBanner from '../WarnBanner'
 import Markdown from '../Markdown'
 import RespostaAuditada from '../RespostaAuditada'
 import AnexoImagem from '../AnexoImagem'
+import TituloAba from '../TituloAba'
 
 export default function PerguntarTab({
   providers,
   persona = 'padrao',
-  titulo = 'Pergunta livre — resposta gerada pela IA com base nas apostilas',
+  titulo = 'Perguntar — Resposta gerada pela IA com base nas apostilas, com fonte e página.',
   placeholder = 'Ex: Como funciona few-shot prompting? Me mostra um exemplo em Python.',
 }: {
   providers: ProvidersResp
@@ -50,8 +49,6 @@ export default function PerguntarTab({
   const [ocrLoading, setOcrLoading] = useState(false)
   const [anexoReset, setAnexoReset] = useState(0)
 
-  const resultCardRef = useRef<HTMLDivElement>(null)
-  const enviarBtnRef = useRef<HTMLButtonElement>(null)
 
   // Uma pergunta por vez (análise de 17/09/2026, A1-11): o botão voltava a ficar
   // ativo no meio do stream, e duas respostas — ou a auditoria atrasada da
@@ -67,17 +64,6 @@ export default function PerguntarTab({
     cancelarRef.current = null
     return ++rodadaAtualRef.current
   }
-
-  // Entrada suave do card de resposta sempre que um novo resultado chega.
-  useLayoutEffect(() => {
-    if (!resultado || !resultCardRef.current || prefersReducedMotion()) return
-    gsap.fromTo(
-      resultCardRef.current,
-      { autoAlpha: 0, y: 16 },
-      { autoAlpha: 1, y: 0, duration: 0.5, ease: 'power2.out' }
-    )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rodada])
 
   async function enviar() {
     if (!pergunta.trim()) return
@@ -242,7 +228,7 @@ export default function PerguntarTab({
 
   return (
     <div>
-      <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">{titulo}</p>
+      <TituloAba titulo={titulo.split(' — ')[0]} descricao={titulo.split(' — ').slice(1).join(' — ') || undefined} />
       <ProviderSelect
         providers={providers}
         provider={provider}
@@ -255,7 +241,7 @@ export default function PerguntarTab({
         value={pergunta}
         onChange={(e) => setPergunta(e.target.value)}
         placeholder={placeholder}
-        className="glass min-h-[120px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
+        className="campo text-[0.92rem] min-h-[120px] w-full p-4 leading-relaxed"
       />
       <AnexoImagem
         texto={pergunta}
@@ -268,20 +254,15 @@ export default function PerguntarTab({
       />
       <div className="mt-3 flex gap-2">
         <button
-          ref={enviarBtnRef}
           onClick={enviar}
-          onMouseEnter={() => gsap.to(enviarBtnRef.current, { scale: 1.03, duration: 0.2, ease: 'power2.out' })}
-          onMouseLeave={() => gsap.to(enviarBtnRef.current, { scale: 1, duration: 0.25, ease: 'power2.out' })}
-          onMouseDown={() => gsap.to(enviarBtnRef.current, { scale: 0.96, duration: 0.1 })}
-          onMouseUp={() => gsap.to(enviarBtnRef.current, { scale: 1.03, duration: 0.15 })}
           disabled={loading || recebendo || ocrLoading || !pronto}
-          className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="btn-primario"
         >
           {loading ? 'Pensando…' : recebendo ? 'Escrevendo…' : 'Perguntar'}
         </button>
         <button
           onClick={limpar}
-          className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
+          className="btn-secundario px-5 py-2.5 text-sm"
         >
           Limpar
         </button>
@@ -289,20 +270,20 @@ export default function PerguntarTab({
 
       <div className="mt-6">
         {loading && (
-          <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-muted">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet/30 border-t-violet" />
+          <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-texto-suave">
+            <div className="carregando h-6 w-6" />
             <span className="text-[0.82rem]">Buscando no material e gerando resposta…</span>
           </div>
         )}
         {!loading && erro && (
-          <div className="flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
+          <div className="aviso-erro text-texto flex items-center justify-center gap-2 p-6 text-center text-[0.85rem]">
             <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
             {erro}
           </div>
         )}
         {!loading && !erro && resultado && (
-          <div ref={resultCardRef} className="glass grad-border rounded-xl overflow-hidden">
-            <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-3 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+          <div key={rodada} className="cartao surgir overflow-hidden">
+            <div className="rotulo border-b border-white/[0.06] bg-white/[0.02] px-4 py-3">
               Resposta — {resultado.provider} / {resultado.modelo}
             </div>
             <div className="p-5">
@@ -314,7 +295,7 @@ export default function PerguntarTab({
               {resultado.interrompida && (
                 <div
                   role="alert"
-                  className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.8rem] text-amber-300"
+                  className="aviso-atencao text-texto mb-4 flex items-start gap-2 px-3.5 py-2.5 text-[0.8rem]"
                 >
                   <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                   <span>
@@ -325,8 +306,8 @@ export default function PerguntarTab({
               )}
 
               {recebendo && (
-                <div className="mb-4 flex items-center gap-2 text-[0.75rem] text-muted" aria-live="polite">
-                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-violet/30 border-t-violet" />
+                <div className="mb-4 flex items-center gap-2 text-[0.75rem] text-texto-suave" aria-live="polite">
+                  <div className="carregando h-3 w-3" />
                   Escrevendo…
                 </div>
               )}
@@ -335,7 +316,7 @@ export default function PerguntarTab({
                 <button
                   onClick={explicarMaisSimples}
                   disabled={simplificando}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+                  className="btn-secundario flex items-center gap-1.5 px-3.5 py-2 text-[0.78rem]"
                 >
                   <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
                   {simplificando ? 'Simplificando…' : 'Explicar mais simples'}
@@ -345,7 +326,7 @@ export default function PerguntarTab({
                   disabled={verificando}
                   title="Testar meu entendimento"
                   aria-label="Testar meu entendimento"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-muted transition-colors hover:bg-white/[0.06] hover:text-text disabled:opacity-40"
+                  className="btn-icone"
                 >
                   {verificando ? (
                     <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -358,7 +339,7 @@ export default function PerguntarTab({
                   disabled={auditando}
                   title={auditando ? 'Auditando…' : 'Auditar frases agora'}
                   aria-label="Auditar frases agora"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-muted transition-colors hover:bg-white/[0.06] hover:text-text disabled:opacity-40"
+                  className="btn-icone"
                 >
                   {auditando ? (
                     <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -370,16 +351,16 @@ export default function PerguntarTab({
                   onClick={exportarMarkdown}
                   title="Exportar .md"
                   aria-label="Exportar como Markdown"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-muted transition-colors hover:bg-white/[0.06] hover:text-text"
+                  className="btn-icone"
                 >
                   <Download className="h-4 w-4" aria-hidden="true" />
                 </button>
-                <label className="ml-1 flex items-center gap-1.5 text-[0.72rem] text-muted">
+                <label className="ml-1 flex items-center gap-1.5 text-[0.72rem] text-texto-suave">
                   <input
                     type="checkbox"
                     checked={auditarAuto}
                     onChange={(e) => setAuditarAuto(e.target.checked)}
-                    className="accent-cyan"
+                    className="accent-white"
                   />
                   Auditar automaticamente
                 </label>
@@ -391,8 +372,8 @@ export default function PerguntarTab({
               {auditoria && <RespostaAuditada texto={resultado.resposta} auditadas={auditoria.frases} auditando={false} />}
 
               {respostaSimples && (
-                <div className="mb-4 rounded-lg border border-cyan/20 bg-cyan/[0.05] p-4">
-                  <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-cyan">
+                <div className="mb-4 rounded-lg border border-borda-forte bg-cartao-hover p-4">
+                  <div className="rotulo mb-2 text-texto">
                     Versão mais simples
                   </div>
                   <Markdown>{respostaSimples}</Markdown>
@@ -400,8 +381,8 @@ export default function PerguntarTab({
               )}
 
               {perguntasVerificacao.length > 0 && (
-                <div className="mb-4 rounded-lg border border-violet/20 bg-violet/[0.05] p-4">
-                  <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-violet">
+                <div className="mb-4 rounded-lg border border-borda-forte bg-cartao-hover p-4">
+                  <div className="rotulo mb-2 text-texto">
                     Perguntas para testar seu entendimento — clique para ver a resposta
                   </div>
                   <div className="flex flex-col gap-1.5">
@@ -409,12 +390,12 @@ export default function PerguntarTab({
                       <div key={i}>
                         <button
                           onClick={() => responderVerificacao(i, p)}
-                          className="w-full rounded-lg px-2 py-1.5 text-left text-[0.85rem] text-text transition-colors hover:bg-white/[0.05]"
+                          className="w-full rounded-lg px-2 py-1.5 text-left text-[0.85rem] text-texto transition-colors hover:bg-white/[0.05]"
                         >
-                          <span className="text-violet">•</span> {p}
+                          <span className="text-texto">•</span> {p}
                         </button>
                         {carregandoVerificacaoIdx === i && (
-                          <div className="ml-4 mt-1 text-[0.78rem] text-muted">Pensando…</div>
+                          <div className="ml-4 mt-1 text-[0.78rem] text-texto-suave">Pensando…</div>
                         )}
                         {respostasVerificacao[i] && (
                           <div className="ml-4 mt-1 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
@@ -432,7 +413,7 @@ export default function PerguntarTab({
           </div>
         )}
         {!loading && !erro && !resultado && (
-          <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
+          <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-texto-suave">
             <MessageCircle className="h-6 w-6 opacity-50" aria-hidden="true" />
             <span className="text-[0.82rem]">A resposta da IA aparecerá aqui</span>
           </div>

@@ -37,10 +37,10 @@ O app usa os sinais visuais típicos de interface gerada por IA:
 | `borda-forte` | `#474747` | contorno de botão secundário |
 | `texto` | `#F2F2F2` | texto principal |
 | `texto-suave` | `#A3A3A3` | descrições, rótulos |
-| `texto-apagado` | `#6B6B6B` | dicas, contadores, placeholders |
+| `texto-apagado` | `#949494` (medido: ≥ 4,6:1 em todos os fundos) | dicas, contadores, placeholders |
 | `destaque` | `#FFFFFF` | aba ativa, seleção, foco |
 | `destaque-fim` | `#D6D6D6` | fim do degradê do botão primário |
-| `erro` / `ok` / `atencao` | `#EF4444` / `#22C55E` / `#F59E0B` | somente mensagens de estado |
+| `erro` / `ok` / `atencao` | `#F87171` / `#22C55E` / `#F59E0B` (erro clareado: `#EF4444` dava 4,1:1 no cartão) | somente mensagens de estado |
 
 `bg` passa a valer `#0A0A0A` para não quebrar usos restantes durante a troca; `violet`,
 `cyan`, `lime`, `hotpink`, `surface`, `surface-2` e `muted` são **removidos** na limpeza

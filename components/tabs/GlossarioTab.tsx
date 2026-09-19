@@ -8,6 +8,7 @@ import type { ProvidersResp, TermoGlossario } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
 import AnexoImagem from '../AnexoImagem'
 import Exemplos from '../Exemplos'
+import TituloAba from '../TituloAba'
 
 /**
  * Exemplos de um termo, aceitando o formato antigo.
@@ -88,12 +89,13 @@ export default function GlossarioTab({
 
   return (
     <div>
-      <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
-        Sumário de termos técnicos das apostilas, explicados de forma simples
-      </p>
+      <TituloAba
+        titulo="Glossário"
+        descricao="Os termos técnicos das apostilas, explicados de forma simples."
+      />
 
-      <div className="glass mb-6 rounded-xl p-4">
-        <div className="mb-2.5 flex items-center gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider text-cyan">
+      <div className="cartao mb-6 p-4">
+        <div className="rotulo mb-2.5 flex items-center gap-1.5 text-texto">
           <Search className="h-3.5 w-3.5" aria-hidden="true" />
           Buscar termo já salvo
         </div>
@@ -101,12 +103,12 @@ export default function GlossarioTab({
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           placeholder="Ex: byte, bit, few-shot..."
-          className="glass w-full rounded-lg p-3 font-mono text-[0.82rem] text-text outline-none placeholder:text-muted focus:border-violet/40"
+          className="campo text-[0.92rem] w-full p-3"
         />
         <div className="mt-3">
-          {buscando && <div className="text-[0.78rem] text-muted">Buscando…</div>}
+          {buscando && <div className="text-[0.78rem] text-texto-suave">Buscando…</div>}
           {!buscando && termosSalvos.length === 0 && (
-            <div className="text-[0.78rem] text-muted">
+            <div className="text-[0.78rem] text-texto-suave">
               {busca.trim() ? 'Nenhum termo salvo encontrado com esse filtro.' : 'Nenhum termo salvo ainda — gere um sumário abaixo.'}
             </div>
           )}
@@ -114,13 +116,13 @@ export default function GlossarioTab({
             <div className="flex max-h-[280px] flex-col gap-1.5 overflow-y-auto pr-1">
               {termosSalvos.map((t, i) => (
                 <div key={i} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
-                  <div className="mb-0.5 font-mono text-[0.78rem] font-semibold text-cyan">{t.termo}</div>
-                  <div className="text-[0.8rem] leading-relaxed text-muted">{t.explicacao}</div>
+                  <div className="mb-0.5 text-[0.78rem] font-semibold text-texto">{t.termo}</div>
+                  <div className="text-[0.8rem] leading-relaxed text-texto-suave">{t.explicacao}</div>
                   {exemplosDe(t).length > 0 && (
                     <ol className="mt-1.5 flex flex-col gap-1">
                       {exemplosDe(t).map((ex, j) => (
-                        <li key={j} className="text-[0.75rem] italic leading-relaxed text-muted/80">
-                          <span className="font-mono not-italic text-[0.65rem] text-violet">Ex {j + 1}: </span>
+                        <li key={j} className="text-[0.75rem] italic leading-relaxed text-texto-suave">
+                          <span className="not-italic text-[0.65rem] text-texto">Ex {j + 1}: </span>
                           {ex}
                         </li>
                       ))}
@@ -133,7 +135,7 @@ export default function GlossarioTab({
         </div>
       </div>
 
-      <p className="mb-2.5 flex items-center gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider text-violet">
+      <p className="rotulo mb-2.5 flex items-center gap-1.5 text-texto">
         <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
         Gerar novo sumário
       </p>
@@ -151,7 +153,7 @@ export default function GlossarioTab({
         placeholder={
           'Opcional: foque num assunto (ex: few-shot prompting, RAG, embeddings...) ou cole uma questão completa — os termos técnicos dela entram no sumário'
         }
-        className="glass min-h-[90px] w-full rounded-xl p-3.5 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
+        className="campo text-[0.92rem] min-h-[90px] w-full p-3.5 leading-relaxed"
       />
       <AnexoImagem
         texto={tema}
@@ -166,7 +168,7 @@ export default function GlossarioTab({
         <button
           onClick={() => gerar()}
           disabled={loading || ocrLoading || !pronto}
-          className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="btn-primario"
         >
           {loading ? 'Gerando…' : 'Gerar sumário'}
         </button>
@@ -178,7 +180,7 @@ export default function GlossarioTab({
               setErro('')
               setAnexoReset((t) => t + 1)
             }}
-            className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
+            className="btn-secundario px-5 py-2.5 text-sm"
           >
             Limpar
           </button>
@@ -187,37 +189,37 @@ export default function GlossarioTab({
 
       <div className="mt-6">
         {aviso && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.8rem] text-amber-300">
+          <div className="aviso-atencao text-texto mb-4 flex items-center gap-2 px-3.5 py-2.5 text-[0.8rem]">
             <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
             {aviso}
           </div>
         )}
         {loading && (
-          <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-muted">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet/30 border-t-violet" />
+          <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-texto-suave">
+            <div className="carregando h-6 w-6" />
             <span className="text-[0.82rem]">Lendo o material e identificando termos técnicos…</span>
           </div>
         )}
         {!loading && erro && (
-          <div className="flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
+          <div className="aviso-erro text-texto flex items-center justify-center gap-2 p-6 text-center text-[0.85rem]">
             <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
             {erro}
           </div>
         )}
         {!loading && !erro && termos && termos.length === 0 && (
-          <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-muted">
+          <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-texto-suave">
             <p className="text-[0.82rem]">Não encontrei termos técnicos claros nesse trecho do material.</p>
           </div>
         )}
         {!loading && !erro && termos && termos.length > 0 && (
           <div className="flex flex-col gap-2">
             {termos.map((t, i) => (
-              <div key={i} className="glass rounded-xl p-4">
-                <div className="mb-1 font-mono text-[0.8rem] font-semibold text-cyan">{t.termo}</div>
-                <div className="text-[0.85rem] leading-relaxed text-text">{t.explicacao}</div>
+              <div key={i} className="cartao p-4">
+                <div className="mb-1 text-[0.8rem] font-semibold text-texto">{t.termo}</div>
+                <div className="text-[0.85rem] leading-relaxed text-texto">{t.explicacao}</div>
                 {exemplosDe(t).length > 0 && (
                   <div className="mt-3">
-                    <Exemplos itens={exemplosDe(t)} rotulo={`Exemplos de “${t.termo}”`} destaque="cyan" />
+                    <Exemplos itens={exemplosDe(t)} rotulo={`Exemplos de “${t.termo}”`} />
                   </div>
                 )}
               </div>
@@ -225,7 +227,7 @@ export default function GlossarioTab({
           </div>
         )}
         {!loading && !erro && !termos && (
-          <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
+          <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-texto-suave">
             <Library className="h-6 w-6 opacity-50" aria-hidden="true" />
             <span className="text-[0.82rem]">O sumário de termos aparecerá aqui</span>
           </div>

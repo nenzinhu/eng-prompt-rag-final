@@ -33,7 +33,7 @@ const TITULOS: Record<Modo, string> = {
 }
 
 const campo =
-  'glass w-full rounded-lg px-3 py-2 text-[0.85rem] text-text outline-none placeholder:text-muted focus:border-violet/40'
+  'campo text-[0.92rem] w-full px-3 py-2'
 
 /**
  * Conta do aluno no cabeçalho: botão "Entrar" e janela de entrar / criar conta /
@@ -220,7 +220,7 @@ export default function Conta() {
           onClick={() => setMenu((v) => !v)}
           aria-expanded={menu}
           title={sessao.email}
-          className="flex items-center gap-1.5 rounded-md border border-cyan/30 bg-cyan/10 px-2.5 py-1 font-mono text-[0.68rem] font-medium text-cyan transition-colors hover:border-cyan/60"
+          className="flex items-center gap-1.5 rounded-md border border-borda-forte bg-cartao-hover px-2.5 py-1 text-[0.68rem] font-medium text-texto transition-colors hover:border-borda-forte"
         >
           <UserRound className="h-3 w-3" aria-hidden="true" />
           <span className="hidden max-w-[14ch] truncate sm:inline">{sessao.email || 'Conectado'}</span>
@@ -229,7 +229,7 @@ export default function Conta() {
         <button
           type="button"
           onClick={() => abrir('entrar')}
-          className="flex items-center gap-1.5 rounded-md border border-white/15 bg-white/[0.04] px-2.5 py-1 font-mono text-[0.68rem] font-medium text-text transition-colors hover:border-violet/50 hover:text-violet"
+          className="flex items-center gap-1.5 rounded-md border border-white/15 bg-white/[0.04] px-2.5 py-1 text-[0.68rem] font-medium text-texto transition-colors hover:border-borda-forte hover:text-texto"
         >
           <UserRound className="h-3 w-3" aria-hidden="true" />
           Entrar
@@ -237,8 +237,8 @@ export default function Conta() {
       )}
 
       {sessao && menu && (
-        <div className="glass absolute right-0 top-full z-50 mt-2 w-60 rounded-lg border border-white/15 p-3 text-[0.8rem] text-text shadow-xl">
-          <p className="text-muted">Conectado como</p>
+        <div className="cartao absolute right-0 top-full z-50 mt-2 w-60 rounded-lg border p-3 text-[0.8rem] text-texto shadow-xl">
+          <p className="text-texto-suave">Conectado como</p>
           <p className="mb-3 truncate font-medium">{sessao.email}</p>
           <button
             type="button"
@@ -250,7 +250,7 @@ export default function Conta() {
           <button
             type="button"
             onClick={desconectar}
-            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-rose-300 hover:bg-white/[0.06]"
+            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-erro hover:bg-white/[0.06]"
           >
             <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
             Sair
@@ -272,21 +272,21 @@ export default function Conta() {
             aria-modal="true"
             aria-labelledby="conta-titulo"
             onSubmit={enviar}
-            className="glass relative w-full max-w-sm rounded-xl border border-white/15 bg-surface/95 p-5 shadow-2xl"
+            className="cartao relative w-full max-w-sm border p-5"
           >
             <button
               type="button"
               onClick={() => setAberto(false)}
-              className="absolute right-3 top-3 text-muted hover:text-text"
+              className="absolute right-3 top-3 text-texto-suave hover:text-texto"
               aria-label="Fechar"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
 
-            <h2 id="conta-titulo" className="mb-1 font-display text-xl italic text-text">
+            <h2 id="conta-titulo" className="mb-1 text-xl font-bold text-texto">
               {TITULOS[modo]}
             </h2>
-            <p className="mb-4 text-[0.78rem] text-muted">
+            <p className="mb-4 text-[0.78rem] text-texto-suave">
               {modo === 'nova-senha'
                 ? 'Escolha a senha que vai usar daqui em diante.'
                 : 'A conta é opcional: o app continua funcionando sem login.'}
@@ -301,7 +301,7 @@ export default function Conta() {
                     onClick={() => abrir(m)}
                     aria-pressed={modo === m}
                     className={`rounded-md py-1.5 transition-colors ${
-                      modo === m ? 'bg-white/10 text-text' : 'text-muted hover:text-text'
+                      modo === m ? 'bg-white/10 text-texto' : 'text-texto-suave hover:text-texto'
                     }`}
                   >
                     {TITULOS[m]}
@@ -349,14 +349,14 @@ export default function Conta() {
             </div>
 
             {erro && (
-              <div role="alert" className="mt-3 flex items-start gap-1.5 text-[0.78rem] text-rose-300">
+              <div role="alert" className="mt-3 flex items-start gap-1.5 text-[0.78rem] text-erro">
                 <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 <span>
                   {erro.message}
                   {erro.codigo === 'email_not_confirmed' && email.trim() && (
                     <>
                       {' '}
-                      <button type="button" onClick={reenviar} className="underline hover:text-text">
+                      <button type="button" onClick={reenviar} className="underline hover:text-texto">
                         Reenviar link
                       </button>
                     </>
@@ -365,7 +365,7 @@ export default function Conta() {
               </div>
             )}
             {aviso && (
-              <div role="status" className="mt-3 flex items-start gap-1.5 text-[0.78rem] text-cyan">
+              <div role="status" className="mt-3 flex items-start gap-1.5 text-[0.78rem] text-texto">
                 <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 <span>{aviso}</span>
               </div>
@@ -374,7 +374,7 @@ export default function Conta() {
             <button
               type="submit"
               disabled={carregando}
-              className="mt-4 w-full rounded-lg bg-gradient-to-r from-violet to-cyan px-4 py-2 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="btn-primario mt-4 w-full px-4 py-2"
             >
               {carregando
                 ? 'Aguarde…'
@@ -391,7 +391,7 @@ export default function Conta() {
               <button
                 type="button"
                 onClick={() => abrir('recuperar')}
-                className="mt-3 w-full text-center text-[0.75rem] text-muted underline-offset-2 hover:text-text hover:underline"
+                className="mt-3 w-full text-center text-[0.75rem] text-texto-suave underline-offset-2 hover:text-texto hover:underline"
               >
                 Esqueci minha senha
               </button>
@@ -400,7 +400,7 @@ export default function Conta() {
               <button
                 type="button"
                 onClick={() => abrir('entrar')}
-                className="mt-3 w-full text-center text-[0.75rem] text-muted underline-offset-2 hover:text-text hover:underline"
+                className="mt-3 w-full text-center text-[0.75rem] text-texto-suave underline-offset-2 hover:text-texto hover:underline"
               >
                 Voltar para entrar
               </button>

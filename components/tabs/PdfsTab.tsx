@@ -8,6 +8,7 @@ import { ingerirArquivo, resumirIngestao, type ResultadoIngestao } from '@/lib/i
 import { nomeParaStorage } from '@/lib/texto'
 import type { PreviaIngestaoResp, UploadResp } from '@/lib/types'
 import AdminToken from '../AdminToken'
+import TituloAba from '../TituloAba'
 
 interface LogEntry {
   type: 'ok' | 'err' | 'info' | 'alert'
@@ -300,9 +301,10 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
 
   return (
     <div>
-      <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
-        Ingestão e indexação de materiais
-      </p>
+      <TituloAba
+        titulo="PDFs"
+        descricao="Envio e indexação dos materiais do curso."
+      />
 
       <AdminToken
         token={token}
@@ -327,13 +329,13 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
               setDragOver(false)
               addFiles(Array.from(e.dataTransfer.files))
             }}
-            className={`glass mb-4 cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-colors ${
-              dragOver ? 'border-violet bg-violet/[0.04]' : 'border-white/10'
+            className={`cartao mb-4 cursor-pointer border-2 border-dashed p-12 text-center transition-colors ${
+              dragOver ? 'border-borda-forte bg-cartao-hover' : 'border-white/10'
             }`}
           >
-            <FileText className="mx-auto mb-2.5 h-7 w-7 text-cyan" aria-hidden="true" />
-            <p className="text-[0.85rem] text-muted">
-              <strong className="font-medium text-text">Arraste arquivos ou clique para selecionar</strong>
+            <FileText className="mx-auto mb-2.5 h-7 w-7 text-texto" aria-hidden="true" />
+            <p className="text-[0.85rem] text-texto-suave">
+              <strong className="font-medium text-texto">Arraste arquivos ou clique para selecionar</strong>
               <br />
               {extensoes.join(' · ')} (até {tetoMb} MB cada) vão para o Supabase Storage e são indexados
               <br />
@@ -343,14 +345,14 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
               {envioDiretoMb > maxMb ? (
                 <>
                   <br />
-                  <span className="text-[0.75rem] text-muted">
+                  <span className="text-[0.75rem] text-texto-suave">
                     Acima de {maxMb} MB o arquivo vai direto do navegador ao Storage.
                   </span>
                 </>
               ) : motivoLimite && (
                 <>
                   <br />
-                  <span className="text-[0.75rem] text-amber-300/90">Limite de {maxMb} MB porque {motivoLimite}.</span>
+                  <span className="text-[0.75rem] text-atencao/90">Limite de {maxMb} MB porque {motivoLimite}.</span>
                 </>
               )}
             </p>
@@ -367,13 +369,13 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
           {pending.length > 0 && (
             <div className="mb-4 flex flex-col gap-1.5">
               {pending.map((f, i) => (
-                <div key={f.name} className="glass flex items-center gap-2 rounded-lg px-3 py-2 text-[0.82rem]">
-                  <FileText className="h-4 w-4 shrink-0 text-cyan" aria-hidden="true" />
-                  <span className="flex-1 truncate font-mono text-[0.78rem] text-text">
+                <div key={f.name} className="cartao flex items-center gap-2 rounded-lg px-3 py-2 text-[0.82rem]">
+                  <FileText className="h-4 w-4 shrink-0 text-texto" aria-hidden="true" />
+                  <span className="flex-1 truncate text-[0.78rem] text-texto">
                     {f.name}
                     {nomeParaStorage(f.name) !== f.name && (
                       <span
-                        className="ml-2 text-amber-300"
+                        className="ml-2 text-atencao"
                         title="O Storage não aceita acento nem símbolo no nome: o arquivo é salvo e citado com este nome"
                       >
                         → será salvo como {nomeParaStorage(f.name)}
@@ -383,7 +385,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
                   <button
                     onClick={() => setPending((prev) => prev.filter((_, idx) => idx !== i))}
                     aria-label={`Remover ${f.name}`}
-                    className="px-0.5 text-muted transition-colors hover:text-rose-400"
+                    className="px-0.5 text-texto-suave transition-colors hover:text-erro"
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -396,7 +398,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
             <button
               onClick={() => enviar()}
               disabled={!pending.length || uploading}
-              className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="btn-primario flex items-center gap-1.5"
             >
               <Upload className="h-4 w-4" aria-hidden="true" />
               {uploading ? 'Enviando…' : 'Enviar e Indexar'}
@@ -404,7 +406,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
             <button
               onClick={() => verificar()}
               disabled={indexing}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+              className="btn-secundario flex items-center gap-1.5 px-5 py-2.5 text-sm"
             >
               <Search className="h-4 w-4" aria-hidden="true" />
               {indexing ? 'Verificando…' : 'Verificar antes de reindexar'}
@@ -412,15 +414,15 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
           </div>
 
           {bloqueioUpload && (
-            <div className="mb-4 rounded-xl border border-rose-400/30 bg-rose-400/10 p-4">
-              <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-rose-300">
+            <div className="aviso-erro text-texto mb-4 p-4">
+              <div className="rotulo mb-2 text-erro">
                 Upload bloqueado — risco de perder conteúdo
               </div>
-              <p className="mb-2 text-[0.8rem] leading-relaxed text-muted">
+              <p className="mb-2 text-[0.8rem] leading-relaxed text-texto-suave">
                 {bloqueioUpload.mensagem ?? 'O arquivo enviado substituiria um documento já indexado.'}
               </p>
               {bloqueioUpload.fonte_afetada && bloqueioUpload.chunks_existentes !== undefined && (
-                <div className="mb-2 font-mono text-[0.75rem] text-text">
+                <div className="mb-2 text-[0.75rem] text-texto">
                   {bloqueioUpload.fonte_afetada}: {bloqueioUpload.chunks_existentes} chunks indexados hoje
                   {bloqueioUpload.perda_texto_percentual
                     ? ` · perda de ${bloqueioUpload.perda_texto_percentual}% do texto`
@@ -429,7 +431,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
               )}
               <ul className="mb-3 flex flex-col gap-1">
                 {(bloqueioUpload.avisos ?? []).map((a, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-[0.78rem] leading-relaxed text-amber-300">
+                  <li key={i} className="flex items-start gap-1.5 text-[0.78rem] leading-relaxed text-atencao">
                     <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     {a}
                   </li>
@@ -443,14 +445,14 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
                         `Confirmar mesmo assim? Os chunks atuais serão trocados pelos de "${bloqueioUpload.arquivo}". Os outros arquivos da fila continuam passando pela verificação normal.`,
                       ) && enviar(bloqueioUpload.arquivo)
                     }
-                    className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-4 py-2 text-[0.8rem] font-medium text-rose-300 transition-colors hover:bg-rose-400/20"
+                    className="aviso-erro text-texto px-4 py-2 text-[0.8rem] font-medium transition-colors hover:bg-erro/20"
                   >
                     Confirmar substituição de qualquer forma
                   </button>
                 )}
                 <button
                   onClick={() => setBloqueioUpload(null)}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-[0.8rem] font-medium text-text transition-colors hover:bg-white/[0.06]"
+                  className="btn-secundario px-4 py-2 text-[0.8rem]"
                 >
                   Cancelar
                 </button>
@@ -460,14 +462,14 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
 
           {analises.length > 0 && (
             <div className="mb-4 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
-              <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+              <div className="rotulo mb-2">
                 O que a reindexação faria
               </div>
-              <div className="flex flex-col gap-1 font-mono text-[0.75rem]">
+              <div className="flex flex-col gap-1 text-[0.75rem]">
                 {analises.map((a) => (
                   <div key={a.arquivo} className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="truncate text-text">{a.arquivo}</span>
-                    <span className={a.ok ? 'text-muted' : 'text-amber-300'}>
+                    <span className="truncate text-texto">{a.arquivo}</span>
+                    <span className={a.ok ? 'text-texto-suave' : 'text-atencao'}>
                       {a.chunks_existentes} → {a.chunks_novos} chunks
                       {a.perda_texto_percentual > 0
                         ? ` · texto −${a.perda_texto_percentual}%`
@@ -479,7 +481,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
 
               {bloqueado ? (
                 <div className="mt-3">
-                  <p className="mb-2 flex items-start gap-1.5 text-[0.8rem] leading-relaxed text-amber-300">
+                  <p className="mb-2 flex items-start gap-1.5 text-[0.8rem] leading-relaxed text-atencao">
                     <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                     <span>
                       Ao fim da reindexação, os chunks atuais desses documentos são trocados pelos novos. Se
@@ -494,7 +496,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
                           'Confirmar a reindexação MESMO com risco de perda de conteúdo? Os chunks atuais serão substituídos pelos novos.',
                         ) && runIngest(analises.map((a) => a.arquivo), true)
                       }
-                      className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-4 py-2 text-[0.8rem] font-medium text-rose-300 transition-colors hover:bg-rose-400/20"
+                      className="aviso-erro text-texto px-4 py-2 text-[0.8rem] font-medium transition-colors hover:bg-erro/20"
                     >
                       Confirmar reindexação mesmo assim
                     </button>
@@ -503,7 +505,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
                         setAnalises([])
                         setBloqueado(false)
                       }}
-                      className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-[0.8rem] font-medium text-text transition-colors hover:bg-white/[0.06]"
+                      className="btn-secundario px-4 py-2 text-[0.8rem]"
                     >
                       Cancelar
                     </button>
@@ -512,7 +514,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
               ) : (
                 <button
                   onClick={() => runIngest(analises.map((a) => a.arquivo))}
-                  className="mt-3 rounded-lg border border-cyan/25 bg-cyan/10 px-4 py-2 text-[0.8rem] font-medium text-cyan transition-colors hover:bg-cyan/20"
+                  className="mt-3 rounded-lg border border-borda-forte bg-cartao-hover px-4 py-2 text-[0.8rem] font-medium text-texto transition-colors hover:bg-cartao-hover"
                 >
                   Reindexar agora
                 </button>
@@ -523,18 +525,18 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
       )}
 
       {log.length > 0 && (
-        <pre className="glass max-h-[280px] overflow-y-auto rounded-xl p-3.5 font-mono text-[0.76rem] leading-relaxed">
+        <pre className="cartao max-h-[280px] overflow-y-auto p-3.5 text-[0.76rem] leading-relaxed">
           {log.map((l, i) => (
             <span
               key={i}
               className={
                 l.type === 'ok'
-                  ? 'block text-cyan'
+                  ? 'block text-texto'
                   : l.type === 'err'
-                    ? 'block text-rose-400'
+                    ? 'block text-erro'
                     : l.type === 'alert'
-                      ? 'block text-amber-300'
-                      : 'block text-muted'
+                      ? 'block text-atencao'
+                      : 'block text-texto-suave'
               }
             >
               {l.msg}

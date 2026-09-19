@@ -13,6 +13,7 @@ import Markdown from '../Markdown'
 import AnexoImagem from '../AnexoImagem'
 import Exemplos from '../Exemplos'
 import { formatarAlternativas } from '@/lib/texto'
+import TituloAba from '../TituloAba'
 
 interface ResultadoLote {
   questao: string
@@ -27,17 +28,17 @@ function EnunciadoUsado({ resultado }: { resultado: ResolverResp }) {
       open={resultado.varias_listas}
       className="mb-4 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 text-[0.8rem]"
     >
-      <summary className="cursor-pointer font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+      <summary className="rotulo cursor-pointer">
         Enunciado que a IA recebeu
       </summary>
       {resultado.varias_listas && (
-        <div className="mt-2 flex items-start gap-1.5 text-amber-300">
+        <div className="mt-2 flex items-start gap-1.5 text-atencao">
           <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           Encontrei mais de uma lista de alternativas (A, B, C…) e usei a última. Confira se o enunciado abaixo é o
           da questão certa.
         </div>
       )}
-      <p className="mt-2 whitespace-pre-wrap leading-relaxed text-text">{resultado.questao}</p>
+      <p className="mt-2 whitespace-pre-wrap leading-relaxed text-texto">{resultado.questao}</p>
     </details>
   )
 }
@@ -137,9 +138,10 @@ export default function ResolverTab({
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <p className="font-mono text-[0.7rem] uppercase tracking-wider text-muted">
-          Análise de questões de múltipla escolha (IA + RAG)
-        </p>
+        <TituloAba
+          titulo="Resolver questão"
+          descricao="Análise de questões de múltipla escolha com a IA e o material do curso."
+        />
         <button
           onClick={() => {
             setModoLote((m) => !m)
@@ -147,8 +149,8 @@ export default function ResolverTab({
           }}
           className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[0.72rem] font-medium transition-colors ${
             modoLote
-              ? 'border-violet/30 bg-violet/10 text-violet'
-              : 'border-white/10 bg-white/[0.03] text-muted hover:text-text'
+              ? 'border-borda-forte bg-cartao-hover text-texto'
+              : 'border-white/10 bg-white/[0.03] text-texto-suave hover:text-texto'
           }`}
         >
           <Package className="h-3.5 w-3.5" aria-hidden="true" />
@@ -157,20 +159,20 @@ export default function ResolverTab({
       </div>
 
       <div className="mb-4 flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
-        <div className="flex items-center gap-1.5 font-mono text-[0.72rem] text-muted">
+        <div className="flex items-center gap-1.5 text-[0.72rem] text-texto-suave">
           <Target className="h-3.5 w-3.5" aria-hidden="true" />
           Acurácia da IA:{' '}
-          <span className="font-semibold text-text">
+          <span className="font-semibold text-texto">
             {acuracia.total > 0 ? `${Math.round((acuracia.acertos / acuracia.total) * 100)}%` : '—'}
           </span>{' '}
-          <span className="text-muted">
+          <span className="text-texto-suave">
             ({acuracia.acertos}/{acuracia.total} questões)
           </span>
         </div>
         {acuracia.total > 0 && (
           <button
             onClick={() => setAcuracia(resetarAcuracia())}
-            className="font-mono text-[0.68rem] text-muted underline-offset-2 hover:text-text hover:underline"
+            className="text-[0.68rem] text-texto-suave underline-offset-2 hover:text-texto hover:underline"
           >
             zerar
           </button>
@@ -188,8 +190,8 @@ export default function ResolverTab({
       {!modoLote ? (
         <div className="grid gap-5 lg:grid-cols-2">
           <div>
-            <p className="mb-2.5 text-[0.8rem] leading-relaxed text-muted">
-              <strong className="font-medium text-text">Cole a questão completa</strong> com todas as alternativas (A,
+            <p className="mb-2.5 text-[0.8rem] leading-relaxed text-texto-suave">
+              <strong className="font-medium text-texto">Cole a questão completa</strong> com todas as alternativas (A,
               B, C, D…), ou envie um print. A IA busca no material e escolhe a alternativa correta, explicando o
               raciocínio.
             </p>
@@ -200,7 +202,7 @@ export default function ResolverTab({
               placeholder={
                 'Qual é a principal vantagem do few-shot prompting?\n\nA) Reduz drasticamente o número de tokens\nB) Melhora a consistência sem necessidade de fine-tuning\nC) Aumenta a velocidade de inferência do modelo\nD) Elimina alucinações por completo'
               }
-              className="glass min-h-[240px] w-full rounded-xl p-4 font-mono text-[0.8rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
+              className="campo text-[0.92rem] min-h-[240px] w-full p-4 leading-relaxed"
             />
             <AnexoImagem
               texto={texto}
@@ -214,7 +216,7 @@ export default function ResolverTab({
               <button
                 onClick={analisar}
                 disabled={loading || ocrLoading || !pronto}
-                className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
+                className="btn-primario"
               >
                 {loading ? 'Analisando…' : 'Analisar Questão'}
               </button>
@@ -225,7 +227,7 @@ export default function ResolverTab({
                   setErro('')
                   setAnexoReset((t) => t + 1)
                 }}
-                className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
+                className="btn-secundario px-5 py-2.5 text-sm"
               >
                 Limpar
               </button>
@@ -234,21 +236,21 @@ export default function ResolverTab({
 
           <div>
             {(loading || ocrLoading) && (
-              <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-muted">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet/30 border-t-violet" />
+              <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-texto-suave">
+                <div className="carregando h-6 w-6" />
                 <span className="text-[0.82rem]">
                   {ocrLoading ? 'Reconhecendo texto na imagem…' : 'Buscando no material e raciocinando…'}
                 </span>
               </div>
             )}
             {!loading && !ocrLoading && erro && (
-              <div className="flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
+              <div className="aviso-erro text-texto flex items-center justify-center gap-2 p-6 text-center text-[0.85rem]">
                 <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
                 {erro}
               </div>
             )}
             {!loading && !ocrLoading && erro === '' && resultado && !resultado.resposta && (
-              <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-muted">
+              <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-texto-suave">
                 <TriangleAlert className="mx-auto mb-2 h-6 w-6 opacity-70" aria-hidden="true" />
                 <p className="mb-3 text-[0.82rem]">
                   A IA não conseguiu identificar a alternativa correta com confiança.
@@ -260,31 +262,31 @@ export default function ResolverTab({
               </div>
             )}
             {!loading && !ocrLoading && !erro && resultado && resultado.resposta && (
-              <div className="glass grad-border overflow-hidden rounded-xl">
-                <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-3 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+              <div className="cartao overflow-hidden">
+                <div className="rotulo border-b border-white/[0.06] bg-white/[0.02] px-4 py-3">
                   Resultado — {resultado.provider} / {resultado.modelo}
                 </div>
                 <div className="p-5">
                   {resultado.pouco_embasado && <WarnBanner confianca={resultado.confianca_media} />}
                   <EnunciadoUsado resultado={resultado} />
-                  <div className="mb-4 flex items-start gap-3.5 rounded-xl border border-cyan/25 bg-cyan/[0.06] p-4">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet to-cyan font-mono text-lg font-bold text-[#08070c]">
+                  <div className="mb-4 flex items-start gap-3.5 rounded-xl border border-borda-forte bg-cartao-hover p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-b from-destaque to-destaque-fim text-lg font-bold text-topo">
                       {resultado.resposta}
                     </div>
                     <div>
-                      <div className="mb-0.5 flex items-center gap-1 font-mono text-[0.65rem] uppercase tracking-wider text-cyan">
+                      <div className="rotulo mb-0.5 flex items-center gap-1 text-texto">
                         <CircleCheck className="h-3 w-3" aria-hidden="true" />
                         Resposta escolhida pela IA
                       </div>
-                      <div className="text-[0.88rem] font-medium leading-snug text-text">
+                      <div className="text-[0.88rem] font-medium leading-snug text-texto">
                         {resultado.conteudo_resposta}
                       </div>
                     </div>
                   </div>
 
                   {(resultado.por_que_correta || (resultado.exemplos?.length ?? 0) > 0) && (
-                    <div className="mb-4 rounded-xl border border-violet/25 bg-violet/[0.06] p-4">
-                      <div className="mb-2 flex items-center gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider text-violet">
+                    <div className="mb-4 rounded-xl border border-borda-forte bg-cartao-hover p-4">
+                      <div className="rotulo mb-2 flex items-center gap-1.5 text-texto">
                         <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
                         Professor auxiliar — por que a {resultado.resposta} está correta
                       </div>
@@ -297,11 +299,11 @@ export default function ResolverTab({
                     </div>
                   )}
 
-                  <div className="mb-2 flex gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider">
+                  <div className="rotulo mb-2 flex gap-1.5">
                     <button
                       onClick={() => setVerDetalhada(false)}
                       className={`rounded-md px-2.5 py-1 transition-colors ${
-                        !verDetalhada ? 'bg-cyan/15 text-cyan' : 'text-muted hover:text-text'
+                        !verDetalhada ? 'bg-cartao-hover text-texto' : 'text-texto-suave hover:text-texto'
                       }`}
                     >
                       Resumida
@@ -310,7 +312,7 @@ export default function ResolverTab({
                       <button
                         onClick={() => setVerDetalhada(true)}
                         className={`rounded-md px-2.5 py-1 transition-colors ${
-                          verDetalhada ? 'bg-cyan/15 text-cyan' : 'text-muted hover:text-text'
+                          verDetalhada ? 'bg-cartao-hover text-texto' : 'text-texto-suave hover:text-texto'
                         }`}
                       >
                         Detalhada
@@ -327,7 +329,7 @@ export default function ResolverTab({
 
                   {Object.keys(resultado.alternativas_erradas || {}).length > 0 && (
                     <div className="mb-4">
-                      <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+                      <div className="rotulo mb-2">
                         Por que as outras estão erradas
                       </div>
                       <div className="flex flex-col gap-1.5">
@@ -336,10 +338,10 @@ export default function ResolverTab({
                             key={letra}
                             className="flex items-start gap-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3"
                           >
-                            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-rose-400/15 font-mono text-[0.72rem] font-bold text-rose-300">
+                            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-erro/15 text-[0.72rem] font-bold text-erro">
                               {letra}
                             </div>
-                            <div className="text-[0.8rem] leading-relaxed text-muted">{motivo}</div>
+                            <div className="text-[0.8rem] leading-relaxed text-texto-suave">{motivo}</div>
                           </div>
                         ))}
                       </div>
@@ -349,7 +351,7 @@ export default function ResolverTab({
                   {onEnviarGlossario && (
                     <button
                       onClick={() => onEnviarGlossario(texto)}
-                      className="mb-4 flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[0.78rem] font-medium text-text transition-colors hover:bg-white/[0.06]"
+                      className="btn-secundario mb-4 flex items-center gap-1.5 px-3.5 py-2 text-[0.78rem]"
                     >
                       <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
                       Extrair termos técnicos desta questão
@@ -359,20 +361,20 @@ export default function ResolverTab({
                   <div className="mb-4 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3.5">
                     {!avaliado ? (
                       <>
-                        <div className="mb-2 text-[0.78rem] text-muted">
+                        <div className="mb-2 text-[0.78rem] text-texto-suave">
                           A IA acertou? (compare com o gabarito da questão)
                         </div>
                         <div className="flex gap-2">
                           <button
                             onClick={() => marcarResultado(true)}
-                            className="flex items-center gap-1.5 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-1.5 text-[0.78rem] font-medium text-emerald-300 transition-colors hover:bg-emerald-400/20"
+                            className="aviso-ok text-texto flex items-center gap-1.5 px-3.5 py-1.5 text-[0.78rem] font-medium transition-colors hover:bg-ok/20"
                           >
                             <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
                             Acertou
                           </button>
                           <button
                             onClick={() => marcarResultado(false)}
-                            className="flex items-center gap-1.5 rounded-lg border border-rose-400/25 bg-rose-400/10 px-3.5 py-1.5 text-[0.78rem] font-medium text-rose-300 transition-colors hover:bg-rose-400/20"
+                            className="aviso-erro text-texto flex items-center gap-1.5 px-3.5 py-1.5 text-[0.78rem] font-medium transition-colors hover:bg-erro/20"
                           >
                             <X className="h-3.5 w-3.5" aria-hidden="true" />
                             Errou
@@ -380,7 +382,7 @@ export default function ResolverTab({
                         </div>
                       </>
                     ) : (
-                      <div className="flex items-center gap-1.5 text-[0.78rem] text-muted">
+                      <div className="flex items-center gap-1.5 text-[0.78rem] text-texto-suave">
                         <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
                         Resultado registrado na acurácia acima.
                       </div>
@@ -392,7 +394,7 @@ export default function ResolverTab({
               </div>
             )}
             {!loading && !ocrLoading && !erro && !resultado && (
-              <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
+              <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-texto-suave">
                 <Target className="h-6 w-6 opacity-50" aria-hidden="true" />
                 <span className="text-[0.82rem]">A resposta aparecerá aqui após a análise</span>
               </div>
@@ -401,8 +403,8 @@ export default function ResolverTab({
         </div>
       ) : (
         <div>
-          <p className="mb-2.5 text-[0.8rem] leading-relaxed text-muted">
-            Cole <strong className="font-medium text-text">várias questões</strong> separadas por linha em branco
+          <p className="mb-2.5 text-[0.8rem] leading-relaxed text-texto-suave">
+            Cole <strong className="font-medium text-texto">várias questões</strong> separadas por linha em branco
             (ou &ldquo;QUESTÃO 1&rdquo;, &ldquo;QUESTÃO 2&rdquo;...), ou envie um print de cada uma. Todas são analisadas em sequência.
           </p>
           <textarea
@@ -412,7 +414,7 @@ export default function ResolverTab({
             placeholder={
               'QUESTÃO 1\nEnunciado...\nA) ...\nB) ...\n\nQUESTÃO 2\nEnunciado...\nA) ...\nB) ...'
             }
-            className="glass min-h-[260px] w-full rounded-xl p-4 font-mono text-[0.8rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
+            className="campo text-[0.92rem] min-h-[260px] w-full p-4 leading-relaxed"
           />
           <AnexoImagem
             texto={textoLote}
@@ -426,7 +428,7 @@ export default function ResolverTab({
             <button
               onClick={analisarLote}
               disabled={processandoLote || ocrLoading || !pronto}
-              className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="btn-primario"
             >
               {processandoLote
                 ? `Analisando ${progressoLote.atual}/${progressoLote.total}…`
@@ -439,14 +441,14 @@ export default function ResolverTab({
                 setErro('')
                 setAnexoReset((t) => t + 1)
               }}
-              className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
+              className="btn-secundario px-5 py-2.5 text-sm"
             >
               Limpar
             </button>
           </div>
 
           {erro && (
-            <div className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-4 text-center text-[0.85rem] text-rose-300">
+            <div className="aviso-erro text-texto mt-4 flex items-center justify-center gap-2 p-4 text-center text-[0.85rem]">
               <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
               {erro}
             </div>
@@ -455,12 +457,12 @@ export default function ResolverTab({
           {resultadosLote.length > 0 && (
             <div className="mt-5 flex flex-col gap-3">
               {resultadosLote.map((r, i) => (
-                <div key={i} className="glass rounded-xl p-4">
-                  <div className="mb-2 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+                <div key={i} className="cartao p-4">
+                  <div className="rotulo mb-2">
                     Questão {i + 1}
                   </div>
                   {r.erro && (
-                    <div className="flex items-center gap-1.5 text-[0.82rem] text-rose-300">
+                    <div className="flex items-center gap-1.5 text-[0.82rem] text-erro">
                       <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                       {r.erro}
                     </div>
@@ -468,24 +470,24 @@ export default function ResolverTab({
                   {r.resp && (
                     <div className="flex items-start gap-3">
                       {r.resp.resposta ? (
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet to-cyan font-mono text-sm font-bold text-[#08070c]">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-b from-destaque to-destaque-fim text-sm font-bold text-topo">
                           {r.resp.resposta}
                         </div>
                       ) : (
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 font-mono text-sm text-muted">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-sm text-texto-suave">
                           ?
                         </div>
                       )}
                       <div className="flex-1">
                         {r.resp.resposta && (
-                          <div className="mb-1 text-[0.85rem] font-medium text-text">{r.resp.conteudo_resposta}</div>
+                          <div className="mb-1 text-[0.85rem] font-medium text-texto">{r.resp.conteudo_resposta}</div>
                         )}
-                        <div className="text-[0.8rem] leading-relaxed text-muted">
+                        <div className="text-[0.8rem] leading-relaxed text-texto-suave">
                           {r.resp.explicacao_rapida || r.resp.explicacao}
                         </div>
                         {r.resp.por_que_correta && (
-                          <div className="mt-2 text-[0.8rem] leading-relaxed text-text">
-                            <span className="inline-flex items-center gap-1 font-mono text-[0.65rem] uppercase tracking-wider text-violet">
+                          <div className="mt-2 text-[0.8rem] leading-relaxed text-texto">
+                            <span className="rotulo inline-flex items-center gap-1 text-texto">
                               <GraduationCap className="h-3 w-3" aria-hidden="true" />
                               Por que está correta:{' '}
                             </span>

@@ -1,49 +1,11 @@
 'use client'
 
-import { useLayoutEffect, useRef, useState } from 'react'
-import { gsap } from 'gsap'
+import { useState } from 'react'
 import { ChevronRight, FileText } from 'lucide-react'
-import { prefersReducedMotion } from '@/lib/reducedMotion'
 import type { Evidencia } from '@/lib/types'
 
 export default function EvidenceList({ items }: { items: Evidencia[] }) {
   const [open, setOpen] = useState(false)
-  const [rendered, setRendered] = useState(false)
-  const wrapRef = useRef<HTMLDivElement>(null)
-  const arrowRef = useRef<SVGSVGElement>(null)
-
-  useLayoutEffect(() => {
-    const el = wrapRef.current
-    if (!el) return
-    if (open) {
-      setRendered(true)
-      if (prefersReducedMotion()) {
-        gsap.set(el, { height: 'auto', autoAlpha: 1 })
-        gsap.set(arrowRef.current, { rotate: 90 })
-        return
-      }
-      gsap.set(el, { height: 0, autoAlpha: 0 })
-      requestAnimationFrame(() => {
-        gsap.to(el, { height: 'auto', autoAlpha: 1, duration: 0.4, ease: 'power2.out' })
-      })
-      gsap.to(arrowRef.current, { rotate: 90, duration: 0.3, ease: 'power2.out' })
-    } else if (rendered) {
-      if (prefersReducedMotion()) {
-        setRendered(false)
-        gsap.set(arrowRef.current, { rotate: 0 })
-        return
-      }
-      gsap.to(el, {
-        height: 0,
-        autoAlpha: 0,
-        duration: 0.3,
-        ease: 'power2.in',
-        onComplete: () => setRendered(false),
-      })
-      gsap.to(arrowRef.current, { rotate: 0, duration: 0.25, ease: 'power2.out' })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
 
   if (!items.length) return null
 
@@ -51,25 +13,27 @@ export default function EvidenceList({ items }: { items: Evidencia[] }) {
     <div>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="mb-2 flex items-center gap-1.5 font-mono text-[0.78rem] text-muted transition-colors hover:text-text"
+        aria-expanded={open}
+        className="mb-2 flex items-center gap-1.5 text-[0.85rem] text-texto-suave transition-colors hover:text-texto"
       >
-        <ChevronRight ref={arrowRef} className="h-3.5 w-3.5" aria-hidden="true" />
+        <ChevronRight
+          className={`h-3.5 w-3.5 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+          aria-hidden="true"
+        />
         {open ? 'Ocultar trechos' : 'Mostrar trechos da apostila'}
       </button>
-      {rendered && (
-        <div ref={wrapRef} className="overflow-hidden">
-          <div className="flex flex-col gap-2">
-            {items.map((c, i) => (
-              <div key={i} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
-                <div className="mb-1 flex items-center gap-1 font-mono text-[0.67rem] text-cyan">
-                  <FileText className="h-3 w-3 shrink-0" aria-hidden="true" />
-                  {c.fonte}
-                  {c.pagina ? ` · pág. ${c.pagina}` : ''}
-                </div>
-                <div className="line-clamp-3 text-[0.8rem] leading-relaxed text-muted">{c.conteudo}</div>
+      {open && (
+        <div className="surgir flex flex-col gap-2">
+          {items.map((c, i) => (
+            <div key={i} className="rounded-lg border border-borda bg-campo p-3">
+              <div className="mb-1 flex items-center gap-1 text-[0.75rem] font-semibold text-texto">
+                <FileText className="h-3 w-3 shrink-0" aria-hidden="true" />
+                {c.fonte}
+                {c.pagina ? ` · pág. ${c.pagina}` : ''}
               </div>
-            ))}
-          </div>
+              <div className="line-clamp-3 text-[0.85rem] leading-relaxed text-texto-suave">{c.conteudo}</div>
+            </div>
+          ))}
         </div>
       )}
     </div>

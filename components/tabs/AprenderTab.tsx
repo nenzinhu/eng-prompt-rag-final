@@ -24,6 +24,7 @@ import ProviderSelect from '../ProviderSelect'
 import AnexoImagem from '../AnexoImagem'
 import Markdown from '../Markdown'
 import EvidenceList from '../EvidenceList'
+import TituloAba from '../TituloAba'
 
 const NIVEIS: { id: NivelAprender; titulo: string; descricao: string; icone: LucideIcon }[] = [
   { id: 'simples', titulo: 'Simples', descricao: 'como para alguém de 10 anos, com analogia', icone: Baby },
@@ -37,9 +38,9 @@ interface Tentativa {
 }
 
 function corDaNota(nota: number): string {
-  if (nota >= 80) return 'text-emerald-300 border-emerald-300/30 bg-emerald-300/10'
-  if (nota >= 50) return 'text-amber-300 border-amber-300/30 bg-amber-300/10'
-  return 'text-rose-300 border-rose-300/30 bg-rose-300/10'
+  if (nota >= 80) return 'aviso-ok text-texto'
+  if (nota >= 50) return 'aviso-atencao text-texto'
+  return 'aviso-erro text-texto'
 }
 
 function ListaAvaliacao({ titulo, itens, icone: Icone, cor }: { titulo: string; itens: string[]; icone: LucideIcon; cor: string }) {
@@ -50,7 +51,7 @@ function ListaAvaliacao({ titulo, itens, icone: Icone, cor }: { titulo: string; 
         <Icone className="h-4 w-4" aria-hidden="true" />
         {titulo}
       </div>
-      <ul className="flex flex-col gap-1 pl-6 text-[0.84rem] leading-relaxed text-text">
+      <ul className="flex flex-col gap-1 pl-6 text-[0.84rem] leading-relaxed text-texto">
         {itens.map((item, i) => (
           <li key={i} className="list-disc">
             {item}
@@ -140,9 +141,10 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
 
   return (
     <div>
-      <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
-        Aprender — entenda no seu nível e prove que entendeu explicando com suas palavras (técnica Feynman)
-      </p>
+      <TituloAba
+        titulo="Aprender"
+        descricao="Entenda no seu nível e prove que entendeu explicando com as suas palavras (técnica Feynman)."
+      />
 
       <ProviderSelect
         providers={providers}
@@ -154,12 +156,12 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
       />
 
       {/* Passo 1 — tema e nível */}
-      <p className="mb-1.5 text-[0.75rem] font-medium text-muted">1. O que você quer aprender?</p>
+      <p className="mb-1.5 text-[0.75rem] font-medium text-texto-suave">1. O que você quer aprender?</p>
       <textarea
         value={tema}
         onChange={(e) => setTema(e.target.value)}
         placeholder="Ex: few-shot prompting, chain-of-thought, o que é um embedding…"
-        className="glass min-h-[80px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
+        className="campo text-[0.92rem] min-h-[80px] w-full p-4 leading-relaxed"
       />
       <AnexoImagem
         texto={tema}
@@ -182,14 +184,14 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
               disabled={explicando}
               aria-pressed={ativo}
               className={`rounded-xl border p-3 text-left transition-colors disabled:opacity-50 ${
-                ativo ? 'border-violet/40 bg-violet/[0.08]' : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.05]'
+                ativo ? 'border-destaque bg-cartao-hover' : 'border-borda bg-cartao hover:border-borda-forte hover:bg-cartao-hover'
               }`}
             >
-              <div className="flex items-center gap-2 text-[0.85rem] font-semibold text-text">
-                <Icone className="h-4 w-4 shrink-0 text-violet" aria-hidden="true" />
+              <div className="flex items-center gap-2 text-[0.85rem] font-semibold text-texto">
+                <Icone className="h-4 w-4 shrink-0 text-texto" aria-hidden="true" />
                 {n.titulo}
               </div>
-              <div className="mt-0.5 text-[0.74rem] leading-snug text-muted">{n.descricao}</div>
+              <div className="mt-0.5 text-[0.74rem] leading-snug text-texto-suave">{n.descricao}</div>
             </button>
           )
         })}
@@ -199,34 +201,34 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
         <button
           onClick={() => void explicar(nivel, tema)}
           disabled={ocupado || !tema.trim() || !pronto}
-          className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="btn-primario"
         >
           {explicando ? 'Explicando…' : 'Explicar'}
         </button>
         <button
           onClick={recomecar}
-          className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
+          className="btn-secundario px-5 py-2.5 text-sm"
         >
           Recomeçar
         </button>
       </div>
 
       {erro && (
-        <div className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-4 text-center text-[0.85rem] text-rose-300">
+        <div className="aviso-erro text-texto mt-4 flex items-center justify-center gap-2 p-4 text-center text-[0.85rem]">
           <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
           {erro}
         </div>
       )}
 
       {explicando && (
-        <div className="mt-6 flex min-h-[120px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-muted">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet/30 border-t-violet" />
+        <div className="mt-6 flex min-h-[120px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-texto-suave">
+          <div className="carregando h-6 w-6" />
           <span className="text-[0.82rem]">Montando a explicação no nível escolhido…</span>
         </div>
       )}
 
       {!explicando && !explicacao && !erro && (
-        <div className="mt-6 flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
+        <div className="mt-6 flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-texto-suave">
           <Lightbulb className="h-6 w-6 opacity-50" aria-hidden="true" />
           <span className="text-[0.82rem]">Escolha um tema e um nível para começar</span>
         </div>
@@ -234,19 +236,19 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
 
       {!explicando && explicacao && (
         <>
-          <div className="glass grad-border mt-6 overflow-hidden rounded-xl">
-            <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-3 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+          <div className="cartao mt-6 overflow-hidden">
+            <div className="rotulo border-b border-white/[0.06] bg-white/[0.02] px-4 py-3">
               {temaExplicado.slice(0, 80)} · nível {NIVEIS.find((n) => n.id === explicacao.nivel)?.titulo}
             </div>
             <div className="p-5">
               {explicacao.pouco_embasado && (
-                <p className="mb-3 flex items-center gap-1.5 text-[0.76rem] text-amber-300">
+                <p className="mb-3 flex items-center gap-1.5 text-[0.76rem] text-atencao">
                   <TriangleAlert className="h-3.5 w-3.5" aria-hidden="true" />
                   O material das apostilas cobre pouco este tema — confira as fontes.
                 </p>
               )}
               <Markdown>{explicacao.resposta}</Markdown>
-              <p className="mt-4 text-[0.74rem] text-muted">
+              <p className="mt-4 text-[0.74rem] text-texto-suave">
                 Não ficou claro? Troque o nível nos botões acima e a explicação é refeita.
               </p>
             </div>
@@ -257,14 +259,14 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
 
           {/* Passo 2 — Feynman */}
           <div className="mt-6">
-            <p className="mb-1.5 text-[0.75rem] font-medium text-muted">
+            <p className="mb-1.5 text-[0.75rem] font-medium text-texto-suave">
               2. Agora explique com suas palavras, como se fosse ensinar alguém
             </p>
             <textarea
               value={minhaExplicacao}
               onChange={(e) => setMinhaExplicacao(e.target.value)}
               placeholder="Sem copiar — escreva do seu jeito, simples. É assim que a gente descobre o que entendeu de verdade."
-              className="glass min-h-[120px] w-full rounded-xl p-4 text-[0.88rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
+              className="campo text-[0.92rem] min-h-[120px] w-full p-4 leading-relaxed"
             />
             <AnexoImagem
               texto={minhaExplicacao}
@@ -279,7 +281,7 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
               <button
                 onClick={avaliar}
                 disabled={ocupado || !minhaExplicacao.trim() || !pronto}
-                className="rounded-lg bg-gradient-to-r from-lime to-hotpink px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
+                className="rounded-lg bg-gradient-to-b from-destaque to-destaque-fim px-5 py-2.5 text-sm font-semibold text-topo transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 {avaliando ? 'Avaliando…' : tentativas.length ? 'Avaliar de novo' : 'Avaliar meu entendimento'}
               </button>
@@ -288,46 +290,46 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
 
           {/* Passo 3 — avaliação */}
           {ultima && !avaliando && (
-            <div className="glass mt-6 rounded-xl p-5">
+            <div className="cartao mt-6 p-5">
               <div className="mb-4 flex flex-wrap items-center gap-3">
-                <p className="text-[0.75rem] font-medium text-muted">3. Avaliação</p>
+                <p className="text-[0.75rem] font-medium text-texto-suave">3. Avaliação</p>
                 {ultima.avaliacao.nota !== null && (
                   <span
-                    className={`rounded-md border px-3 py-1 font-mono text-[0.9rem] font-semibold ${corDaNota(ultima.avaliacao.nota)}`}
+                    className={`rounded-md border px-3 py-1 text-[0.9rem] font-semibold ${corDaNota(ultima.avaliacao.nota)}`}
                   >
                     {ultima.avaliacao.nota}/100
                   </span>
                 )}
                 {tentativas.length > 1 && (
-                  <span className="font-mono text-[0.7rem] text-muted" aria-label="Evolução das notas">
+                  <span className="text-[0.7rem] text-texto-suave" aria-label="Evolução das notas">
                     {tentativas.map((t) => (t.avaliacao.nota === null ? '–' : t.avaliacao.nota)).join(' → ')}
                   </span>
                 )}
               </div>
 
               <div className="flex flex-col gap-4">
-                <ListaAvaliacao titulo="O que você acertou" itens={ultima.avaliacao.acertos} icone={CircleCheck} cor="text-emerald-300" />
-                <ListaAvaliacao titulo="O que faltou" itens={ultima.avaliacao.lacunas} icone={CircleAlert} cor="text-amber-300" />
-                <ListaAvaliacao titulo="O que está confuso" itens={ultima.avaliacao.confusoes} icone={CircleX} cor="text-rose-300" />
+                <ListaAvaliacao titulo="O que você acertou" itens={ultima.avaliacao.acertos} icone={CircleCheck} cor="text-ok" />
+                <ListaAvaliacao titulo="O que faltou" itens={ultima.avaliacao.lacunas} icone={CircleAlert} cor="text-atencao" />
+                <ListaAvaliacao titulo="O que está confuso" itens={ultima.avaliacao.confusoes} icone={CircleX} cor="text-erro" />
                 {ultima.avaliacao.comentario && (
-                  <div className="text-[0.86rem] leading-relaxed text-text">
+                  <div className="text-[0.86rem] leading-relaxed text-texto">
                     <Markdown>{ultima.avaliacao.comentario}</Markdown>
                   </div>
                 )}
                 {ultima.avaliacao.proxima_pergunta && (
-                  <div className="rounded-lg border border-violet/25 bg-violet/[0.06] p-3">
-                    <div className="mb-1 flex items-center gap-1.5 text-[0.78rem] font-semibold text-violet">
+                  <div className="rounded-lg border border-borda-forte bg-cartao-hover p-3">
+                    <div className="mb-1 flex items-center gap-1.5 text-[0.78rem] font-semibold text-texto">
                       <HelpCircle className="h-4 w-4" aria-hidden="true" />
                       Pense nisto e tente de novo
                     </div>
-                    <p className="text-[0.86rem] leading-relaxed text-text">{ultima.avaliacao.proxima_pergunta}</p>
+                    <p className="text-[0.86rem] leading-relaxed text-texto">{ultima.avaliacao.proxima_pergunta}</p>
                   </div>
                 )}
               </div>
 
               <button
                 onClick={() => document.querySelector<HTMLTextAreaElement>('textarea[placeholder^="Sem copiar"]')?.focus()}
-                className="mt-4 flex items-center gap-1.5 text-[0.76rem] text-muted underline-offset-2 hover:text-text hover:underline"
+                className="mt-4 flex items-center gap-1.5 text-[0.76rem] text-texto-suave underline-offset-2 hover:text-texto hover:underline"
               >
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
                 Reescrever minha explicação
@@ -340,13 +342,13 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
       {historico.length > 0 && (
         <div className="mt-6">
           <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+            <div className="rotulo flex items-center gap-1.5">
               <History className="h-3.5 w-3.5" aria-hidden="true" />
               Minhas explicações
             </div>
             <button
               onClick={limparHistorico}
-              className="flex items-center gap-1 text-[0.72rem] text-muted transition-colors hover:text-rose-300"
+              className="flex items-center gap-1 text-[0.72rem] text-texto-suave transition-colors hover:text-erro"
             >
               <Trash2 className="h-3 w-3" aria-hidden="true" />
               Limpar
@@ -357,7 +359,7 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
               <button
                 key={h.id}
                 onClick={() => setMinhaExplicacao(h.resposta)}
-                className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-left text-[0.78rem] text-muted transition-colors hover:bg-white/[0.05] hover:text-text"
+                className="border-borda bg-cartao hover:border-borda-forte hover:bg-cartao-hover rounded-lg border px-3 py-2 text-left text-[0.78rem] text-texto-suave transition-colors hover:text-texto"
               >
                 {h.resumo}
               </button>

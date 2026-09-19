@@ -10,18 +10,22 @@
   box-sizing: border-box;
 }
 
+/* Barlow é mais estreita que a Inter: base de 17px mantém os textos pequenos legíveis. */
+html {
+  font-size: 17px;
+}
+
 html,
 body {
   padding: 0;
   margin: 0;
-  background: #08070c;
-  color: #eae7f5;
+  background: #0a0a0a;
+  color: #f2f2f2;
 }
 
+/* Preto no topo, grafite embaixo; fixo para o conteúdo "afundar" no grafite ao rolar. */
 body {
-  background-image:
-    radial-gradient(60% 50% at 15% 0%, rgba(155, 107, 255, 0.07), transparent 60%),
-    radial-gradient(50% 40% at 100% 10%, rgba(47, 224, 214, 0.05), transparent 60%);
+  background-image: linear-gradient(180deg, #0a0a0a 0%, #1c1c1c 100%);
   background-attachment: fixed;
   min-height: 100vh;
 }
@@ -38,7 +42,7 @@ body {
 }
 
 ::selection {
-  background: rgba(155, 107, 255, 0.35);
+  background: rgba(255, 255, 255, 0.25);
 }
 
 ::-webkit-scrollbar {
@@ -48,38 +52,118 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: #333333;
   border-radius: 4px;
 }
 
-.glass {
-  background: rgba(255, 255, 255, 0.035);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
 }
 
-.grad-text {
-  background: linear-gradient(90deg, #c9a9ff, #6fe3d9);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+@layer components {
+  /* ── Botões ───────────────────────────────────────────────────────────── */
+  .btn-primario {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-semibold text-topo;
+    background: linear-gradient(180deg, #ffffff 0%, #d6d6d6 100%);
+    transition: filter 150ms ease, opacity 150ms ease;
+  }
+  .btn-primario:hover:not(:disabled) {
+    filter: brightness(0.92);
+  }
+  .btn-primario:disabled {
+    @apply cursor-not-allowed opacity-40;
+  }
+
+  .btn-secundario {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full border border-borda-forte bg-transparent px-4 py-2 text-sm font-medium text-texto;
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+  .btn-secundario:hover:not(:disabled) {
+    @apply border-texto-suave bg-cartao;
+  }
+  .btn-secundario:disabled {
+    @apply cursor-not-allowed opacity-40;
+  }
+
+  .btn-icone {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-borda text-texto-suave;
+    transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+  }
+  .btn-icone:hover:not(:disabled) {
+    @apply border-borda-forte bg-cartao text-texto;
+  }
+  .btn-icone:disabled {
+    @apply cursor-not-allowed opacity-40;
+  }
+
+  /* ── Superfícies ──────────────────────────────────────────────────────── */
+  .cartao {
+    @apply rounded-xl border border-borda bg-cartao;
+  }
+
+  .cartao-opcao {
+    @apply rounded-xl border border-borda bg-cartao text-left;
+    transition: transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
+  }
+  .cartao-opcao:hover {
+    @apply border-borda-forte bg-cartao-hover;
+    transform: translateY(-2px);
+  }
+  .cartao-opcao[aria-pressed='true'] {
+    @apply border-destaque bg-cartao-hover;
+  }
+
+  .campo {
+    @apply rounded-[10px] border border-borda bg-campo text-texto outline-none placeholder:text-texto-apagado;
+    transition: border-color 150ms ease;
+  }
+  .campo:focus {
+    @apply border-destaque;
+  }
+
+  /* ── Texto ────────────────────────────────────────────────────────────── */
+  .rotulo {
+    @apply text-[0.8rem] font-semibold text-texto-suave;
+  }
+
+  .titulo-secao {
+    @apply text-[1.25rem] font-bold leading-tight text-texto;
+  }
+
+  /* ── Estados ──────────────────────────────────────────────────────────── */
+  .aviso-erro,
+  .aviso-ok,
+  .aviso-atencao {
+    @apply rounded-xl border border-borda border-l-[3px] bg-cartao text-texto;
+  }
+  .aviso-erro {
+    @apply border-l-erro;
+  }
+  .aviso-ok {
+    @apply border-l-ok;
+  }
+  .aviso-atencao {
+    @apply border-l-atencao;
+  }
+
+  .carregando {
+    @apply animate-spin rounded-full border-2 border-borda-forte border-t-texto;
+  }
+
+  /* ── Movimento (tudo desliga com prefers-reduced-motion, regra acima) ── */
+  .surgir {
+    animation: surgir 200ms ease-out both;
+  }
 }
 
-.grad-border {
-  position: relative;
-}
-.grad-border::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(135deg, rgba(155, 107, 255, 0.6), rgba(47, 224, 214, 0.4));
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
+@keyframes surgir {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .no-scrollbar {
@@ -92,6 +176,6 @@ body {
 
 @media (max-width: 380px) {
   html {
-    font-size: 15px;
+    font-size: 16px;
   }
 }

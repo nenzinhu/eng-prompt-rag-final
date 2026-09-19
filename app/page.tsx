@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   MessageCircle,
   GraduationCap,
@@ -69,11 +69,24 @@ export default function Home() {
       .catch(() => setProviders({}))
   }, [])
 
+  const grupos = [...new Set(TABS.map((t) => t.grupo))]
+  const grupoAtivo = TABS.find((t) => t.id === active)?.grupo ?? grupos[0]
+
+  // Voltar a um grupo reabre a última aba usada nele, não sempre a primeira.
+  const ultimaPorGrupo = useRef<Record<string, string>>({})
+  ultimaPorGrupo.current[grupoAtivo] = active
+
+  function trocarGrupo(grupo: string) {
+    if (grupo === grupoAtivo) return
+    const destino = ultimaPorGrupo.current[grupo] ?? TABS.find((t) => t.grupo === grupo)?.id
+    if (destino) setActive(destino)
+  }
+
   return (
     <>
-      <Header refreshSignal={statusTick} />
-      <TabNav tabs={TABS} active={active} onChange={setActive} />
-      <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-4">
+      <Header refreshSignal={statusTick} grupos={grupos} grupoAtivo={grupoAtivo} onGrupo={trocarGrupo} />
+      <TabNav tabs={TABS.filter((t) => t.grupo === grupoAtivo)} active={active} onChange={setActive} />
+      <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-6">
         <div className="relative">
           <TabPanel active={active === 'perguntar'}>
             <PerguntarTab providers={providers} />

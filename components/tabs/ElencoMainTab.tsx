@@ -31,10 +31,10 @@ export default function ElencoMainTab({ providers }: { providers: ProvidersResp 
             role="tab"
             aria-selected={modo === m.id}
             onClick={() => setModo(m.id)}
-            className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+            className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
               modo === m.id
-                ? 'bg-gradient-to-r from-violet to-cyan text-[#08070c]'
-                : 'border border-white/10 bg-white/[0.03] text-text hover:bg-white/[0.06]'
+                ? 'border-transparent bg-gradient-to-b from-destaque to-destaque-fim font-semibold text-topo'
+                : 'border-borda-forte text-texto hover:bg-cartao'
             }`}
           >
             <m.icon className="h-4 w-4" aria-hidden="true" />

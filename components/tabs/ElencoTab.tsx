@@ -9,6 +9,7 @@ import { useHistorico } from '@/lib/useHistorico'
 import type { ProvidersResp, ElencoPersona } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
 import AnexoImagem from '../AnexoImagem'
+import TituloAba from '../TituloAba'
 
 const PERSONAS_PADRAO: ElencoPersona[] = [
   {
@@ -73,12 +74,12 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
 
   return (
     <div>
-      <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
-        Elenco — escolha a personalidade e receba uma mensagem com gancho de assunto pronta para
-        mandar no WhatsApp, Instagram ou onde quer que a conversa esteja
-      </p>
+      <TituloAba
+        titulo="Puxar assunto"
+        descricao="Escolha a personalidade e receba uma mensagem com gancho de assunto, pronta para mandar no WhatsApp, no Instagram ou onde a conversa estiver."
+      />
 
-      <p className="mb-2.5 text-[0.75rem] font-medium text-muted">Escolha a persona</p>
+      <p className="mb-2.5 text-[0.75rem] font-medium text-texto-suave">Escolha a persona</p>
       <div className="mb-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
         {personas.map((p) => (
           <button
@@ -87,15 +88,15 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
             aria-pressed={p.persona_id === personaId}
             className={`rounded-xl border p-3 text-left transition-colors ${
               p.persona_id === personaId
-                ? 'border-violet/40 bg-violet/[0.08]'
-                : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.05]'
+                ? 'border-destaque bg-cartao-hover'
+                : 'border-borda bg-cartao hover:border-borda-forte hover:bg-cartao-hover'
             }`}
           >
-            <div className="mb-1 flex items-center gap-2 text-[0.85rem] font-semibold text-text">
-              <PartyPopper className="h-4 w-4 shrink-0 text-violet" aria-hidden="true" />
+            <div className="mb-1 flex items-center gap-2 text-[0.85rem] font-semibold text-texto">
+              <PartyPopper className="h-4 w-4 shrink-0 text-texto" aria-hidden="true" />
               {p.display_name}
             </div>
-            <div className="text-[0.76rem] leading-relaxed text-muted">{p.description}</div>
+            <div className="text-[0.76rem] leading-relaxed text-texto-suave">{p.description}</div>
           </button>
         ))}
       </div>
@@ -109,24 +110,24 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
         nenhumConfigurado={nenhumConfigurado}
       />
 
-      <label className="mb-1 block text-[0.72rem] font-medium text-muted">
+      <label className="mb-1 block text-[0.72rem] font-medium text-texto-suave">
         {personaAtiva?.contexto_label ?? 'Contexto'}
       </label>
       <textarea
         value={contexto}
         onChange={(e) => setContexto(e.target.value)}
         placeholder={personaAtiva?.contexto_placeholder}
-        className="glass mb-3 min-h-[70px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
+        className="campo text-[0.92rem] mb-3 min-h-[70px] w-full p-4 leading-relaxed"
       />
 
-      <label className="mb-1 block text-[0.72rem] font-medium text-muted">
+      <label className="mb-1 block text-[0.72rem] font-medium text-texto-suave">
         {personaAtiva?.mensagem_label ?? 'Última mensagem recebida'}
       </label>
       <textarea
         value={mensagem}
         onChange={(e) => setMensagem(e.target.value)}
         placeholder={personaAtiva?.mensagem_placeholder}
-        className="glass min-h-[110px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
+        className="campo text-[0.92rem] min-h-[110px] w-full p-4 leading-relaxed"
       />
       <AnexoImagem
         texto={mensagem}
@@ -142,7 +143,7 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
         <button
           onClick={gerar}
           disabled={loading || ocrLoading || (!contexto.trim() && !mensagem.trim()) || !pronto}
-          className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="btn-primario"
         >
           {loading ? 'Puxando assunto…' : 'Gerar mensagem'}
         </button>
@@ -154,7 +155,7 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
             setResposta('')
             setErro('')
           }}
-          className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
+          className="btn-secundario px-5 py-2.5 text-sm"
         >
           Limpar
         </button>
@@ -162,24 +163,24 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
 
       <div className="mt-6">
         {loading && (
-          <div className="flex min-h-[140px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-muted">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet/30 border-t-violet" />
+          <div className="flex min-h-[140px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-texto-suave">
+            <div className="carregando h-6 w-6" />
             <span className="text-[0.82rem]">Puxando um assunto que engaja…</span>
           </div>
         )}
         {!loading && erro && (
-          <div className="flex items-center justify-center gap-2 rounded-xl border border-rose-400/25 bg-rose-400/10 p-6 text-center text-[0.85rem] text-rose-300">
+          <div className="aviso-erro text-texto flex items-center justify-center gap-2 p-6 text-center text-[0.85rem]">
             <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
             {erro}
           </div>
         )}
         {!loading && !erro && resposta && (
-          <div className="glass grad-border overflow-hidden rounded-xl">
-            <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02] px-4 py-3 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+          <div className="cartao overflow-hidden">
+            <div className="rotulo flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02] px-4 py-3">
               Mensagem pronta para envio
               <button
                 onClick={copiar}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[0.72rem] font-medium normal-case tracking-normal text-text transition-colors hover:bg-white/[0.06]"
+                className="btn-secundario flex items-center gap-1.5 px-3 py-1.5 text-[0.72rem] normal-case tracking-normal"
               >
                 {copiado ? (
                   <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
@@ -189,11 +190,11 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
                 {copiado ? 'Copiado' : 'Copiar'}
               </button>
             </div>
-            <div className="whitespace-pre-wrap p-5 text-[0.9rem] leading-relaxed text-text">{resposta}</div>
+            <div className="whitespace-pre-wrap p-5 text-[0.9rem] leading-relaxed text-texto">{resposta}</div>
           </div>
         )}
         {!loading && !erro && !resposta && (
-          <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
+          <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-texto-suave">
             <PartyPopper className="h-6 w-6 opacity-50" aria-hidden="true" />
             <span className="text-[0.82rem]">A mensagem sugerida aparecerá aqui</span>
           </div>
@@ -203,13 +204,13 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
       {historico.length > 0 && (
         <div className="mt-6">
           <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-1.5 font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+            <div className="rotulo flex items-center gap-1.5">
               <History className="h-3.5 w-3.5" aria-hidden="true" />
               Histórico recente
             </div>
             <button
               onClick={limparHistorico}
-              className="flex items-center gap-1 text-[0.72rem] text-muted transition-colors hover:text-rose-300"
+              className="flex items-center gap-1 text-[0.72rem] text-texto-suave transition-colors hover:text-erro"
             >
               <Trash2 className="h-3 w-3" aria-hidden="true" />
               Limpar
@@ -220,7 +221,7 @@ export default function ElencoTab({ providers }: { providers: ProvidersResp }) {
               <button
                 key={h.id}
                 onClick={() => setResposta(h.resposta)}
-                className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-left text-[0.78rem] text-muted transition-colors hover:bg-white/[0.05] hover:text-text"
+                className="border-borda bg-cartao hover:border-borda-forte hover:bg-cartao-hover rounded-lg border px-3 py-2 text-left text-[0.78rem] text-texto-suave transition-colors hover:text-texto"
               >
                 {h.resumo || h.resposta.slice(0, 140)}
               </button>

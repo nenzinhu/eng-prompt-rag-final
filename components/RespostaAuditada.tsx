@@ -10,15 +10,15 @@ const NIVEIS: Record<
 > = {
   apoiada: { borda: '', fundo: '', texto: '', titulo: 'Frase apoiada no material' },
   parcial: {
-    borda: 'border-amber-300/30 bg-amber-300/[0.06]',
-    fundo: 'bg-amber-300/[0.06]',
-    texto: 'text-amber-100',
+    borda: 'aviso-atencao text-texto',
+    fundo: 'bg-atencao/[0.06]',
+    texto: 'text-texto',
     titulo: 'Apoio parcial — confira na apostila',
   },
   nao_apoiada: {
-    borda: 'border-rose-400/30',
-    fundo: 'bg-rose-400/[0.07]',
-    texto: 'text-rose-100',
+    borda: 'border-erro/30',
+    fundo: 'bg-erro/[0.07]',
+    texto: 'text-texto',
     titulo: 'Não encontrada no material — pode ser conhecimento geral ou invenção',
   },
 }
@@ -40,7 +40,7 @@ export default function RespostaAuditada({
     // Sem auditoria (não pedida, ainda carregando ou resposta sem frases).
     if (auditando) {
       return (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-dashed border-white/10 p-4 text-[0.8rem] text-muted">
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-dashed border-white/10 p-4 text-[0.8rem] text-texto-suave">
           <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
           Verificando cada frase contra o material…
         </div>
@@ -54,11 +54,11 @@ export default function RespostaAuditada({
   const naoApoiadas = auditadas.filter((a) => a.nivel !== 'apoiada')
   if (naoApoiadas.length === 0) {
     return (
-      <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-2.5 text-[0.8rem] text-emerald-300">
+      <div className="aviso-ok text-texto mb-3 flex items-center gap-2 px-3.5 py-2.5 text-[0.8rem]">
         <CircleCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
         <span>
           Todas as frases desta resposta usam o vocabulário do material.{' '}
-          <span className="text-emerald-300/70">
+          <span className="text-ok/70">
             A auditoria confere palavras, não sentido: uma frase que diz o contrário da apostila passa.
           </span>
         </span>
@@ -71,24 +71,24 @@ export default function RespostaAuditada({
   // markdown original no meio do texto renderizado).
   return (
     <div className="mb-4 flex flex-col gap-1.5">
-      <div className="font-mono text-[0.68rem] uppercase tracking-wider text-muted">
+      <div className="rotulo">
         Auditoria de fidelidade
       </div>
-      <div className="mb-1 text-[0.78rem] text-muted">
-        <span className="text-emerald-300">verde</span> = na apostila ·{' '}
-        <span className="text-amber-300">âmbar</span> = apoio parcial ·{' '}
-        <span className="text-rose-300">vermelho</span> = não encontrada no material. A auditoria confere
+      <div className="mb-1 text-[0.78rem] text-texto-suave">
+        <span className="text-ok">verde</span> = na apostila ·{' '}
+        <span className="text-atencao">âmbar</span> = apoio parcial ·{' '}
+        <span className="text-erro">vermelho</span> = não encontrada no material. A auditoria confere
         palavras, não sentido: uma frase que diz o contrário da apostila pode aparecer como apoiada.
       </div>
       {naoApoiadas.map((a, i) => (
         <div key={i} className={`rounded-lg border ${NIVEIS[a.nivel].borda} ${NIVEIS[a.nivel].fundo} p-3`}>
-          <div className={`mb-1 font-mono text-[0.66rem] uppercase tracking-wider ${NIVEIS[a.nivel].texto}`}>
+          <div className={`rotulo mb-1 ${NIVEIS[a.nivel].texto}`}>
             {NIVEIS[a.nivel].titulo}
             <span className="ml-2 opacity-70">({Math.round(a.similaridade * 100)}%)</span>
           </div>
-          <div className="text-[0.85rem] leading-relaxed text-text">{a.frase}</div>
+          <div className="text-[0.85rem] leading-relaxed text-texto">{a.frase}</div>
           {a.fonte && (
-            <div className="mt-1.5 font-mono text-[0.68rem] text-muted">
+            <div className="mt-1.5 text-[0.68rem] text-texto-suave">
               mais próximo: {a.fonte}
               {a.pagina ? ` · pág. ${a.pagina}` : ''}
             </div>

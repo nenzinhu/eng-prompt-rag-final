@@ -5,6 +5,7 @@ import { Upload, TriangleAlert, FileText, Image as ImageIcon, CircleCheck, X } f
 import { api } from '@/lib/api'
 import type { OpcoesImagem } from '@/lib/compress/imagem'
 import type { OpcoesCompressao } from '@/lib/compress/pdf'
+import TituloAba from '../TituloAba'
 
 type Tipo = 'pdf' | 'imagem'
 type Status = 'na_fila' | 'processando' | 'pronto' | 'erro'
@@ -206,9 +207,10 @@ export default function ComprimirTab() {
 
   return (
     <div>
-      <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
-        Reduza o arquivo antes de enviá-lo
-      </p>
+      <TituloAba
+        titulo="Comprimir arquivos"
+        descricao="Reduza o arquivo antes de enviá-lo."
+      />
 
       <div
         role="button"
@@ -232,13 +234,13 @@ export default function ComprimirTab() {
           setDragOver(false)
           adicionar(Array.from(e.dataTransfer.files))
         }}
-        className={`glass mb-4 cursor-pointer rounded-xl border-2 border-dashed p-7 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet focus-visible:ring-offset-2 focus-visible:ring-offset-[#08070c] sm:p-9 ${
-          dragOver ? 'border-violet bg-violet/[0.04]' : 'border-white/10'
+        className={`cartao mb-4 cursor-pointer border-2 border-dashed p-7 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destaque focus-visible:ring-offset-2 focus-visible:ring-offset-topo sm:p-9 ${
+          dragOver ? 'border-borda-forte bg-cartao-hover' : 'border-white/10'
         }`}
       >
-        <Upload className="mx-auto mb-2 h-7 w-7 text-cyan" aria-hidden="true" />
-        <p className="text-[0.85rem] text-muted">
-          <strong className="font-medium text-text">Selecione os arquivos</strong>
+        <Upload className="mx-auto mb-2 h-7 w-7 text-texto" aria-hidden="true" />
+        <p className="text-[0.85rem] text-texto-suave">
+          <strong className="font-medium text-texto">Selecione os arquivos</strong>
           <br />
           <span className="hidden sm:inline">ou arraste-os para esta área<br /></span>
           <span id="formatos-compativeis">PDF, JPEG, PNG e WebP</span>
@@ -257,15 +259,15 @@ export default function ComprimirTab() {
       </div>
 
       {avisoEntrada && (
-        <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.78rem] text-amber-200">
+        <div role="alert" className="aviso-atencao text-texto mb-4 flex items-center gap-2 px-3.5 py-2.5 text-[0.78rem]">
           <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
           {avisoEntrada}
         </div>
       )}
 
-      <div className="glass mb-4 grid grid-cols-1 items-end gap-4 rounded-xl p-4 sm:grid-cols-2 xl:grid-cols-[auto_auto_auto_1fr]">
+      <div className="cartao mb-4 grid grid-cols-1 items-end gap-4 p-4 sm:grid-cols-2 xl:grid-cols-[auto_auto_auto_1fr]">
         <label className="flex flex-col gap-1">
-          <span className="font-mono text-[0.65rem] uppercase tracking-wider text-muted">
+          <span className="rotulo">
             Qualidade do JPEG: {qualidade}
           </span>
           <input
@@ -276,15 +278,15 @@ export default function ComprimirTab() {
             value={qualidade}
             aria-label={`Qualidade do JPEG: ${qualidade}`}
             onChange={(e) => setQualidade(Number(e.target.value))}
-            className="h-11 w-[180px] accent-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet"
+            className="h-11 w-[180px] accent-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destaque"
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="font-mono text-[0.65rem] uppercase tracking-wider text-muted">Largura máxima</span>
+          <span className="rotulo">Largura máxima</span>
           <select
             value={larguraMax}
             onChange={(e) => setLarguraMax(Number(e.target.value))}
-            className="glass min-h-11 rounded-lg px-3 py-2 font-mono text-[0.78rem] text-text outline-none focus-visible:ring-2 focus-visible:ring-violet"
+            className="campo text-[0.92rem] min-h-11 px-3 py-2"
           >
             {opcoesLargura.map((px) => (
               <option key={px} value={px} className="bg-[#0b0a12]">
@@ -294,11 +296,11 @@ export default function ComprimirTab() {
           </select>
         </label>
         <label className="flex flex-col gap-1">
-          <span className="font-mono text-[0.65rem] uppercase tracking-wider text-muted">Formato da imagem</span>
+          <span className="rotulo">Formato da imagem</span>
           <select
             value={formato}
             onChange={(e) => setFormato(e.target.value as 'auto' | 'jpeg' | 'png')}
-            className="glass min-h-11 rounded-lg px-3 py-2 font-mono text-[0.78rem] text-text outline-none focus-visible:ring-2 focus-visible:ring-violet"
+            className="campo text-[0.92rem] min-h-11 px-3 py-2"
           >
             <option value="auto" className="bg-[#0b0a12]">
               automático
@@ -317,7 +319,7 @@ export default function ComprimirTab() {
             disabled={ocupado || itens.length === 0}
             aria-busy={ocupado}
             aria-describedby={itens.length === 0 ? 'ajuda-comprimir' : undefined}
-            className="min-h-11 rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-[#08070c] disabled:cursor-not-allowed disabled:opacity-40"
+            className="btn-primario min-h-11"
           >
             {ocupado && progresso
               ? `Comprimindo ${progresso.atual} de ${progresso.total}…`
@@ -333,7 +335,7 @@ export default function ComprimirTab() {
                 setAvisoEntrada(null)
               }}
               disabled={ocupado}
-              className="min-h-11 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-40"
+              className="btn-secundario min-h-11 px-4 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destaque disabled:cursor-not-allowed"
             >
               Limpar lista
             </button>
@@ -344,9 +346,9 @@ export default function ComprimirTab() {
         </div>
       </div>
 
-      <div className="mb-4 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5 text-[0.76rem] leading-relaxed text-muted">
+      <div className="mb-4 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5 text-[0.76rem] leading-relaxed text-texto-suave">
         <p>
-          <strong className="font-medium text-text">Privacidade:</strong> a compactação acontece neste
+          <strong className="font-medium text-texto">Privacidade:</strong> a compactação acontece neste
           navegador; seus arquivos não são enviados para outro serviço.
         </p>
         <p className="mt-1.5">
@@ -356,13 +358,13 @@ export default function ComprimirTab() {
       </div>
 
       {prontos.length > 0 && (
-        <div role="status" aria-live="polite" className="mb-4 rounded-xl border border-cyan/20 bg-cyan/[0.05] px-4 py-2.5">
-          <p className="font-mono text-[0.72rem] text-cyan">
+        <div role="status" aria-live="polite" className="mb-4 rounded-xl border border-borda-forte bg-cartao-hover px-4 py-2.5">
+          <p className="text-[0.72rem] text-texto">
             {prontos.length} {prontos.length === 1 ? 'arquivo compactado' : 'arquivos compactados'}: {mb(totalAntes)} → {mb(totalDepois)}
             {' '}(−{(ganhoTotal * 100).toFixed(0)}%)
           </p>
           {prontos.length > 1 && (
-            <p className="mt-1 text-[0.72rem] text-muted">
+            <p className="mt-1 text-[0.72rem] text-texto-suave">
               Baixe cada resultado separadamente. Assim o navegador não bloqueia vários downloads automáticos.
             </p>
           )}
@@ -370,7 +372,7 @@ export default function ComprimirTab() {
       )}
 
       {abaixoDoLimite > 0 && limiteMb !== null && (
-        <div role="status" className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-2.5 text-[0.78rem] text-emerald-300">
+        <div role="status" className="aviso-ok text-texto mb-4 flex items-start gap-2 px-3.5 py-2.5 text-[0.78rem]">
           <CircleCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>
             {abaixoDoLimite} {abaixoDoLimite === 1 ? 'PDF está pronto' : 'PDFs estão prontos'} para o envio
@@ -380,7 +382,7 @@ export default function ComprimirTab() {
       )}
 
       {acimaDoLimite > 0 && limiteMb !== null && (
-        <div role="alert" className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.78rem] text-amber-200">
+        <div role="alert" className="aviso-atencao text-texto mb-4 flex items-start gap-2 px-3.5 py-2.5 text-[0.78rem]">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>
             {acimaDoLimite} {acimaDoLimite === 1 ? 'PDF ainda está' : 'PDFs ainda estão'} acima de {limiteMb} MB.
@@ -392,43 +394,43 @@ export default function ComprimirTab() {
       {itens.length > 0 && (
         <div className="flex flex-col gap-2">
           {itens.map((item) => (
-            <div key={item.id} className="glass rounded-xl p-3.5">
+            <div key={item.id} className="cartao p-3.5">
               <div className="flex flex-wrap items-center gap-2.5">
                 {item.tipo === 'pdf' ? (
-                  <FileText className="h-4 w-4 shrink-0 text-cyan" aria-hidden="true" />
+                  <FileText className="h-4 w-4 shrink-0 text-texto" aria-hidden="true" />
                 ) : (
-                  <ImageIcon className="h-4 w-4 shrink-0 text-cyan" aria-hidden="true" />
+                  <ImageIcon className="h-4 w-4 shrink-0 text-texto" aria-hidden="true" />
                 )}
-                <span className="min-w-0 flex-1 truncate font-mono text-[0.78rem] text-text" title={item.nome}>
+                <span className="min-w-0 flex-1 truncate text-[0.78rem] text-texto" title={item.nome}>
                   {item.nome}
                 </span>
-                <span className="shrink-0 font-mono text-[0.72rem] text-muted">{mb(item.original)}</span>
+                <span className="shrink-0 text-[0.72rem] text-texto-suave">{mb(item.original)}</span>
                 {item.status === 'processando' && (
-                  <span role="status" className="shrink-0 font-mono text-[0.7rem] text-cyan">Comprimindo…</span>
+                  <span role="status" className="shrink-0 text-[0.7rem] text-texto">Comprimindo…</span>
                 )}
                 {item.status === 'pronto' && item.tamanho !== undefined && (
                   <>
-                    <span className="font-mono text-[0.72rem] text-muted">→</span>
-                    <span className="font-mono text-[0.78rem] font-semibold text-cyan">{mb(item.tamanho)}</span>
+                    <span className="text-[0.72rem] text-texto-suave">→</span>
+                    <span className="text-[0.78rem] font-semibold text-texto">{mb(item.tamanho)}</span>
                     <span
-                      className={`rounded-md px-1.5 py-0.5 font-mono text-[0.68rem] ${
+                      className={`rounded-md px-1.5 py-0.5 text-[0.68rem] ${
                         (item.ganho ?? 0) > 0
-                          ? 'bg-emerald-400/15 text-emerald-300'
-                          : 'bg-amber-300/15 text-amber-300'
+                          ? 'bg-ok/15 text-ok'
+                          : 'bg-atencao/15 text-atencao'
                       }`}
                     >
                       {(item.ganho ?? 0) > 0 ? `−${((item.ganho ?? 0) * 100).toFixed(0)}%` : 'não reduziu'}
                     </span>
                     <button
                       onClick={() => baixar(item)}
-                      className="min-h-11 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[0.75rem] font-medium text-text transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet"
+                      className="btn-secundario min-h-11 px-3 py-2 text-[0.75rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destaque"
                     >
                       Baixar arquivo
                     </button>
                   </>
                 )}
                 {item.status === 'erro' && (
-                  <span role="alert" className="flex items-center gap-1 text-[0.75rem] text-rose-300">
+                  <span role="alert" className="flex items-center gap-1 text-[0.75rem] text-erro">
                     <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     Não foi possível compactar: {item.erro}
                   </span>
@@ -439,7 +441,7 @@ export default function ComprimirTab() {
                     setItens((atual) => atual.filter((i) => i.id !== item.id))
                   }}
                   disabled={ocupado}
-                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg px-2 text-muted transition-colors hover:bg-white/[0.05] hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg px-2 text-texto-suave transition-colors hover:bg-white/[0.05] hover:text-erro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destaque disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label={`Remover ${item.nome} da lista`}
                   title="Remover da lista"
                 >
@@ -447,7 +449,7 @@ export default function ComprimirTab() {
                 </button>
               </div>
               {item.detalhe && (
-                <div className="mt-1.5 pl-7 font-mono text-[0.68rem] text-muted">{item.detalhe}</div>
+                <div className="mt-1.5 pl-7 text-[0.68rem] text-texto-suave">{item.detalhe}</div>
               )}
             </div>
           ))}

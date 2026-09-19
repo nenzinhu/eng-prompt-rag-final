@@ -160,10 +160,10 @@ export default function ProfessorTab({ providers }: { providers: ProvidersResp }
       <div className="mb-5 flex gap-2">
         <button
           onClick={() => setModo('perguntar')}
-          className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
             modo === 'perguntar'
-              ? 'bg-gradient-to-r from-violet to-cyan text-[#08070c]'
-              : 'border border-white/10 bg-white/[0.03] text-text hover:bg-white/[0.06]'
+              ? 'border-transparent bg-gradient-to-b from-destaque to-destaque-fim font-semibold text-topo'
+              : 'border-borda-forte text-texto hover:bg-cartao'
           }`}
         >
           <MessageCircle className="h-4 w-4" aria-hidden="true" />
@@ -171,10 +171,10 @@ export default function ProfessorTab({ providers }: { providers: ProvidersResp }
         </button>
         <button
           onClick={() => setModo('resumir')}
-          className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
             modo === 'resumir'
-              ? 'bg-gradient-to-r from-violet to-cyan text-[#08070c]'
-              : 'border border-white/10 bg-white/[0.03] text-text hover:bg-white/[0.06]'
+              ? 'border-transparent bg-gradient-to-b from-destaque to-destaque-fim font-semibold text-topo'
+              : 'border-borda-forte text-texto hover:bg-cartao'
           }`}
         >
           <BookOpen className="h-4 w-4" aria-hidden="true" />
@@ -189,7 +189,7 @@ export default function ProfessorTab({ providers }: { providers: ProvidersResp }
             { titulo: 'Ou escolha pelo seu nível no assunto', lista: NIVEIS },
           ].map((grupo) => (
             <div key={grupo.titulo}>
-              <p className="mb-3 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
+              <p className="rotulo mb-3">
                 {grupo.titulo}
               </p>
               <div className="mb-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -200,16 +200,16 @@ export default function ProfessorTab({ providers }: { providers: ProvidersResp }
                     aria-pressed={p.id === personaId}
                     className={`rounded-xl border p-3 text-left transition-colors ${
                       p.id === personaId
-                        ? 'border-violet/40 bg-violet/[0.08]'
-                        : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.05]'
+                        ? 'border-destaque bg-cartao-hover'
+                        : 'border-borda bg-cartao hover:border-borda-forte hover:bg-cartao-hover'
                     }`}
                   >
-                    <div className="mb-1 flex items-center gap-2 text-[0.85rem] font-semibold text-text">
-                      <p.icon className="h-4 w-4 shrink-0 text-violet" aria-hidden="true" />
+                    <div className="mb-1 flex items-center gap-2 text-[0.85rem] font-semibold text-texto">
+                      <p.icon className="h-4 w-4 shrink-0 text-texto" aria-hidden="true" />
                       <span>{p.nome}</span>
                     </div>
-                    <div className="mb-1.5 text-[0.72rem] text-muted">{p.descricao}</div>
-                    <div className="text-[0.76rem] italic leading-relaxed text-muted/90">{p.exemplo}</div>
+                    <div className="mb-1.5 text-[0.72rem] text-texto-suave">{p.descricao}</div>
+                    <div className="text-[0.76rem] italic leading-relaxed text-texto-suave">{p.exemplo}</div>
                   </button>
                 ))}
               </div>

@@ -242,7 +242,7 @@ export default function AnexoImagem({
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={desabilitado}
-          className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-[0.82rem] font-medium text-text transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+          className="btn-secundario flex items-center gap-1.5 px-4 py-2 text-[0.82rem]"
           aria-label="Anexar imagens ou documentos para extrair o texto"
         >
           <Paperclip className="h-4 w-4" aria-hidden="true" />
@@ -254,13 +254,13 @@ export default function AnexoImagem({
             type="button"
             onClick={limpar}
             disabled={desabilitado || lendo}
-            className="font-mono text-[0.7rem] text-muted underline-offset-2 hover:text-text hover:underline disabled:opacity-40"
+            className="text-[0.7rem] text-texto-suave underline-offset-2 hover:text-texto hover:underline disabled:opacity-40"
           >
             remover todas
           </button>
         )}
 
-        <span className="text-[0.72rem] text-muted" aria-live="polite">
+        <span className="text-[0.72rem] text-texto-suave" aria-live="polite">
           {anexos.length === 0
             ? dica ?? 'Imagem, PDF, DOCX ou TXT — o texto é lido aqui no navegador (com OCR)'
             : lendo
@@ -272,7 +272,7 @@ export default function AnexoImagem({
       </div>
 
       {lendo && (
-        <p className="mt-2 text-[0.72rem] leading-relaxed text-muted">
+        <p className="mt-2 text-[0.72rem] leading-relaxed text-texto-suave">
           A primeira leitura baixa o modelo de idioma (~15 MB, uma vez só) e pode demorar alguns
           segundos.
         </p>
@@ -294,9 +294,9 @@ export default function AnexoImagem({
                     className="h-[92px] w-full rounded-lg border border-white/10 object-cover"
                   />
                 ) : a.arquivo ? (
-                  <div className="flex h-[92px] w-full flex-col items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] text-muted">
+                  <div className="flex h-[92px] w-full flex-col items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] text-texto-suave">
                     <FileText className="h-6 w-6" aria-hidden="true" />
-                    <span className="font-mono text-[0.6rem] uppercase">{a.nome.split('.').pop()}</span>
+                    <span className="rotulo">{a.nome.split('.').pop()}</span>
                   </div>
                 ) : (
                   <div className="flex h-[92px] w-full items-center justify-center rounded-lg border border-dashed border-white/10 opacity-40">
@@ -306,7 +306,7 @@ export default function AnexoImagem({
                 <button
                   type="button"
                   onClick={() => remover(a.id)}
-                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-md border border-white/10 bg-[#0b0a12]/85 text-muted transition-colors hover:text-rose-300"
+                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-md border border-white/10 bg-[#0b0a12]/85 text-texto-suave transition-colors hover:text-erro"
                   aria-label={`Remover ${a.nome}`}
                   title="Remover este anexo"
                 >
@@ -314,18 +314,18 @@ export default function AnexoImagem({
                 </button>
               </div>
 
-              <div className="mt-1.5 truncate font-mono text-[0.62rem] text-muted" title={a.nome}>
+              <div className="mt-1.5 truncate text-[0.62rem] text-texto-suave" title={a.nome}>
                 {a.nome}
               </div>
 
               {a.status === 'lendo' && (
                 <div className="mt-1.5">
-                  <div className="mb-1 font-mono text-[0.62rem] text-cyan">
+                  <div className="mb-1 text-[0.62rem] text-texto">
                     lendo… {Math.round(a.progresso * 100)}%
                   </div>
                   <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-violet to-cyan transition-[width] duration-200"
+                      className="bg-destaque h-full rounded-full transition-[width] duration-200"
                       style={{ width: `${Math.max(4, Math.round(a.progresso * 100))}%` }}
                     />
                   </div>
@@ -333,7 +333,7 @@ export default function AnexoImagem({
               )}
 
               {a.status === 'pronto' && (
-                <div className="mt-1.5 flex items-center gap-1 font-mono text-[0.62rem] text-emerald-300">
+                <div className="mt-1.5 flex items-center gap-1 text-[0.62rem] text-ok">
                   <CircleCheck className="h-3 w-3 shrink-0" aria-hidden="true" />
                   texto no campo
                 </div>
@@ -341,14 +341,14 @@ export default function AnexoImagem({
 
               {a.status === 'vazio' && (
                 <div className="mt-1.5">
-                  <div className="text-[0.68rem] leading-snug text-amber-300">
+                  <div className="text-[0.68rem] leading-snug text-atencao">
                     Não encontrei texto legível neste arquivo.
                   </div>
                   {a.arquivo && (
                     <button
                       type="button"
                       onClick={() => reler(a.id, a.arquivo!)}
-                      className="mt-1 font-mono text-[0.62rem] text-muted underline-offset-2 hover:text-text hover:underline"
+                      className="mt-1 text-[0.62rem] text-texto-suave underline-offset-2 hover:text-texto hover:underline"
                     >
                       ler de novo
                     </button>
@@ -358,7 +358,7 @@ export default function AnexoImagem({
 
               {a.status === 'erro' && (
                 <div className="mt-1.5">
-                  <div className="flex items-start gap-1 text-[0.68rem] leading-snug text-rose-300">
+                  <div className="flex items-start gap-1 text-[0.68rem] leading-snug text-erro">
                     <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
                     {a.erro}
                   </div>
@@ -366,7 +366,7 @@ export default function AnexoImagem({
                     <button
                       type="button"
                       onClick={() => reler(a.id, a.arquivo!)}
-                      className="mt-1 font-mono text-[0.62rem] text-muted underline-offset-2 hover:text-text hover:underline"
+                      className="mt-1 text-[0.62rem] text-texto-suave underline-offset-2 hover:text-texto hover:underline"
                     >
                       ler de novo
                     </button>
@@ -374,7 +374,7 @@ export default function AnexoImagem({
                     <button
                       type="button"
                       onClick={() => inputRef.current?.click()}
-                      className="mt-1 font-mono text-[0.62rem] text-muted underline-offset-2 hover:text-text hover:underline"
+                      className="mt-1 text-[0.62rem] text-texto-suave underline-offset-2 hover:text-texto hover:underline"
                     >
                       enviar outra
                     </button>

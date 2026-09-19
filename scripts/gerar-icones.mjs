@@ -2,20 +2,19 @@
 //
 //     node scripts/gerar-icones.mjs
 //
-// O desenho é o mesmo de components/Header.tsx: o prompt ">_" com a estrela, em
-// preto sobre o degradê lime → hotpink. Rodar de novo sobrescreve os arquivos.
+// O desenho é o mesmo de components/Header.tsx: o prompt ">_" em preto sobre um
+// quadrado branco (visual grafite). Rodar de novo sobrescreve os arquivos.
 import { writeFile } from 'node:fs/promises'
 import sharp from 'sharp'
 
-const LIME = '#c6ff3d'
-const HOTPINK = '#ff3df0'
-const TINTA = '#08070c'
+const BRANCO = '#ffffff'
+const CINZA = '#d6d6d6'
+const TINTA = '#0a0a0a'
 
-// Os três traços do logo, no viewBox 24×24 do cabeçalho.
+// Os dois traços do logo, no viewBox 24×24 do cabeçalho.
 const glifo = `
   <path d="M4 6.5 9 12l-5 5.5" stroke="${TINTA}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <path d="M12 17.5h8" stroke="${TINTA}" stroke-width="2.2" stroke-linecap="round" fill="none"/>
-  <path d="M18.5 3.5l.55 1.45L20.5 5.5l-1.45.55-.55 1.45-.55-1.45L16.5 5.5l1.45-.55.55-1.45Z" fill="${TINTA}"/>`
+  <path d="M12 17.5h8" stroke="${TINTA}" stroke-width="2.2" stroke-linecap="round" fill="none"/>`
 
 /**
  * SVG 512×512. `raio` arredonda o fundo (0 = quadrado cheio, para o sistema
@@ -25,13 +24,13 @@ const glifo = `
 function svg({ raio, glifoPx }) {
   const escala = glifoPx / 24
   const desloc = (512 - glifoPx) / 2
-  // O desenho ocupa y 3,5–17,5 no viewBox 24: desce 1,5 para ficar no centro.
-  const descida = 1.5 * escala
+  // O desenho ocupa y 6,5–17,5 no viewBox 24 (centro em 12): não precisa descer.
+  const descida = 0
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="${LIME}"/>
-      <stop offset="1" stop-color="${HOTPINK}"/>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${BRANCO}"/>
+      <stop offset="1" stop-color="${CINZA}"/>
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="${raio}" fill="url(#g)"/>

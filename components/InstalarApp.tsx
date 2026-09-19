@@ -67,7 +67,7 @@ export default function InstalarApp() {
       <button
         type="button"
         onClick={() => (evento ? instalar() : setAjudaIos((v) => !v))}
-        className="flex items-center gap-1.5 rounded-md border border-white/15 bg-white/[0.04] px-2.5 py-1 font-mono text-[0.68rem] font-medium text-text transition-colors hover:border-lime/50 hover:text-lime"
+        className="flex items-center gap-1.5 rounded-md border border-white/15 bg-white/[0.04] px-2.5 py-1 text-[0.68rem] font-medium text-texto transition-colors hover:border-borda-forte hover:text-texto"
         aria-expanded={ios ? ajudaIos : undefined}
         title="Instalar o app neste aparelho"
       >
@@ -80,27 +80,27 @@ export default function InstalarApp() {
         <div
           role="dialog"
           aria-label="Como instalar no iPhone"
-          className="glass absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-white/15 p-3 text-[0.8rem] text-text shadow-xl"
+          className="cartao absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border p-3 text-[0.8rem] text-texto shadow-xl"
         >
           <button
             type="button"
             onClick={() => setAjudaIos(false)}
-            className="absolute right-2 top-2 text-muted hover:text-text"
+            className="absolute right-2 top-2 text-texto-suave hover:text-texto"
             aria-label="Fechar"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
           <p className="mb-2 font-medium">Instalar no iPhone ou iPad</p>
-          <ol className="list-decimal space-y-1 pl-4 text-muted">
+          <ol className="list-decimal space-y-1 pl-4 text-texto-suave">
             <li>
-              Abra este site no <strong className="text-text">Safari</strong>.
+              Abra este site no <strong className="text-texto">Safari</strong>.
             </li>
             <li>
-              Toque em <Share className="inline h-3.5 w-3.5 align-[-2px] text-text" aria-label="Compartilhar" />{' '}
-              <strong className="text-text">Compartilhar</strong>.
+              Toque em <Share className="inline h-3.5 w-3.5 align-[-2px] text-texto" aria-label="Compartilhar" />{' '}
+              <strong className="text-texto">Compartilhar</strong>.
             </li>
             <li>
-              Escolha <strong className="text-text">Adicionar à Tela de Início</strong>.
+              Escolha <strong className="text-texto">Adicionar à Tela de Início</strong>.
             </li>
           </ol>
         </div>
