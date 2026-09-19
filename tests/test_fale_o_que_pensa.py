@@ -126,3 +126,35 @@ def test_remove_separadores_entre_secoes():
 def test_mantem_aspas_que_fazem_parte_da_mensagem():
     d = separar_secoes_fale('### MENSAGEM\n"Oi" foi o que ele disse, e "tchau" depois.')
     assert d["mensagem"] == '"Oi" foi o que ele disse, e "tchau" depois.'
+
+
+# Modelos gratuitos ignoram "título em linha própria" e escrevem "**MENSAGEM:** texto".
+# Sem tratar isso o texto inteiro, com os rótulos, virava a "mensagem" a copiar.
+@pytest.mark.parametrize(
+    "bruto",
+    [
+        "**INTENÇÃO:** Quer terminar.\n**ANÁLISE:** Tom seco.\n**MENSAGEM:** Oi, precisamos conversar.\n**DICA:** Espere.",
+        "INTENÇÃO: Quer terminar.\nANÁLISE: Tom seco.\nMENSAGEM: Oi, precisamos conversar.\nDICA: Espere.",
+        "**INTENÇÃO**: Quer terminar.\n**ANÁLISE**: Tom seco.\n**MENSAGEM**: Oi, precisamos conversar.\n**DICA**: Espere.",
+        "### INTENÇÃO: Quer terminar.\n### ANÁLISE: Tom seco.\n### MENSAGEM: Oi, precisamos conversar.\n### DICA: Espere.",
+    ],
+)
+def test_separa_titulos_na_mesma_linha_do_texto(bruto):
+    s = separar_secoes_fale(bruto)
+    assert s == {
+        "intencao": "Quer terminar.",
+        "analise": "Tom seco.",
+        "mensagem": "Oi, precisamos conversar.",
+        "dica": "Espere.",
+    }
+
+
+def test_titulo_na_mesma_linha_continua_na_linha_seguinte():
+    s = separar_secoes_fale("MENSAGEM: Oi, tudo bem?\nPodemos falar hoje?\nDICA: Espere.")
+    assert s["mensagem"] == "Oi, tudo bem?\nPodemos falar hoje?"
+    assert s["dica"] == "Espere."
+
+
+def test_frase_que_comeca_com_a_palavra_mensagem_sem_dois_pontos_nao_e_titulo():
+    s = separar_secoes_fale("MENSAGEM\nMensagem recebida, obrigado pelo aviso.\nDICA\nx")
+    assert s["mensagem"] == "Mensagem recebida, obrigado pelo aviso."

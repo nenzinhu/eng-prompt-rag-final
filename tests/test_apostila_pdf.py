@@ -142,3 +142,25 @@ def test_docx_usa_os_mesmos_blocos():
     assert "Definição: texto da definição." in textos
     assert not any("**" in t or t.startswith(">") for t in textos)
     assert len(doc.tables) == 1
+
+
+# O fpdf2 exige que as páginas reservadas ao sumário sejam exatamente as que ele
+# ocupa. A estimativa antiga (30 linhas por página) errava para 31-32, 61-68,
+# 91-104... seções, e a rota devolvia 500 depois de gastar a chamada de IA.
+@pytest.mark.parametrize("n_secoes", [1, 29, 30, 31, 32, 33, 35, 36, 61, 65, 67, 68, 69, 100, 101, 104, 105, 130])
+def test_pdf_sumario_fecha_para_qualquer_quantidade_de_secoes(n_secoes):
+    md = "\n\n".join(f"## Seção {n}\n\ntexto" for n in range(n_secoes))
+    pdf = _gerar(f"# T\n\n{md}")
+    corpo = "".join(p.extract_text() for p in PdfReader(io.BytesIO(pdf)).pages)
+    assert f"{n_secoes}. Seção {n_secoes - 1}" in corpo
+
+
+# O modelo às vezes devolve caracteres de controle (o projeto já limpa NUL no
+# texto extraído). O python-docx recusa esses caracteres e a rota dava 500.
+@pytest.mark.parametrize("sujeira", ["\x00", "\x07", "\x1b", "\x0b", "\x0c"])
+def test_docx_aceita_caracteres_de_controle(sujeira):
+    from docx import Document
+
+    md = f"# Tema{sujeira}\n\nTexto{sujeira}com{sujeira}lixo.\n\n- item{sujeira}\n\n| a | b |\n|---|---|\n| x{sujeira} | y |"
+    doc = Document(io.BytesIO(documentos._markdown_para_docx(md, f"Tema{sujeira}")))
+    assert any("Textocomlixo." in p.text for p in doc.paragraphs)
