@@ -15,6 +15,14 @@ import {
   CircleCheck,
   History,
   Trash2,
+  Gamepad2,
+  Gauge,
+  Film,
+  Radio,
+  Zap,
+  Wifi,
+  Share2,
+  Smartphone,
   type LucideIcon,
 } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -33,7 +41,19 @@ const ICONES: Record<string, LucideIcon> = {
   kernel: Cpu,
   trace: Bug,
   vault: ShieldCheck,
+  pixel: Gamepad2,
+  frame: Gauge,
+  reel: Film,
+  live: Radio,
+  turbo: Zap,
+  ping: Wifi,
+  seed: Share2,
+  mobi: Smartphone,
 }
+
+const AMBIENTE_PADRAO = 'Ex: Windows 11 23H2, notebook Dell, Outlook 365 / ou: EDK II stable202405, OVMF no QEMU 9.0'
+const PROBLEMA_PADRAO =
+  "Ex: o sistema trava com tela preta logo depois do logo do fabricante; o log serial para em 'Loading driver at ...'"
 
 const PERSONAS_PADRAO: SuportePersona[] = [
   {
@@ -51,6 +71,7 @@ export default function SuporteTab({ providers }: { providers: ProvidersResp }) 
   const { provider, modelo, trocarProvider, setModelo, pronto, nenhumConfigurado } = useProviderModel(providers)
   const [personas, setPersonas] = useState<SuportePersona[]>(PERSONAS_PADRAO)
   const [personaId, setPersonaId] = useState('byte')
+  const [area, setArea] = useState<string | null>(null)
   const [ambiente, setAmbiente] = useState('')
   const [problema, setProblema] = useState('')
   const [loading, setLoading] = useState(false)
@@ -77,6 +98,13 @@ export default function SuporteTab({ providers }: { providers: ProvidersResp }) 
 
   const personaAtiva = personas.find((p) => p.persona_id === personaId) ?? personas[0]
   const blocos = [...new Set(personas.map((p) => p.bloco))]
+  const areaAtiva = area ?? personaAtiva?.bloco ?? blocos[0]
+
+  function escolherArea(b: string) {
+    setArea(b)
+    const primeira = personas.find((p) => p.bloco === b)
+    if (primeira && personaAtiva?.bloco !== b) setPersonaId(primeira.persona_id)
+  }
 
   async function atender() {
     if (!problema.trim()) return
@@ -115,12 +143,30 @@ export default function SuporteTab({ providers }: { providers: ProvidersResp }) 
   return (
     <div>
       <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
-        Tecnologia — Suporte em TI e IA: escolha o especialista, descreva o ambiente e cole o problema ou o log
+        Tecnologia — Suporte em TI e IA: escolha a área e o especialista, descreva o ambiente e cole o problema ou o log
       </p>
 
-      {blocos.map((bloco) => (
+      <p className="mb-2 text-[0.75rem] font-medium text-muted">Área</p>
+      <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Área do suporte">
+        {blocos.map((b) => (
+          <button
+            key={b}
+            type="button"
+            onClick={() => escolherArea(b)}
+            aria-pressed={b === areaAtiva}
+            className={`rounded-full border px-3 py-1 text-[0.76rem] transition-colors ${
+              b === areaAtiva
+                ? 'border-violet/50 bg-violet/15 text-text'
+                : 'border-white/10 bg-white/[0.03] text-muted hover:text-text'
+            }`}
+          >
+            {b}
+          </button>
+        ))}
+      </div>
+
+      {[areaAtiva].map((bloco) => (
         <div key={bloco} className="mb-4">
-          <p className="mb-2 text-[0.75rem] font-medium text-muted">{bloco}</p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {personas
               .filter((p) => p.bloco === bloco)
@@ -164,7 +210,7 @@ export default function SuporteTab({ providers }: { providers: ProvidersResp }) 
       <textarea
         value={ambiente}
         onChange={(e) => setAmbiente(e.target.value)}
-        placeholder="Ex: Windows 11 23H2, notebook Dell, Outlook 365 / ou: EDK II stable202405, OVMF no QEMU 9.0"
+        placeholder={personaAtiva?.ambiente_placeholder || AMBIENTE_PADRAO}
         className="glass mb-3 min-h-[70px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
       />
 
@@ -172,7 +218,7 @@ export default function SuporteTab({ providers }: { providers: ProvidersResp }) 
       <textarea
         value={problema}
         onChange={(e) => setProblema(e.target.value)}
-        placeholder="Ex: o sistema trava com tela preta logo depois do logo do fabricante; o log serial para em 'Loading driver at ...'"
+        placeholder={personaAtiva?.problema_placeholder || PROBLEMA_PADRAO}
         className="glass min-h-[130px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
       />
       <AnexoImagem

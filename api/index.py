@@ -992,6 +992,8 @@ def listar_suporte_personas():
                 "description": p["description"],
                 "exemplo": p["exemplo"],
                 "usa_historico": bool(p.get("usa_historico")),
+                "ambiente_placeholder": p.get("ambiente_placeholder"),
+                "problema_placeholder": p.get("problema_placeholder"),
             }
             for pid, p in SUPORTE_PERSONAS.items()
         ]

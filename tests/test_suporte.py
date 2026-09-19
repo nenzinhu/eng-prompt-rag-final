@@ -37,11 +37,31 @@ def _pedir(**campos):
     return cliente.post("/api/suporte-atendimento", json=corpo)
 
 
-def test_lista_as_sete_personas_em_dois_blocos():
+def test_lista_as_personas_por_area():
     personas = cliente.get("/api/suporte-personas").json()["personas"]
-    assert [p["persona_id"] for p in personas] == ["byte", "sam", "bolt", "nexus", "kernel", "trace", "vault"]
-    assert {p["bloco"] for p in personas} == {"Suporte geral", "Firmware e UEFI"}
+    assert [p["persona_id"] for p in personas] == [
+        "byte", "sam", "bolt", "nexus", "kernel", "trace", "vault",
+        "pixel", "frame", "reel", "live", "turbo", "ping", "seed", "mobi",
+    ]
+    assert [p["bloco"] for p in personas if p["persona_id"] in ("pixel", "turbo", "seed")] == [
+        "Games e gráficos", "Windows e desempenho", "Internet e redes",
+    ]
+    assert len({p["bloco"] for p in personas}) == 7
     assert [p["persona_id"] for p in personas if p["usa_historico"]] == ["nexus"]
+
+
+def test_personas_novas_trazem_exemplos_dos_campos():
+    personas = {p["persona_id"]: p for p in cliente.get("/api/suporte-personas").json()["personas"]}
+    assert "RTX" in personas["pixel"]["ambiente_placeholder"]
+    assert personas["byte"]["ambiente_placeholder"] is None  # usa o exemplo padrão da aba
+
+
+def test_regras_gerais_valem_para_todas_as_areas(llm_falso):
+    _pedir(persona_id="seed", problema="torrent lento")
+    system = llm_falso[0]["system"]
+    assert "Seed" in system
+    assert "piratear" in system  # regra geral contra pirataria
+    assert "DLSS" in system  # regra de não inventar versões novas
 
 
 def test_atendimento_usa_persona_e_ambiente(llm_falso):

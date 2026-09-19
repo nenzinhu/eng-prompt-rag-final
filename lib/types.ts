@@ -279,6 +279,9 @@ export interface SuportePersona {
   description: string
   exemplo: string
   usa_historico: boolean
+  /** Exemplos próprios da área para os campos da aba (ex.: placa de vídeo para games). */
+  ambiente_placeholder?: string | null
+  problema_placeholder?: string | null
 }
 
 export interface SuportePersonasResp {
