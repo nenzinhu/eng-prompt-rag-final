@@ -200,8 +200,12 @@ def limpar_resposta(texto: str) -> str:
     return limpo.strip()
 
 
+# O título vem sozinho na linha ("### MENSAGEM") ou, como muitos modelos escrevem,
+# seguido do texto ("**MENSAGEM:** Oi"). Com texto na mesma linha os dois pontos
+# são obrigatórios: "Mensagem recebida, obrigado" no corpo não é título.
 _RE_TITULO_FALE = re.compile(
-    r"^[ \t]*(?:#{1,6}[ \t]*)?\**[ \t]*(INTEN[ÇC][ÃA]O|AN[ÁA]LISE|MENSAGEM|DICA)[ \t]*\**[ \t]*:?[ \t]*\**[ \t]*$",
+    r"^[ \t]*(?:#{1,6}[ \t]*)?\**[ \t]*(INTEN[ÇC][ÃA]O|AN[ÁA]LISE|MENSAGEM|DICA)[ \t]*"
+    r"(?:\**[ \t]*:[ \t]*\**[ \t]*(?P<resto>(?!\**[ \t]*$)\S[^\n]*)|\**[ \t]*:?[ \t]*\**[ \t]*)$",
     re.IGNORECASE | re.MULTILINE,
 )
 _CHAVES_FALE = {"INTENCAO": "intencao", "ANALISE": "analise", "MENSAGEM": "mensagem", "DICA": "dica"}
@@ -223,7 +227,8 @@ def separar_secoes_fale(texto: str) -> dict[str, str]:
         nome = unicodedata.normalize("NFKD", m.group(1).upper())
         nome = "".join(c for c in nome if not unicodedata.combining(c))
         fim = titulos[i + 1].start() if i + 1 < len(titulos) else len(limpo)
-        trecho = _RE_SEPARADOR_BORDA.sub("", limpo[m.end():fim].strip()).strip()
+        corpo = (m.group("resto") or "") + limpo[m.end():fim]
+        trecho = _RE_SEPARADOR_BORDA.sub("", corpo.strip()).strip()
         secoes[_CHAVES_FALE[nome]] = _RE_SEPARADOR_FIM_LINHA.sub("", trecho)
     if not secoes["mensagem"]:
         secoes["mensagem"] = limpo

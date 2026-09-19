@@ -237,7 +237,13 @@ def _titulo_da_apostila(blocos: list[tuple[str, object]], tema: str) -> tuple[st
     return titulo, resto
 
 
+# O python-docx recusa (ValueError) o que o XML não aceita: controles ASCII
+# (menos tab, quebra de linha e retorno), U+FFFE/U+FFFF e metades de surrogate.
+_RE_INVALIDO_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff￾￿]")
+
+
 def _markdown_para_docx(texto: str, titulo: str) -> bytes:
+    texto, titulo = _RE_INVALIDO_XML.sub("", texto), _RE_INVALIDO_XML.sub("", titulo)
     titulo, blocos = _titulo_da_apostila(_blocos_markdown(texto), titulo)
     doc = DocxDocument()
     doc.add_heading(titulo, level=0)
@@ -339,6 +345,10 @@ def _data_hoje() -> str:
         return datetime.now().strftime("%d/%m/%Y")
 
 
+_ALT_TITULO_SUMARIO = 17  # título do sumário (10) + espaço abaixo (7), em mm
+_ALT_LINHA_SUMARIO = 7
+
+
 def _markdown_para_pdf(texto: str, titulo: str) -> bytes:
     """Apostila em PDF com cara de material didático.
 
@@ -428,7 +438,7 @@ def _markdown_para_pdf(texto: str, titulo: str) -> bytes:
     def desenhar_sumario(pdf_, secoes):
         pdf_.set_x(pdf_.l_margin)
         fonte(18, True, _COR_PRIMARIA)
-        pdf_.cell(0, 10, preparar("Sumário"), new_x="LMARGIN", new_y="NEXT")
+        pdf_.cell(0, 10, preparar("Sumário"), new_x="LMARGIN", new_y="NEXT")  # 10 + ln(7) abaixo = _ALT_TITULO_SUMARIO
         pdf_.set_draw_color(*_COR_DESTAQUE)
         pdf_.set_line_width(0.8)
         pdf_.line(pdf_.l_margin, pdf_.get_y() + 1, pdf_.l_margin + 25, pdf_.get_y() + 1)
@@ -439,12 +449,20 @@ def _markdown_para_pdf(texto: str, titulo: str) -> bytes:
             pdf_.set_x(pdf_.l_margin + recuo)
             largura = pdf_.epw - recuo - 12
             nome = s.name if pdf_.get_string_width(s.name) <= largura else s.name[: int(len(s.name) * largura / pdf_.get_string_width(s.name)) - 1] + "…"
-            pdf_.cell(largura, 7, preparar(nome))
-            pdf_.cell(12, 7, str(s.page_number), align="R", new_x="LMARGIN", new_y="NEXT")
+            pdf_.cell(largura, _ALT_LINHA_SUMARIO, preparar(nome))
+            pdf_.cell(12, _ALT_LINHA_SUMARIO, str(s.page_number), align="R", new_x="LMARGIN", new_y="NEXT")
 
     pdf.add_page()
     if n_secoes:  # o fpdf2 já quebra a página depois do espaço reservado
-        pdf.insert_toc_placeholder(desenhar_sumario, pages=max(1, -(-n_secoes // 30)))
+        # O fpdf2 exige que as páginas reservadas sejam exatamente as que o
+        # sumário ocupa; por isso a conta parte do layout (título do sumário,
+        # altura da linha, margens) e não de um número fixo de linhas por página.
+        # A 1ª página começa depois do cabeçalho; as seguintes, na margem do topo
+        # (medido: o fpdf2 não repete o cabeçalho nas páginas extras do sumário).
+        linhas_1a_pagina = int((pdf.page_break_trigger - (pdf.get_y() + _ALT_TITULO_SUMARIO)) // _ALT_LINHA_SUMARIO)
+        linhas_por_pagina = int((pdf.page_break_trigger - pdf.t_margin) // _ALT_LINHA_SUMARIO)
+        restante = max(0, n_secoes - linhas_1a_pagina)
+        pdf.insert_toc_placeholder(desenhar_sumario, pages=1 + -(-restante // linhas_por_pagina))
 
     def caixa(rotulo: str, corpo: str, cor, fundo, codigo: bool = False):
         pad, barra = 4, 1.6
