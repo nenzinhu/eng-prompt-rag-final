@@ -89,6 +89,32 @@ PROVIDERS = {
             # pergunta trivial, não cabe no orçamento de ~52 s com contexto real.
         ],
     },
+    "mistral": {
+        "label": "Mistral",
+        "base_url": "https://api.mistral.ai/v1",
+        "env_key": "MISTRAL_API_KEY",
+        # Plano gratuito (Experiment). Testados com CHAMADA REAL em 19/09/2026,
+        # com contexto de ~700 tokens, lendo os headers x-ratelimit-*:
+        #   ministral-8b   1,4 s · 188 req/min · 625 mil tokens/min
+        #   ministral-3b   0,6 s · 750 req/min · 1,3 mi tokens/min
+        #   ministral-14b  8,2 s ·  30 req/min · 937 mil tokens/min
+        #   codestral      0,6 s · 125 req/min · 625 mil tokens/min
+        # mistral-small, mistral-medium e magistral-* respondem 429 com limite
+        # de 0 req/min nesta conta: não fazem parte do plano gratuito.
+        "models": [
+            "ministral-8b-latest",
+            "ministral-3b-latest",
+            "ministral-14b-latest",
+            "codestral-latest",
+        ],
+        "notas": {
+            "ministral-3b-latest": "o mais rápido, respostas mais simples",
+            "ministral-14b-latest": "mais completo, ~8 s",
+            "codestral-latest": "focado em código",
+        },
+        "aviso": "Plano gratuito do Mistral: as perguntas podem ser usadas para treinar os modelos, "
+        "a não ser que o dono da chave desative isso no painel.",
+    },
     "anyapi": {
         "label": "AnyAPI",
         "base_url": "https://api.anyapi.ai/v1",
