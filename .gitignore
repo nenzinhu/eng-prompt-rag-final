@@ -48,3 +48,6 @@ Thumbs.db
 
 # worker do pdfjs (copiado no postinstall)
 public/pdf.worker.min.mjs
+
+# Cache do orquestrador (skill orquestrar-time)
+.analise-4-agentes/.cache/
