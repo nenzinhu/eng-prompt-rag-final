@@ -48,3 +48,6 @@ Thumbs.db
 
 # worker do pdfjs (copiado no postinstall)
 public/pdf.worker.min.mjs
+
+# Mockups do brainstorming visual (superpowers) — local, nao vai para o repo
+.superpowers/
