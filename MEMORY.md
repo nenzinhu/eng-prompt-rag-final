@@ -105,6 +105,36 @@ Todo o resto do relatório de 19/09 — sobrou só o que está na tabela de pend
   freia nada. De quebra saiu a duplicação do `consumir_cota`, agora em `_consumir_cota`, e o
   hash do IP virou `_hash_ip`. Testes em `tests/test_admin_auth.py`.
 
+### Regressões da própria rodada (20/09, análise `2026-09-20_0342`)
+
+O time de 4 agentes rodou de novo sobre o código já publicado: média 6,75/10, **reprovado**,
+sem bug crítico. Os três achados mais graves eram regressões introduzidas pelas correções
+anteriores — todas já consertadas:
+
+- **`GET /api/trecho` não tinha limite nenhum.** Rota pública, sem `_limitar_llm`: iterando
+  `pagina` dava para reconstruir a apostila inteira e martelar o Supabase. Agora tem
+  `_limitar_leitura`, com balde PRÓPRIO (40/min por IP e `LIMITE_LEITURA_POR_DIA_IP`=600) —
+  separado da IA de propósito, porque conferir citação é o que o app quer estimular e não
+  pode gastar o orçamento de perguntas do aluno.
+- **`.pptx` podia cair inteiro com 500.** O `getattr(forma, "shape_type", None)` da correção
+  do B-23 não protegia nada: `NotImplementedError` vem de DENTRO da property, e `getattr` não
+  segura isso. Agora o teste de grupo é `hasattr(forma, "shapes")` e cada forma vai num
+  try/except — perder uma forma exótica é aceitável, perder o arquivo não. O docstring que
+  afirmava indexar SmartArt foi corrigido: não indexa.
+- **Tabelas do `.docx` iam TODAS para a última página**, então a citação apontava o capítulo
+  errado. `_blocos_do_corpo` agora percorre o corpo na ordem real do documento
+  (`w:p` e `w:tbl`), e cada tabela fica na página do seu capítulo.
+
+Também: `_marcar_no_balde` unificou os três contadores por IP (IA, login e leitura), e
+`PROJECT.md` deixou de mandar NÃO reenviar arquivo — o B-13 mudou isso e era justamente a
+instrução a seguir nos 2 PDFs pendentes.
+
+Achados ainda ABERTOS dessa análise: `/api/config` publica a chave anon e o RLS dá `select`
+em `ementas_chunks` para `anon` (o índice sai direto pelo Supabase, independentemente do
+limite acima — falta decisão de produto); `pergunta`/`historico`/`query` sem teto de tamanho;
+a conversa contínua some no F5 e ao trocar de professor; cota conta requisição e não chamada
+(Resumo gasta 41 chamadas por 1 unidade). Detalhe em `.analise-4-agentes/2026-09-20_0342/`.
+
 ### Features novas
 
 - **N-05 · "Ver no contexto"** — rota `GET /api/trecho?fonte=&pagina=&vizinhas=` devolve a

@@ -14,6 +14,7 @@ from pptx import Presentation  # noqa: E402
 from pptx.util import Inches  # noqa: E402
 
 import index  # noqa: E402
+from _app import documentos  # noqa: E402
 
 
 def _gerar_docx() -> bytes:
@@ -142,3 +143,58 @@ def test_pptx_indexa_tabela_e_notas_do_slide():
     assert "Título do slide" in texto
     assert "RAG | busca antes de gerar" in texto
     assert "Explicar com o exemplo da apostila." in texto
+
+
+def test_docx_tabela_fica_na_pagina_do_seu_capitulo():
+    """Regressão: as tabelas iam TODAS para a última página.
+
+    `documento.paragraphs` pula tabelas, e juntá-las no fim fazia a citação
+    apontar o capítulo errado — pior do que não indexar.
+    """
+    doc = DocxDocument()
+    doc.add_heading("Capítulo 1", level=1)
+    doc.add_paragraph("Texto do capítulo 1.")
+    t1 = doc.add_table(rows=1, cols=2)
+    t1.cell(0, 0).text = "Conceito um"
+    t1.cell(0, 1).text = "definição um"
+    doc.add_heading("Capítulo 2", level=1)
+    doc.add_paragraph("Texto do capítulo 2.")
+    t2 = doc.add_table(rows=1, cols=2)
+    t2.cell(0, 0).text = "Conceito dois"
+    t2.cell(0, 1).text = "definição dois"
+    buf = io.BytesIO()
+    doc.save(buf)
+
+    paginas = dict(index.extrair_paginas(buf.getvalue(), "capitulos.docx"))
+    assert "Conceito um | definição um" in paginas[1]
+    assert "Conceito dois | definição dois" in paginas[2]
+    # A tabela do capítulo 1 não pode vazar para o capítulo 2.
+    assert "Conceito um" not in paginas[2]
+
+
+def test_pptx_forma_problematica_nao_derruba_o_arquivo():
+    """Regressão: `shape_type` levanta NotImplementedError em forma não
+    reconhecida, e `getattr(..., None)` NÃO segura isso — a exceção vem de
+    dentro da property. A ingestão do .pptx inteiro caía com 500."""
+
+    class FormaQuebrada:
+        @property
+        def shape_type(self):
+            raise NotImplementedError("forma desconhecida")
+
+        @property
+        def has_text_frame(self):
+            raise NotImplementedError("forma desconhecida")
+
+    assert documentos._texto_da_forma(FormaQuebrada()) == []
+
+
+def test_pptx_ignora_forma_ruim_e_mantem_o_resto_do_slide():
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    caixa = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1))
+    caixa.text_frame.text = "Conteúdo bom do slide"
+    buf = io.BytesIO()
+    prs.save(buf)
+    texto = "\n".join(t for _, t in index.extrair_paginas(buf.getvalue(), "s.pptx"))
+    assert "Conteúdo bom do slide" in texto

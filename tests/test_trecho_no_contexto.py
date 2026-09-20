@@ -2,7 +2,8 @@
 
 A resposta do RAG cita `arquivo, pág. N` e mostra um pedaço cortado em 3
 linhas. Esta rota entrega a página inteira (e as vizinhas) para o aluno
-conferir a citação, lendo só o índice: sem embedding, sem modelo, sem cota.
+conferir a citação, lendo só o índice: sem embedding e sem modelo, com cota
+própria (não gasta o orçamento de IA do aluno).
 
     .venv/Scripts/python.exe -m pytest tests/test_trecho_no_contexto.py -v
 """
@@ -42,6 +43,14 @@ class _Ctx:
         return httpx.Response(
             self.status, json=self.linhas, request=httpx.Request("GET", "https://x")
         )
+
+
+@pytest.fixture(autouse=True)
+def balde_de_leitura_zerado():
+    """O contador por IP vive no módulo e vazaria de um teste para o outro."""
+    index._leituras_por_ip.clear()
+    yield
+    index._leituras_por_ip.clear()
 
 
 @pytest.fixture
@@ -127,3 +136,29 @@ def test_texto_da_pagina_tem_teto(indice):
     indice["linhas"] = [{"id": 1, "page": 1, "content": "x" * 30000}]
     corpo = _buscar(indice, pagina=1).json()
     assert len(corpo["paginas"][0]["texto"]) == index.MAX_CHARS_TRECHO
+
+
+# ── Cota própria: a rota lê o acervo e é pública ──────────────────────────
+
+
+def test_leitura_tem_limite_por_minuto(indice):
+    """Sem limite, iterando `pagina` dava para baixar a apostila inteira."""
+    indice["linhas"] = [{"id": 1, "page": 1, "content": "texto"}]
+    for _ in range(index.LIMITE_LEITURA_POR_MINUTO):
+        assert _buscar(indice, pagina=1).status_code == 200
+    r = _buscar(indice, pagina=1)
+    assert r.status_code == 429
+    assert "material" in r.json()["detail"]
+
+
+def test_limite_de_leitura_nao_gasta_a_cota_de_ia(indice, monkeypatch):
+    """Conferir citação não pode consumir o orçamento de perguntas do aluno."""
+    chamadas = []
+
+    async def _llm_limite(_request):
+        chamadas.append(1)
+
+    monkeypatch.setattr(index, "_limitar_llm", _llm_limite)
+    indice["linhas"] = [{"id": 1, "page": 1, "content": "texto"}]
+    assert _buscar(indice, pagina=1).status_code == 200
+    assert chamadas == [], "a rota de leitura não deve passar pelo limite da IA"

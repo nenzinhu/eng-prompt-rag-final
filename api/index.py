@@ -195,6 +195,12 @@ LIMITE_LLM_GLOBAL_POR_DIA = int(os.environ.get("LIMITE_LLM_GLOBAL_POR_DIA", "500
 LIMITE_LOGIN_ADMIN = int(os.environ.get("LIMITE_LOGIN_ADMIN", "8"))
 JANELA_LOGIN_ADMIN = 900
 
+# Leitura do material indexado (/api/trecho). Folgado para o uso normal —
+# conferir citação é o comportamento que o app quer estimular — e baixo o
+# bastante para não servir de raspagem do acervo. 0 desliga o teto diário.
+LIMITE_LEITURA_POR_MINUTO = 40
+LIMITE_LEITURA_POR_DIA_IP = int(os.environ.get("LIMITE_LEITURA_POR_DIA_IP", "600"))
+
 
 EXTENSOES_DOCUMENTO = (".pdf", ".txt", ".md", ".docx", ".pptx")
 
@@ -541,16 +547,9 @@ async def _limitar_login(request: Request):
     legítimo.
     """
     ip = _ip_cliente(request)
-    agora = time.time()
-    if len(_logins_por_ip) > MAX_IPS_RASTREADOS:
-        for outro, marcas in list(_logins_por_ip.items()):
-            if all(agora - t >= JANELA_LOGIN_ADMIN for t in marcas):
-                del _logins_por_ip[outro]
-    recentes = [t for t in _logins_por_ip.get(ip, []) if agora - t < JANELA_LOGIN_ADMIN]
-    if len(recentes) >= LIMITE_LOGIN_ADMIN:
-        raise HTTPException(429, MENSAGEM_LIMITE_LOGIN)
-    recentes.append(agora)
-    _logins_por_ip[ip] = recentes
+    _marcar_no_balde(
+        _logins_por_ip, ip, LIMITE_LOGIN_ADMIN, JANELA_LOGIN_ADMIN, MENSAGEM_LIMITE_LOGIN
+    )
 
     if not (SUPABASE_URL and escrita_via_service_role()):
         return
@@ -566,17 +565,69 @@ MENSAGEM_LIMITE_LOGIN = (
 )
 
 
-def _limitar_em_memoria(ip: str):
+def _marcar_no_balde(
+    balde: dict[str, list[float]], ip: str, limite: int, janela: float, mensagem: str
+):
+    """Conta um uso do IP num balde de janela deslizante, na memória da instância.
+
+    Serve aos três limitadores (IA, login e leitura do material). Em serverless
+    cada instância tem o seu balde, então isto barra rajada de um mesmo IP mas
+    não substitui a cota compartilhada no Supabase.
+
+    A varredura por MAX_IPS_RASTREADOS existe porque podar só a lista do IP
+    consultado deixava na memória, para sempre, quem passou uma vez e não voltou.
+    """
     agora = time.time()
-    if len(_uso_por_ip) > MAX_IPS_RASTREADOS:
-        for outro, marcas in list(_uso_por_ip.items()):
-            if all(agora - t >= 60 for t in marcas):
-                del _uso_por_ip[outro]
-    usos = [t for t in _uso_por_ip.get(ip, []) if agora - t < 60]
-    if len(usos) >= LIMITE_LLM_POR_MINUTO:
-        raise HTTPException(429, "Muitas requisições em sequência. Tente de novo em instantes.")
+    if len(balde) > MAX_IPS_RASTREADOS:
+        for outro, marcas in list(balde.items()):
+            if all(agora - t >= janela for t in marcas):
+                del balde[outro]
+    usos = [t for t in balde.get(ip, []) if agora - t < janela]
+    if len(usos) >= limite:
+        raise HTTPException(429, mensagem)
     usos.append(agora)
-    _uso_por_ip[ip] = usos
+    balde[ip] = usos
+
+
+# Leituras do material indexado (/api/trecho): balde próprio, para não gastar a
+# cota de IA do aluno numa operação que não chama modelo nenhum.
+_leituras_por_ip: dict[str, list[float]] = {}
+
+
+async def _limitar_leitura(request: Request):
+    """Limite das rotas que leem o material indexado sem chamar modelo.
+
+    `/api/trecho` é pública e devolve a página inteira: iterando `pagina` dava
+    para reconstruir a apostila toda e martelar o Supabase sem nunca ver 429.
+    A cota é separada da IA de propósito — conferir uma citação é justamente o
+    que queremos que o aluno faça à vontade, e não pode consumir o orçamento
+    que ele usa para perguntar.
+    """
+    ip = _ip_cliente(request)
+    _marcar_no_balde(
+        _leituras_por_ip,
+        ip,
+        LIMITE_LEITURA_POR_MINUTO,
+        60,
+        "Muitas consultas ao material em sequência. Tente de novo em instantes.",
+    )
+    if not (SUPABASE_URL and escrita_via_service_role() and LIMITE_LEITURA_POR_DIA_IP > 0):
+        return
+    permitido = await _consumir_cota(
+        f"leitura-dia:{_hash_ip(ip)}", LIMITE_LEITURA_POR_DIA_IP, 86400
+    )
+    if permitido is False:
+        raise HTTPException(429, "Limite diário de consultas ao material atingido para este acesso.")
+
+
+def _limitar_em_memoria(ip: str):
+    _marcar_no_balde(
+        _uso_por_ip,
+        ip,
+        LIMITE_LLM_POR_MINUTO,
+        60,
+        "Muitas requisições em sequência. Tente de novo em instantes.",
+    )
 
 
 # ── Supabase: embeddings, busca vetorial, chunks, storage ──────────────────
@@ -1084,14 +1135,19 @@ def _juntar_sem_repetir(textos: list[str], sobreposicao: int = SOBREPOSICAO_CHUN
 
 
 @app.get("/api/trecho")
-async def trecho_no_contexto(fonte: str, pagina: Optional[int] = None, vizinhas: bool = True):
+async def trecho_no_contexto(
+    request: Request, fonte: str, pagina: Optional[int] = None, vizinhas: bool = True
+):
     """Devolve o texto indexado de uma página, para conferir a citação.
 
     A resposta do RAG cita `arquivo, pág. N` e mostra um pedaço cortado. Esta
     rota entrega a página inteira (e, com `vizinhas`, a anterior e a seguinte)
     lendo só o que já está indexado — sem embeddings e sem chamar modelo, então
-    não gasta cota de IA.
+    não gasta a cota de IA. Tem cota PRÓPRIA (`_limitar_leitura`): sem ela, era
+    a única rota de leitura do material sem limite nenhum, e iterando `pagina`
+    dava para reconstruir a apostila inteira.
     """
+    await _limitar_leitura(request)
     fonte = (fonte or "").strip()
     if not fonte:
         raise HTTPException(400, "Informe a fonte (nome do arquivo).")

@@ -7,6 +7,9 @@ import unicodedata
 from pathlib import Path
 
 from docx import Document as DocxDocument
+from docx.oxml.ns import qn
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 from pptx import Presentation
 from pypdf import PdfReader
 
@@ -20,36 +23,44 @@ def _extrair_paginas_docx(dados: bytes) -> list[tuple[int, str]]:
     """
     documento = DocxDocument(io.BytesIO(dados))
     paginas: list[tuple[int, list[str]]] = [(1, [])]
-    for paragrafo in documento.paragraphs:
-        texto = paragrafo.text.strip()
+    # Percorre o CORPO na ordem do documento. `documento.paragraphs` pula as
+    # tabelas, e juntá-las no fim jogava toda tabela para a última página: a
+    # citação apontava o capítulo errado, que é pior do que não indexar.
+    for bloco in _blocos_do_corpo(documento):
+        if isinstance(bloco, Table):
+            paginas[-1][1].extend(_linhas_da_tabela(bloco))
+            continue
+        texto = bloco.text.strip()
         if not texto:
             continue
-        if paragrafo.style.name == "Heading 1" and paginas[-1][1]:
+        if bloco.style.name == "Heading 1" and paginas[-1][1]:
             paginas.append((paginas[-1][0] + 1, []))
         paginas[-1][1].append(texto)
-    # `documento.paragraphs` NÃO inclui o que está dentro de tabelas. Material de
-    # curso costuma pôr comparações e resumos exatamente em tabela, e esse
-    # conteúdo ficava fora do índice — a IA respondia "não encontrei" sobre algo
-    # que estava na apostila. Vai tudo na última página aberta, com as células da
-    # linha separadas por " | " para a leitura não virar sopa de palavras.
-    for linha in _linhas_de_tabelas_docx(documento):
-        paginas[-1][1].append(linha)
     return [(num, "\n".join(linhas)) for num, linhas in paginas]
 
 
-def _linhas_de_tabelas_docx(documento) -> list[str]:
-    """Texto das tabelas do .docx, uma linha de texto por linha da tabela."""
+def _blocos_do_corpo(documento):
+    """Parágrafos e tabelas do .docx, na ordem em que aparecem no documento."""
+    corpo = documento.element.body
+    for filho in corpo.iterchildren():
+        if filho.tag == qn("w:p"):
+            yield Paragraph(filho, documento)
+        elif filho.tag == qn("w:tbl"):
+            yield Table(filho, documento)
+
+
+def _linhas_da_tabela(tabela) -> list[str]:
+    """Uma linha de texto por linha da tabela, células separadas por " | "."""
     linhas: list[str] = []
-    for tabela in documento.tables:
-        for linha in tabela.rows:
-            celulas = [c.text.strip().replace("\n", " ") for c in linha.cells]
-            # Célula mesclada aparece repetida nas colunas que ocupa.
-            unicas: list[str] = []
-            for celula in celulas:
-                if celula and (not unicas or unicas[-1] != celula):
-                    unicas.append(celula)
-            if unicas:
-                linhas.append(" | ".join(unicas))
+    for linha in tabela.rows:
+        celulas = [c.text.strip().replace("\n", " ") for c in linha.cells]
+        # Célula mesclada aparece repetida nas colunas que ocupa.
+        unicas: list[str] = []
+        for celula in celulas:
+            if celula and (not unicas or unicas[-1] != celula):
+                unicas.append(celula)
+        if unicas:
+            linhas.append(" | ".join(unicas))
     return linhas
 
 
@@ -73,23 +84,34 @@ def _extrair_paginas_pptx(dados: bytes) -> list[tuple[int, str]]:
 def _texto_da_forma(forma) -> list[str]:
     """Texto de uma forma do slide, entrando em grupos e tabelas.
 
-    Antes só se lia `forma.text_frame`: tabela, grupo e SmartArt ficavam fora do
-    índice, embora seja onde o material costuma pôr comparações e resumos.
+    Antes só se lia `forma.text_frame`, e tabela e grupo ficavam fora do índice,
+    embora seja onde o material costuma pôr comparações e resumos. (SmartArt
+    continua de fora: o python-pptx não expõe o texto do diagrama.)
+
+    Uma forma só nunca pode derrubar a ingestão do arquivo inteiro, então cada
+    ramo é protegido: o `shape_type` do python-pptx levanta
+    `NotImplementedError` em forma não reconhecida — e `getattr` com padrão NÃO
+    segura isso, porque a exceção vem de dentro da property.
     """
     textos: list[str] = []
-    # Grupo: as formas de dentro é que têm o texto.
-    if getattr(forma, "shape_type", None) is not None and hasattr(forma, "shapes"):
-        for interna in forma.shapes:
-            textos.extend(_texto_da_forma(interna))
+    try:
+        # Grupo: as formas de dentro é que têm o texto. `shapes` só existe em
+        # grupo, então serve de teste sem tocar em `shape_type`.
+        if hasattr(forma, "shapes"):
+            for interna in forma.shapes:
+                textos.extend(_texto_da_forma(interna))
+            return textos
+        if getattr(forma, "has_table", False):
+            for linha in forma.table.rows:
+                celulas = [c.text.strip().replace("\n", " ") for c in linha.cells if c.text.strip()]
+                if celulas:
+                    textos.append(" | ".join(celulas))
+            return textos
+        if forma.has_text_frame and forma.text_frame.text.strip():
+            textos.append(forma.text_frame.text)
+    except Exception:
+        # Perder uma forma exótica é aceitável; perder o arquivo, não.
         return textos
-    if getattr(forma, "has_table", False):
-        for linha in forma.table.rows:
-            celulas = [c.text.strip().replace("\n", " ") for c in linha.cells if c.text.strip()]
-            if celulas:
-                textos.append(" | ".join(celulas))
-        return textos
-    if forma.has_text_frame and forma.text_frame.text.strip():
-        textos.append(forma.text_frame.text)
     return textos
 
 
