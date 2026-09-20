@@ -128,6 +128,45 @@ def test_mantem_aspas_que_fazem_parte_da_mensagem():
     assert d["mensagem"] == '"Oi" foi o que ele disse, e "tchau" depois.'
 
 
+def test_linha_do_corpo_com_nome_de_secao_nao_vira_titulo():
+    # "Dica: ..." no meio da mensagem não pode cortar a mensagem nem ser a dica.
+    d = separar_secoes_fale(
+        "### MENSAGEM\nOi, tudo bem?\nDica: leve casaco\nAbraço.\n### DICA\nMande à noite."
+    )
+    assert d["mensagem"] == "Oi, tudo bem?\nDica: leve casaco\nAbraço."
+    assert d["dica"] == "Mande à noite."
+
+
+def test_linha_do_corpo_com_intencao_nao_vaza_da_analise():
+    d = separar_secoes_fale(
+        "### INTENÇÃO\nPedir desculpa.\n### ANÁLISE\nIntenção: terminar seria pior.\n"
+        "### MENSAGEM\nFoi mal."
+    )
+    assert d["intencao"] == "Pedir desculpa."
+    assert d["analise"] == "Intenção: terminar seria pior."
+
+
+def test_marcador_de_lista_com_nome_de_secao_nao_vira_titulo():
+    d = separar_secoes_fale("### MENSAGEM\nOi!\n* Dica: leve casaco\nTchau\n### DICA\nNoite.")
+    assert d["mensagem"] == "Oi!\n* Dica: leve casaco\nTchau"
+    assert d["dica"] == "Noite."
+    d = separar_secoes_fale(
+        "**INTENÇÃO:** a\n**ANÁLISE:**\n* Intenção: terminar seria pior\n**MENSAGEM:** oi"
+    )
+    assert d["intencao"] == "a"
+    assert d["analise"] == "* Intenção: terminar seria pior"
+
+
+def test_titulo_repetido_junta_as_partes():
+    d = separar_secoes_fale("**MENSAGEM:** Oi\n**MENSAGEM:** Tchau")
+    assert d["mensagem"] == "Oi\nTchau"
+
+
+@pytest.mark.parametrize("bruto", ["**MENSAGEM:** **\nOi", "**MENSAGEM**\n**\nOi"])
+def test_asteriscos_soltos_apos_o_titulo_nao_sobram(bruto):
+    assert separar_secoes_fale(bruto)["mensagem"] == "Oi"
+
+
 # Modelos gratuitos ignoram "título em linha própria" e escrevem "**MENSAGEM:** texto".
 # Sem tratar isso o texto inteiro, com os rótulos, virava a "mensagem" a copiar.
 @pytest.mark.parametrize(
