@@ -47,6 +47,9 @@ const CORES: Record<NivelConcordancia, { borda: string; texto: string; fundo: st
 
 export default function CompararTab({ providers }: { providers: ProvidersResp }) {
   const chaves = Object.keys(providers)
+  // Só provedores com chave de API configurada podem ir num slot: escolher um
+  // sem chave dava erro naquele card, sem o aluno ter feito nada.
+  const configurados = chaves.filter((p) => providers[p]?.configurado)
   const [slots, setSlots] = useState<Slot[]>([])
   const [pergunta, setPergunta] = useState('')
   const [loading, setLoading] = useState(false)
@@ -56,16 +59,16 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
   // Monta os slots iniciais com provedores distintos (a graça é comparar
   // modelos diferentes, não dois do mesmo provedor).
   useEffect(() => {
-    if (!chaves.length) return
+    if (!configurados.length) return
     setSlots((atual) => {
       if (atual.length) return atual
-      return chaves.slice(0, 3).map((p, i) => ({
+      return configurados.slice(0, 3).map((p, i) => ({
         id: i,
         provider: p,
         modelo: providers[p]?.models?.[0] ?? '',
       }))
     })
-  }, [chaves.join(','), providers]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [configurados.join(','), providers]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function atualizar(id: number, campo: 'provider' | 'modelo', valor: string) {
     setSlots((s) =>
@@ -83,7 +86,7 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
     setSlots((s) => {
       if (s.length >= MAX_MODELOS) return s
       const usados = new Set(s.map((x) => x.provider))
-      const livre = chaves.find((c) => !usados.has(c)) ?? chaves[0] ?? ''
+      const livre = configurados.find((c) => !usados.has(c)) ?? configurados[0] ?? ''
       const proximoId = Math.max(0, ...s.map((x) => x.id)) + 1
       return [...s, { id: proximoId, provider: livre, modelo: providers[livre]?.models?.[0] ?? '' }]
     })
@@ -279,8 +282,8 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
 
             {/* Respostas lado a lado */}
             <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-              {resultado.respostas.map((r) => (
-                <div key={r.rotulo} className="glass grad-border flex flex-col overflow-hidden rounded-xl">
+              {resultado.respostas.map((r, i) => (
+                <div key={`${i}-${r.rotulo}`} className="glass grad-border flex flex-col overflow-hidden rounded-xl">
                   <div className="border-b border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
                     <div className="truncate font-mono text-[0.68rem] text-cyan" title={r.rotulo}>
                       {r.modelo}

@@ -16,7 +16,10 @@ const CASOS: [string, string][] = [
   ['Playbook do Curso - v1.3.pdf', 'Playbook do Curso - v1.3.pdf'],
   ['relatório #2 (final)!.docx', 'relatorio _2 (final)_.docx'],
   ['ção.pdf', 'cao.pdf'],
-  ['🚀.pdf', 'documento.pdf'],
+  // Sem nada de ASCII no nome, a marca do original evita que dois arquivos
+  // diferentes virem o mesmo "documento.pdf" (bug B-20).
+  ['🚀.pdf', 'documento-4e3e8732.pdf'],
+  ['日本語.pdf', 'documento-8b95c95b.pdf'],
 ]
 
 for (const [enviado, salvo] of CASOS) {

@@ -26,7 +26,9 @@ export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }
       const d = await api.status()
       if (!montado.current) return
       setStatus(d.status)
-      setTotal(d.total)
+      // `total` vem nulo quando o banco não respondeu (status 'offline'):
+      // manter o último número seria mostrar um dado que já não vale.
+      setTotal(d.total ?? 0)
       setInseguro(d.escrita_via === 'anon')
     } catch {
       if (montado.current) setStatus('offline')

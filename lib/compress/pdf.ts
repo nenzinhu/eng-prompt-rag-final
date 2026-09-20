@@ -170,6 +170,15 @@ export async function comprimirPdf(
   deps: Dependencias
 ): Promise<ResultadoCompressao> {
   const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false })
+  // `ignoreEncryption` deixa ABRIR um PDF protegido, mas o que sai da regravação
+  // não carrega a criptografia original — o arquivo pode ficar ilegível. Melhor
+  // recusar com uma explicação do que devolver um PDF quebrado.
+  if (doc.isEncrypted) {
+    throw new Error(
+      'Este PDF está protegido por senha ou restrições. Remova a proteção no leitor de ' +
+        'PDF e tente de novo — comprimir aqui geraria um arquivo ilegível.',
+    )
+  }
   const contexto = doc.context
   /** Filtros, cores e dimensões podem vir por referência indireta. */
   const resolver = (o: unknown) => (o ? contexto.lookup(o as never) ?? o : o)
@@ -189,7 +198,14 @@ export async function comprimirPdf(
     const listaFiltros = filtros(dict, resolver)
     const params = paramsDeFiltro(dict, resolver, listaFiltros.length - 1)
 
-    if (dict.get(PDFName.of('ImageMask')) || dict.get(PDFName.of('SMask'))) {
+    // `/Mask` (máscara por stream ou por faixa de cor) conta como máscara tanto
+    // quanto `/ImageMask` e `/SMask`: reescrever a imagem sem ela fazia a
+    // transparência sumir e o recorte aparecer como bloco opaco.
+    if (
+      dict.get(PDFName.of('ImageMask')) ||
+      dict.get(PDFName.of('SMask')) ||
+      dict.get(PDFName.of('Mask'))
+    ) {
       registrar('ignorada', antes.length, 'tem máscara')
       continue
     }

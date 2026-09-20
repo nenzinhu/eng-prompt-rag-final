@@ -205,13 +205,30 @@ def test_upload_mesmo_conteudo_com_nome_novo_continua_renomeando(monkeypatch):
         ("Playbook do Curso - v1.3.pdf", "Playbook do Curso - v1.3.pdf"),
         ("relatório #2 (final)!.docx", "relatorio _2 (final)_.docx"),
         ("ção.pdf", "cao.pdf"),
-        ("🚀.pdf", "documento.pdf"),
+        ("🚀.pdf", "documento-4e3e8732.pdf"),
+        ("日本語.pdf", "documento-8b95c95b.pdf"),
     ],
 )
 def test_nome_para_storage(enviado, salvo):
     from _app.documentos import nome_para_storage
 
     assert nome_para_storage(enviado) == salvo
+
+
+def test_nomes_nao_latinos_diferentes_nao_colidem():
+    """Bug B-20: todos viravam "documento.pdf".
+
+    O segundo arquivo entrava como "versão atualizada do mesmo arquivo" e
+    substituía o primeiro no Storage e no índice.
+    """
+    from _app.documentos import nome_para_storage
+
+    a = nome_para_storage("日本語.pdf")
+    b = nome_para_storage("中文.pdf")
+    assert a != b
+    assert a.endswith(".pdf") and b.endswith(".pdf")
+    # Estável: o mesmo nome dá sempre o mesmo destino.
+    assert a == nome_para_storage("日本語.pdf")
 
 
 def test_upload_troca_nome_com_acento_e_avisa(monkeypatch):

@@ -42,6 +42,8 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
   const [verificando, setVerificando] = useState(false)
   const [erroToken, setErroToken] = useState('')
   const [valido, setValido] = useState(false)
+  // Sessão não confirmada por falha de REDE (não por recusa do servidor).
+  const [erroSessao, setErroSessao] = useState('')
   const [maxMb, setMaxMb] = useState(25)
   const [motivoLimite, setMotivoLimite] = useState('')
   // Acima de maxMb (teto da Vercel), o arquivo vai direto ao Storage até este teto.
@@ -73,9 +75,16 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
       api
         .adminVerificar(salvo)
         .then(() => setValido(true))
-        .catch(() => {
-          limparTokenAdmin()
-          setToken('')
+        .catch((e) => {
+          // Só descarta o token quando o SERVIDOR recusa (401/403). Antes
+          // qualquer falha — rede instável, 5xx, ou o 500 que a senha com
+          // acento causava — apagava a sessão e obrigava a logar de novo.
+          if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+            limparTokenAdmin()
+            setToken('')
+            return
+          }
+          setErroSessao('Não deu para confirmar a sessão de admin agora. Tente uma ação para revalidar.')
         })
     }
   }, [])
@@ -124,6 +133,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
       salvarTokenAdmin(d.token)
       setToken(d.token)
       setValido(true)
+      setErroSessao('')
     } catch (e) {
       setErroToken(e instanceof Error ? e.message : 'Não foi possível entrar')
     } finally {
@@ -135,8 +145,27 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
     limparTokenAdmin()
     setToken('')
     setValido(false)
+    setErroSessao('')
     setAnalises([])
     setBloqueado(false)
+  }
+
+  /**
+   * Encerra a sessão quando o servidor recusa o token.
+   *
+   * A sessão vale 8 h e não havia saída automática: passado o prazo, a tela
+   * continuava dizendo "autenticado" e só aparecia um 401 solto a cada ação.
+   * Devolve true quando tratou a falha.
+   */
+  function sessaoExpirou(e: unknown): boolean {
+    if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+      limparTokenAdmin()
+      setToken('')
+      setValido(false)
+      setErroSessao('Sua sessão de admin expirou. Entre de novo para continuar.')
+      return true
+    }
+    return false
   }
 
   /** Consulta o que a reindexação faria com cada documento — sem gravar nada. */
@@ -170,7 +199,11 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
         logLine('ok', '✓ Nada indica perda de conteúdo — pode reindexar.')
       }
     } catch (e) {
-      logLine('err', `✗ ${e instanceof Error ? e.message : 'Erro ao verificar'}`)
+      if (sessaoExpirou(e)) {
+        logLine('err', '✗ Sessão de admin expirada — entre de novo.')
+      } else {
+        logLine('err', `✗ ${e instanceof Error ? e.message : 'Erro ao verificar'}`)
+      }
     } finally {
       setIndexing(false)
     }
@@ -312,6 +345,13 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
         verificando={verificando}
         erro={erroToken}
       />
+
+      {erroSessao && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.78rem] text-amber-200">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{erroSessao}</span>
+        </div>
+      )}
 
       {valido && (
         <>

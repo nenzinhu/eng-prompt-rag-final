@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Search, Sparkles, TriangleAlert, Library } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useProviderModel } from '@/lib/useProviderModel'
@@ -36,28 +36,39 @@ export default function GlossarioTab({
 
   const [busca, setBusca] = useState('')
   const [buscando, setBuscando] = useState(false)
+  const [erroBusca, setErroBusca] = useState('')
   const [termosSalvos, setTermosSalvos] = useState<TermoGlossario[]>([])
   const [ocrLoading, setOcrLoading] = useState(false)
   const [anexoReset, setAnexoReset] = useState(0)
 
+  // Cada digitação dispara uma busca. Sem ordem, a resposta mais LENTA chegava
+  // depois e sobrescrevia a mais nova — a lista mostrava o resultado de um
+  // termo que o aluno já tinha terminado de apagar.
+  const buscaAtualRef = useRef(0)
+
   async function buscarSalvos(q: string) {
+    const minha = ++buscaAtualRef.current
     setBuscando(true)
+    setErroBusca('')
     try {
       const d = await api.glossarioTermosSalvos(q)
+      if (buscaAtualRef.current !== minha) return
       setTermosSalvos(d.termos)
-    } catch {
+    } catch (e) {
+      if (buscaAtualRef.current !== minha) return
+      // Falha não é "nenhum resultado": esvaziar a lista em silêncio fazia o
+      // aluno concluir que o termo não estava salvo.
       setTermosSalvos([])
+      setErroBusca(e instanceof Error ? e.message : 'Não foi possível buscar os termos salvos.')
     } finally {
-      setBuscando(false)
+      if (buscaAtualRef.current === minha) setBuscando(false)
     }
   }
 
+  // Uma única busca na montagem (com `busca` vazia) e depois a cada digitação.
+  // Antes havia um efeito extra só para a montagem, e a tela buscava duas vezes.
   useEffect(() => {
-    buscarSalvos('')
-  }, [])
-
-  useEffect(() => {
-    const t = setTimeout(() => buscarSalvos(busca), 350)
+    const t = setTimeout(() => buscarSalvos(busca), busca ? 350 : 0)
     return () => clearTimeout(t)
   }, [busca])
 
@@ -105,7 +116,12 @@ export default function GlossarioTab({
         />
         <div className="mt-3">
           {buscando && <div className="text-[0.78rem] text-muted">Buscando…</div>}
-          {!buscando && termosSalvos.length === 0 && (
+          {!buscando && erroBusca && (
+            <div className="rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-[0.78rem] text-amber-300">
+              {erroBusca}
+            </div>
+          )}
+          {!buscando && !erroBusca && termosSalvos.length === 0 && (
             <div className="text-[0.78rem] text-muted">
               {busca.trim() ? 'Nenhum termo salvo encontrado com esse filtro.' : 'Nenhum termo salvo ainda — gere um sumário abaixo.'}
             </div>

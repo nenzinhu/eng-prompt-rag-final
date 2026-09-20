@@ -88,6 +88,7 @@ from _app.documentos import (  # noqa: E402
     nome_para_storage,
 )
 from rag_core import (  # noqa: E402
+    SOBREPOSICAO_CHUNK,
     calcular_concordancia,
     chunk_texto,
     classificar_fidelidade,
@@ -200,6 +201,32 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def marcar_inicio(request: Request, call_next):
+    """Guarda quando a requisição começou, para o orçamento de tempo.
+
+    A plataforma corta a função em TEMPO_MAX_FUNCAO. O timeout do modelo era
+    fixo (TIMEOUT_LLM) e não descontava o que já tinha passado com embedding e
+    busca: um embedding lento (cold start da Edge Function) mais um modelo lento
+    passavam do limite e a resposta virava um 504 em texto puro, sem dizer a
+    causa. Com o início marcado aqui, `tempo_restante_llm` dá ao modelo só o que
+    ainda cabe.
+    """
+    request.state.inicio = time.perf_counter()
+    return await call_next(request)
+
+
+def tempo_restante_llm(request: Request) -> float:
+    """Quanto ainda cabe numa chamada ao modelo, nesta requisição."""
+    inicio = getattr(request.state, "inicio", None)
+    if inicio is None:
+        return TIMEOUT_LLM
+    restante = TEMPO_MAX_FUNCAO - (time.perf_counter() - inicio) - MARGEM_SEGURANCA
+    # O piso de 5 s é o mesmo do provedor: abaixo disso não vale a pena tentar,
+    # mas um erro claro do modelo é melhor do que o 504 seco da plataforma.
+    return max(5.0, min(restante, TIMEOUT_LLM))
+
+
 @app.exception_handler(Exception)
 async def falha_inesperada(request: Request, exc: Exception):
     """Transforma qualquer falha não tratada numa resposta JSON legível.
@@ -291,6 +318,18 @@ def escrita_via_service_role() -> bool:
     return bool(SUPABASE_SERVICE_ROLE_KEY)
 
 
+def iguais_em_tempo_constante(a: str, b: str) -> bool:
+    """Compara dois segredos em tempo constante, aceitando acento.
+
+    `secrets.compare_digest` levanta TypeError quando recebe `str` com
+    caractere fora do ASCII — e como ninguém capturava, uma senha acentuada
+    virava HTTP 500 em vez de 401. Pior: com acento no ADMIN_PASS, o admin não
+    entrava nem digitando a senha certa. Comparar os bytes em UTF-8 resolve e
+    mantém o tempo constante.
+    """
+    return hmac.compare_digest((a or "").encode("utf-8"), (b or "").encode("utf-8"))
+
+
 def _segredo_sessao() -> str:
     """Segredo usado para assinar as sessões.
 
@@ -337,7 +376,7 @@ def validar_sessao(token: str) -> bool:
     esperada = base64.urlsafe_b64encode(
         hmac.new(segredo.encode(), payload.encode(), hashlib.sha256).digest()
     ).rstrip(b"=").decode()
-    if not hmac.compare_digest(assinatura, esperada):
+    if not iguais_em_tempo_constante(assinatura, esperada):
         return False
     try:
         dados = json.loads(base64.urlsafe_b64decode(payload.encode() + b"=" * (-len(payload) % 4)))
@@ -373,7 +412,7 @@ async def exigir_admin(x_admin_token: str = Header(default="")):
         )
     if validar_sessao(x_admin_token):
         return
-    if secrets.compare_digest(x_admin_token, ADMIN_TOKEN):
+    if iguais_em_tempo_constante(x_admin_token, ADMIN_TOKEN):
         return
     raise HTTPException(401, "Sessão de admin ausente ou inválida (faça login na área restrita).")
 
@@ -633,13 +672,22 @@ async def upload_documento_storage(filename: str, data: bytes, mimetype: str = "
     r.raise_for_status()
 
 
+LIMITE_LISTAGEM_STORAGE = 1000  # o padrão do endpoint do Storage é 100
+
+
 async def listar_arquivos_storage() -> list[dict]:
-    """Documentos do bucket, com o MD5 do conteúdo (eTag) para detectar duplicatas."""
+    """Documentos do bucket, com o MD5 do conteúdo (eTag) para detectar duplicatas.
+
+    O `limit` é explícito de propósito: o endpoint de listagem do Storage
+    devolve 100 itens por padrão, e a lista alimenta a checagem de duplicata e
+    a prévia. Com mais de 100 arquivos, os demais sumiriam da comparação e um
+    envio repetido passaria como arquivo novo.
+    """
     async with _http(_TIMEOUT) as client:
         r = await client.post(
             f"{SUPABASE_URL}/storage/v1/object/list/ementas",
             headers={**_h_documentos(), "Content-Type": "application/json"},
-            json={"prefix": ""},
+            json={"prefix": "", "limit": LIMITE_LISTAGEM_STORAGE},
         )
     r.raise_for_status()
     arquivos = []
@@ -695,6 +743,10 @@ async def url_envio_assinada(caminho: str) -> str:
     return f"{SUPABASE_URL}/storage/v1{r.json()['url']}"
 
 
+# Teto de verbetes que UMA requisição pode gravar no glossário compartilhado.
+MAX_TERMOS_SALVOS_POR_PEDIDO = 25
+
+
 async def salvar_termos_glossario(termos: list[dict], origem: str = "") -> Optional[str]:
     """Grava os termos. Devolve None em caso de sucesso, ou o motivo da falha.
 
@@ -702,18 +754,28 @@ async def salvar_termos_glossario(termos: list[dict], origem: str = "") -> Optio
     """
     if not termos:
         return None
-    rows = [
-        {
-            "termo": t["termo"],
-            "explicacao": t["explicacao"],
-            # Os 1-2 exemplos vão numerados numa coluna de texto (ver
-            # `rag_core.formatar_exemplos_para_banco`): assim não é preciso mudar
-            # o schema, e o dado continua legível na tabela.
-            "exemplo": formatar_exemplos_para_banco(t.get("exemplos") or t.get("exemplo")),
-            "origem": origem,
-        }
-        for t in termos
-    ]
+    # Última barreira contra repetição no mesmo comando: o `ON CONFLICT DO
+    # UPDATE` do PostgREST recusa o INSERT inteiro (21000) se duas linhas
+    # tiverem a mesma chave, e o lote todo se perdia. `extrair_termos_glossario`
+    # já filtra, mas esta função é o ponto que fala com o banco.
+    rows = []
+    vistos: set[str] = set()
+    for t in termos:
+        chave = str(t["termo"]).strip().lower()
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        rows.append(
+            {
+                "termo": t["termo"],
+                "explicacao": t["explicacao"],
+                # Os 1-2 exemplos vão numerados numa coluna de texto (ver
+                # `rag_core.formatar_exemplos_para_banco`): assim não é preciso mudar
+                # o schema, e o dado continua legível na tabela.
+                "exemplo": formatar_exemplos_para_banco(t.get("exemplos") or t.get("exemplo")),
+                "origem": origem,
+            }
+        )
     try:
         async with _http(_TIMEOUT) as client:
             r = await client.post(
@@ -734,10 +796,25 @@ async def salvar_termos_glossario(termos: list[dict], origem: str = "") -> Optio
     return None
 
 
+def _valor_para_filtro(texto: str) -> str:
+    """Prepara um texto do usuário para entrar num filtro do PostgREST.
+
+    A sintaxe do `or=(...)` usa vírgula para separar condições e parênteses para
+    agrupar: um termo com `,` ou `(` mudava a ESTRUTURA do filtro, e o PostgREST
+    respondia 400 — que a tela mostrava como "nenhum termo encontrado", como se
+    a busca tivesse funcionado e não houvesse resultado.
+
+    Entre aspas duplas o valor vira literal; as aspas e barras de dentro
+    precisam ser escapadas.
+    """
+    escapado = texto.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"*{escapado}*"'
+
+
 async def buscar_termos_glossario(q: str = "", limite: int = 200) -> list[dict]:
     params = {"select": "termo,explicacao,exemplo,created_at", "order": "termo.asc", "limit": str(limite)}
     if q.strip():
-        termo_like = f"*{q.strip()}*"
+        termo_like = _valor_para_filtro(q.strip())
         params["or"] = f"(termo.ilike.{termo_like},explicacao.ilike.{termo_like})"
     async with _http(_TIMEOUT) as client:
         r = await client.get(f"{SUPABASE_URL}/rest/v1/glossario_termos", headers=_h_leitura(), params=params)
@@ -773,13 +850,30 @@ async def status():
             headers={**_h_leitura(), "Prefer": "count=exact"},
             params={"select": "id"},
         )
-    total = 0
+    # Banco fora do ar não é "índice vazio". Antes, um 401 ou 5xx vinha sem
+    # `content-range`, virava total=0/"empty" e ainda ficava 30 s em cache: o
+    # cabeçalho dizia "sem dados" quando o certo era "offline".
+    if r.status_code >= 400:
+        return {
+            "status": "offline",
+            "total": None,
+            "escrita_via": "service_role" if escrita_via_service_role() else "anon",
+            "cache": False,
+            "detalhe": f"HTTP {r.status_code} ao consultar o índice.",
+        }
     cr = r.headers.get("content-range")
-    if cr and "/" in cr:
-        try:
-            total = int(cr.split("/")[-1])
-        except ValueError:
-            total = 0
+    if not cr or "/" not in cr:
+        return {
+            "status": "offline",
+            "total": None,
+            "escrita_via": "service_role" if escrita_via_service_role() else "anon",
+            "cache": False,
+            "detalhe": "O banco respondeu sem a contagem de registros.",
+        }
+    try:
+        total = int(cr.split("/")[-1])
+    except ValueError:
+        total = 0
     _cache_status.update({"em": agora, "total": total, "status": "ready" if total > 0 else "empty"})
     return {
         "status": _cache_status["status"],
@@ -830,7 +924,10 @@ def admin_login(req: LoginReq):
             "Credenciais de admin não configuradas. Defina ADMIN_USER, ADMIN_PASS e "
             "ADMIN_TOKEN no servidor.",
         )
-    if not (secrets.compare_digest(req.usuario or "", ADMIN_USER) and secrets.compare_digest(req.senha or "", ADMIN_PASS)):
+    if not (
+        iguais_em_tempo_constante(req.usuario, ADMIN_USER)
+        and iguais_em_tempo_constante(req.senha, ADMIN_PASS)
+    ):
         raise HTTPException(401, "Usuário ou senha inválidos.")
     token, exp = emitir_sessao(ADMIN_USER)
     return {"token": token, "expira": exp, "usuario": ADMIN_USER}
@@ -880,6 +977,98 @@ async def buscar(req: BuscarReq, request: Request):
             }
             for c in chunks
         ]
+    }
+
+
+MAX_CHARS_TRECHO = 12000  # teto do que a rota devolve, por requisição
+
+
+def _juntar_sem_repetir(textos: list[str], sobreposicao: int = SOBREPOSICAO_CHUNK) -> str:
+    """Emenda chunks vizinhos descontando a sobreposição do divisor.
+
+    Os chunks nascem com `SOBREPOSICAO_CHUNK` caracteres repetidos do anterior
+    (rag_core.chunk_texto). Colar em sequência mostraria esse pedaço duas vezes,
+    o que faz o aluno duvidar do texto justamente na tela que existe para ele
+    conferir a citação. Só corta quando a repetição é real.
+    """
+    saida = ""
+    for texto in textos:
+        texto = (texto or "").strip()
+        if not texto:
+            continue
+        if not saida:
+            saida = texto
+            continue
+        maior = min(len(saida), len(texto), sobreposicao + 40)
+        corte = 0
+        for tamanho in range(maior, 20, -1):
+            if saida[-tamanho:] == texto[:tamanho]:
+                corte = tamanho
+                break
+        saida += ("\n\n" if not corte else "") + texto[corte:]
+    return saida
+
+
+@app.get("/api/trecho")
+async def trecho_no_contexto(fonte: str, pagina: Optional[int] = None, vizinhas: bool = True):
+    """Devolve o texto indexado de uma página, para conferir a citação.
+
+    A resposta do RAG cita `arquivo, pág. N` e mostra um pedaço cortado. Esta
+    rota entrega a página inteira (e, com `vizinhas`, a anterior e a seguinte)
+    lendo só o que já está indexado — sem embeddings e sem chamar modelo, então
+    não gasta cota de IA.
+    """
+    fonte = (fonte or "").strip()
+    if not fonte:
+        raise HTTPException(400, "Informe a fonte (nome do arquivo).")
+
+    # Lista de pares (e não dict) porque o PostgREST recebe dois filtros na
+    # mesma coluna repetindo o parâmetro: page=gte.4&page=lte.6.
+    params: list[tuple[str, str]] = [
+        ("select", "id,content,page"),
+        ("source", f"eq.{fonte}"),
+        ("order", "id.asc"),
+        ("limit", "60"),
+    ]
+    if pagina is not None:
+        if pagina < 1:
+            raise HTTPException(400, "Página inválida.")
+        if vizinhas:
+            params.append(("page", f"gte.{max(1, pagina - 1)}"))
+            params.append(("page", f"lte.{pagina + 1}"))
+        else:
+            params.append(("page", f"eq.{pagina}"))
+
+    async with _http(_TIMEOUT) as client:
+        r = await client.get(
+            f"{SUPABASE_URL}/rest/v1/ementas_chunks", headers=_h_leitura(), params=params
+        )
+    if r.status_code >= 400:
+        raise HTTPException(502, "Não foi possível ler o material indexado agora.")
+    linhas = r.json()
+    if not linhas:
+        raise HTTPException(
+            404,
+            f"Nada indexado para '{fonte}'"
+            + (f", página {pagina}." if pagina is not None else ".")
+            + " O material pode ter sido reindexado desde esta resposta.",
+        )
+
+    paginas: list[dict] = []
+    for linha in linhas:
+        numero = linha.get("page")
+        if paginas and paginas[-1]["pagina"] == numero:
+            paginas[-1]["partes"].append(linha.get("content") or "")
+        else:
+            paginas.append({"pagina": numero, "partes": [linha.get("content") or ""]})
+
+    return {
+        "fonte": fonte,
+        "pagina": pagina,
+        "paginas": [
+            {"pagina": p["pagina"], "texto": _juntar_sem_repetir(p["partes"])[:MAX_CHARS_TRECHO]}
+            for p in paginas
+        ],
     }
 
 
@@ -1113,31 +1302,98 @@ async def suporte_atendimento(req: SuporteReq, request: Request):
     }
 
 
+MAX_TURNOS_CONVERSA = 3  # quantos turnos anteriores entram no prompt
+
+
+class TurnoConversa(BaseModel):
+    pergunta: str = ""
+    resposta: str = ""
+
+
 class PerguntaReq(BaseModel):
     pergunta: str
     provider: str = "nous"
     modelo: Optional[str] = None
     persona: str = "padrao"  # ver PERSONA_PROMPTS
+    # Turnos anteriores, do mais ANTIGO ao mais recente. Opcional: sem isto a
+    # rota se comporta como antes.
+    historico: list[TurnoConversa] = []
 
 
-async def _preparar_pergunta(req: PerguntaReq, request: Request) -> tuple[list[dict], str, float, str, str]:
+def _turnos_recentes(historico: list[TurnoConversa]) -> list[TurnoConversa]:
+    """Últimos turnos, já cortados — teto de tamanho e de quantidade.
+
+    Mesmo molde do histórico do Suporte: o texto vem do cliente, então entra
+    limitado e como DADO, nunca como instrução.
+    """
+    uteis = [t for t in historico if (t.pergunta or "").strip() or (t.resposta or "").strip()]
+    return [
+        TurnoConversa(
+            pergunta=(t.pergunta or "").strip()[:MAX_CHARS_HISTORICO],
+            resposta=(t.resposta or "").strip()[:MAX_CHARS_HISTORICO],
+        )
+        for t in uteis[-MAX_TURNOS_CONVERSA:]
+    ]
+
+
+def _texto_para_busca(pergunta: str, turnos: list[TurnoConversa]) -> str:
+    """O que vira embedding.
+
+    "E no caso de X?" sozinho não tem do que buscar: o vetor sai de uma frase
+    sem assunto e o RAG devolve trechos aleatórios. Juntar a última pergunta do
+    aluno devolve o tema à busca. Só as PERGUNTAS entram — enfiar a resposta
+    anterior aqui puxaria a busca para o que o modelo já disse, não para o que
+    está no material.
+    """
+    anterior = turnos[-1].pergunta if turnos else ""
+    if not anterior:
+        return pergunta
+    return f"{anterior}\n{pergunta}"
+
+
+def _bloco_conversa(turnos: list[TurnoConversa]) -> str:
+    if not turnos:
+        return ""
+    partes = [
+        f"Aluno: {t.pergunta}" + (f"\nVocê respondeu: {t.resposta}" if t.resposta else "")
+        for t in turnos
+        if t.pergunta
+    ]
+    if not partes:
+        return ""
+    return (
+        "CONVERSA ATÉ AQUI (do mais antigo ao mais recente, só para entender a "
+        "pergunta atual — as regras de citação continuam valendo):\n"
+        + "\n---\n".join(partes)
+        + "\n\n"
+    )
+
+
+async def _preparar_pergunta(
+    req: PerguntaReq, request: Request
+) -> tuple[list[dict], str, float, str, str, str]:
     """Tudo o que vem antes da geração: limite, busca no material e validação.
 
     Compartilhado pela rota normal e pela de streaming — assim os erros (pergunta
     vazia, banco vazio, modelo inválido, limite) saem com o status HTTP certo
-    antes de o stream começar.
+    antes de o stream começar. Devolve também o prompt do usuário já montado,
+    para as duas rotas mandarem exatamente a mesma coisa ao modelo.
     """
     await _limitar_llm(request)
     if not req.pergunta.strip():
         raise HTTPException(400, "Pergunta vazia.")
     modelo = resolver_modelo(req.provider, req.modelo)
-    emb = (await gerar_embeddings([req.pergunta]))[0]
+    turnos = _turnos_recentes(req.historico)
+    emb = (await gerar_embeddings([_texto_para_busca(req.pergunta, turnos)]))[0]
     chunks = await buscar_chunks(emb, n=6)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
     contexto, media = montar_contexto(chunks)
     system_prompt = PERSONA_PROMPTS.get(req.persona, SYSTEM_PROMPT_PERGUNTA)
-    return chunks, contexto, media, modelo, system_prompt
+    user_prompt = (
+        f"CONTEXTO:\n{contexto}\n\n{_bloco_conversa(turnos)}PERGUNTA: {req.pergunta}"
+    )
+    return chunks, contexto, media, modelo, system_prompt, user_prompt
 
 
 def _meta_pergunta(req: PerguntaReq, chunks: list[dict], media: float, modelo: str) -> dict:
@@ -1155,11 +1411,15 @@ def _meta_pergunta(req: PerguntaReq, chunks: list[dict], media: float, modelo: s
 
 @app.post("/api/perguntar")
 async def perguntar(req: PerguntaReq, request: Request):
-    chunks, contexto, media, modelo, system_prompt = await _preparar_pergunta(req, request)
-    resposta = await chamar_llm(
-        req.provider, modelo, system_prompt, f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
+    chunks, _contexto, media, modelo, system_prompt, user_prompt = await _preparar_pergunta(
+        req, request
     )
-    return {"resposta": resposta, **_meta_pergunta(req, chunks, media, modelo)}
+    resposta = await chamar_llm(
+        req.provider, modelo, system_prompt, user_prompt, timeout=tempo_restante_llm(request)
+    )
+    # `limpar_resposta` aqui também: esta rota serve o "testar meu entendimento",
+    # e sem ela o raciocínio dos modelos que emitem <think> aparecia na tela.
+    return {"resposta": limpar_resposta(resposta), **_meta_pergunta(req, chunks, media, modelo)}
 
 
 @app.post("/api/perguntar/stream")
@@ -1170,8 +1430,11 @@ async def perguntar_stream(req: PerguntaReq, request: Request):
     `texto` (cada pedaço gerado), e por fim `fim` ou `erro`. O aluno começa a
     ler em ~1 s em vez de esperar a resposta inteira.
     """
-    chunks, contexto, media, modelo, system_prompt = await _preparar_pergunta(req, request)
-    user_prompt = f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {req.pergunta}"
+    chunks, _contexto, media, modelo, system_prompt, user_prompt = await _preparar_pergunta(
+        req, request
+    )
+    # Medido DEPOIS da busca: o que sobra da função é o que o modelo pode gastar.
+    orcamento = tempo_restante_llm(request)
 
     def linha(evento: dict) -> str:
         return json.dumps(evento, ensure_ascii=False) + "\n"
@@ -1179,7 +1442,9 @@ async def perguntar_stream(req: PerguntaReq, request: Request):
     async def eventos():
         yield linha({"tipo": "meta", **_meta_pergunta(req, chunks, media, modelo)})
         try:
-            async for pedaco in chamar_llm_stream(req.provider, modelo, system_prompt, user_prompt):
+            async for pedaco in chamar_llm_stream(
+                req.provider, modelo, system_prompt, user_prompt, timeout=orcamento
+            ):
                 yield linha({"tipo": "texto", "t": pedaco})
         except HTTPException as e:
             yield linha({"tipo": "erro", "mensagem": str(e.detail)})
@@ -1246,8 +1511,12 @@ async def gerar_apostila(req: ApostilaReq, request: Request):
         chunks = await buscar_chunks(emb, n=8)
         if chunks:
             contexto, _ = montar_contexto(chunks)
-    except HTTPException:
-        pass  # base indisponível/vazia — segue só com conhecimento geral
+    except Exception:
+        # Segue só com conhecimento geral. `except HTTPException` não bastava:
+        # quando o Supabase cai, `gerar_embeddings`/`buscar_chunks` levantam
+        # erro do httpx (timeout, conexão recusada), que escapava e virava 500
+        # — justamente o contrário do que esta rota promete.
+        pass
 
     modelo = resolver_modelo(req.provider, req.modelo)
     prompt_usuario = f"TEMA: {tema}\n\n"
@@ -1256,7 +1525,15 @@ async def gerar_apostila(req: ApostilaReq, request: Request):
     prompt_usuario += _bloco_interesses(req.interesses)
     prompt_usuario += "Escreva a apostila completa sobre este tema."
 
-    texto = limpar_resposta(await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_APOSTILA, prompt_usuario))
+    texto = limpar_resposta(
+        await chamar_llm(
+            req.provider,
+            modelo,
+            SYSTEM_PROMPT_APOSTILA,
+            prompt_usuario,
+            timeout=tempo_restante_llm(request),
+        )
+    )
     nome_arquivo = _slug_arquivo(tema)
 
     if req.formato == "docx":
@@ -1317,10 +1594,16 @@ async def resumir_apostila(
     async def extrair_pontos(chunk: str) -> Optional[str]:
         try:
             return await chamar_llm(provider, modelo, SYSTEM_PROMPT_RESUMO_MAP, chunk)
-        except HTTPException:
-            return None  # um chunk falho não derruba o resumo inteiro
+        except Exception:
+            # Um chunk falho não derruba o resumo inteiro. Precisa ser amplo:
+            # o resumo dispara até MAX_CHUNKS_RESUMO chamadas de uma vez, e uma
+            # resposta fora do formato esperado (ou queda de conexão) subia pelo
+            # gather e virava 500 com o resumo todo perdido.
+            return None
 
     resultados = await asyncio.gather(*(extrair_pontos(c) for c in chunks))
+    enviados = len(chunks)
+    responderam = sum(1 for r in resultados if r)
     pontos_chave = [r for r in resultados if r and "sem conteúdo relevante" not in r.lower()]
     if not pontos_chave:
         raise HTTPException(502, "Não foi possível extrair conteúdo relevante do arquivo.")
@@ -1337,9 +1620,14 @@ async def resumir_apostila(
         "provider": provider,
         "modelo": modelo,
         "arquivo": nome,
-        "chunks_usados": len(chunks),
+        # `chunks_usados` é quantos trechos REALMENTE entraram no resumo. Antes
+        # era `len(chunks)` (os enviados): com 35 de 40 falhando por limite do
+        # provedor, saía um resumo de 5 trechos anunciando 40.
+        "chunks_usados": len(pontos_chave),
+        "chunks_enviados": enviados,
         "chunks_total": total_chunks,
         "amostrado": amostrado,
+        "falhas": enviados - responderam,
     }
 
 
@@ -1506,6 +1794,13 @@ async def aprender_avaliar(req: AprenderAvaliarReq, request: Request):
     return {**avaliacao, "provider": req.provider, "modelo": modelo}
 
 
+# Tetos da auditoria. Rota pública que faz uma busca vetorial POR FRASE, em
+# sequência: sem limite, um texto grande estourava os 60 s da função (504 cru) e
+# gastava banco e embeddings gastando só 1 unidade de cota.
+MAX_CHARS_AUDITORIA = 20000
+MAX_FRASES_AUDITORIA = 60
+
+
 class AuditarReq(BaseModel):
     resposta: str
     n_por_frase: int = 1
@@ -1529,18 +1824,30 @@ async def auditar(req: AuditarReq, request: Request):
     if not resposta:
         raise HTTPException(400, "Resposta vazia.")
 
-    frases = quebrar_frases(resposta)
+    frases = quebrar_frases(resposta[:MAX_CHARS_AUDITORIA])
     if not frases:
-        return {"frases": [], "resumo": {"apoiadas": 0, "parciais": 0, "nao_apoiadas": 0}}
+        return {
+            "frases": [],
+            "resumo": {"apoiadas": 0, "parciais": 0, "nao_apoiadas": 0},
+            "truncada": False,
+        }
+
+    # Corta o excesso de frases e AVISA: auditar metade sem dizer nada daria ao
+    # aluno a impressão de que o resto foi conferido.
+    truncada = len(frases) > MAX_FRASES_AUDITORIA or len(resposta) > MAX_CHARS_AUDITORIA
+    frases = frases[:MAX_FRASES_AUDITORIA]
 
     # Embeddings de todas as frases de uma vez (1 chamada ao gte-small).
     embeddings = await gerar_embeddings(frases)
+    # O `n` vai para o `match_count` do banco; sem clamp, um valor enorme pedia
+    # o índice inteiro por frase. Mesmo teto da /api/buscar.
+    por_frase = max(3, min(req.n_por_frase, MAX_RESULTADOS_BUSCA))
 
     resultados = []
     for frase, emb in zip(frases, embeddings):
         # Busca até 3 chunks: a frase pode estar espalhada em mais de um trecho,
         # e o chunk mais próximo nem sempre contém o trecho literal.
-        chunks = await buscar_chunks(emb, n=max(req.n_por_frase, 3))
+        chunks = await buscar_chunks(emb, n=por_frase)
         melhor = max((c["similarity"] for c in chunks), default=0.0)
         nivel = classificar_fidelidade(melhor)
         # A similaridade sozinha dá falso-positivo (frase inventada curta acha
@@ -1566,7 +1873,7 @@ async def auditar(req: AuditarReq, request: Request):
         "parciais": sum(1 for r in resultados if r["nivel"] == "parcial"),
         "nao_apoiadas": sum(1 for r in resultados if r["nivel"] == "nao_apoiada"),
     }
-    return {"frases": resultados, "resumo": resumo}
+    return {"frases": resultados, "resumo": resumo, "truncada": truncada}
 
 
 class GlossarioReq(BaseModel):
@@ -1599,10 +1906,12 @@ async def glossario(req: GlossarioReq, request: Request):
     # JSON, mas cada tentativa custa uma chamada inteira do modelo. Duas chamadas
     # não cabem no orçamento da função quando o modelo é lento — era essa a causa
     # do 504 no glossário (2 × ~25 s num limite de 60 s).
-    inicio = time.perf_counter()
     termos: list[dict] = []
     for _ in range(2):
-        restante = TEMPO_MAX_FUNCAO - (time.perf_counter() - inicio) - MARGEM_SEGURANCA
+        # Conta desde o começo da REQUISIÇÃO (middleware), não daqui: antes o
+        # relógio zerava depois do embedding e da busca, e o tempo gasto neles
+        # ficava de fora do orçamento — o mesmo furo que causava o 504.
+        restante = tempo_restante_llm(request)
         if restante < 8:  # não há mais tempo para uma chamada útil
             break
         bruto = limpar_resposta(
@@ -1615,7 +1924,12 @@ async def glossario(req: GlossarioReq, request: Request):
 
     aviso = None
     if termos:
-        aviso = await salvar_termos_glossario(termos, origem=texto_usuario[:200])
+        # A tabela é compartilhada por todos os alunos e a rota é pública, então
+        # entra um teto por requisição: sem ele, um texto montado de propósito
+        # podia semear dezenas de verbetes de uma vez no glossário de todo mundo.
+        aviso = await salvar_termos_glossario(
+            termos[:MAX_TERMOS_SALVOS_POR_PEDIDO], origem=texto_usuario[:200]
+        )
 
     resposta = {"termos": termos, "provider": req.provider, "modelo": modelo}
     if not termos:
@@ -1745,6 +2059,9 @@ async def comparar(req: CompararReq, request: Request):
     contexto, media = montar_contexto(chunks)
     user_prompt = f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {pergunta}"
 
+    # Os modelos rodam em paralelo, então todos dividem o mesmo tempo restante.
+    orcamento = tempo_restante_llm(request)
+
     async def responder(item: CompararItem) -> dict:
         try:
             modelo = resolver_modelo(item.provider, item.modelo)
@@ -1761,7 +2078,9 @@ async def comparar(req: CompararReq, request: Request):
         nome = f"{item.provider}/{modelo}"
         inicio = time.perf_counter()
         try:
-            bruto = await chamar_llm(item.provider, modelo, SYSTEM_PROMPT_COMPARAR, user_prompt)
+            bruto = await chamar_llm(
+                item.provider, modelo, SYSTEM_PROMPT_COMPARAR, user_prompt, timeout=orcamento
+            )
             resposta = limpar_resposta(bruto)
             erro = None
         except HTTPException as e:
@@ -2025,7 +2344,30 @@ async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
 
     proximo = req.offset + len(fatia)
     done = proximo >= len(linhas)
+    maior_agora = await maior_id_da_fonte(req.arquivo)
     if done and corte > 0:
+        # A limpeza final apaga `id <= corte` supondo que os chunks NOVOS
+        # nasceram com ids maiores. Se a sequência do banco ficou atrás (uma
+        # restauração com id explícito e sem `setval`), os novos teriam id
+        # abaixo do corte e seriam apagados junto: o documento ficaria vazio
+        # com "✓ Concluído" na tela. A checagem é uma consulta barata.
+        if maior_agora <= corte:
+            raise HTTPException(
+                409,
+                {
+                    "mensagem": (
+                        f"Ingestão interrompida antes de apagar os trechos antigos de "
+                        f"'{req.arquivo}': os trechos novos não receberam ids acima do corte "
+                        f"({maior_agora} <= {corte}). Apagar agora deixaria o documento vazio."
+                    ),
+                    "arquivo": req.arquivo,
+                    "avisos": [
+                        "A sequência de ids do banco provavelmente está atrás do maior id "
+                        "da tabela. Rode o `setval` do roteiro de restauração "
+                        "(supabase-backup/recriar-banco.sql) e reindexe.",
+                    ],
+                },
+            )
         await apagar_chunks_ate_id(req.arquivo, corte)
     return {
         "ok": True,
@@ -2035,7 +2377,7 @@ async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
         "proximo_offset": proximo,
         "done": done,
         "corte_id": corte,
-        "ultimo_id": await maior_id_da_fonte(req.arquivo) if not done else None,
+        "ultimo_id": None if done else maior_agora,
     }
 
 
@@ -2074,7 +2416,22 @@ async def _gravar_documento(envio: _Envio, nome: str, data: bytes, forcar: bool)
     igual = envio.por_md5.get(md5)
     atual = envio.por_nome.get(nome)
     if (igual and igual["nome"] == nome) or (atual and atual["md5"] == md5):
-        envio.ignorados.append({"arquivo": nome, "motivo": "conteúdo idêntico já indexado"})
+        # O arquivo já está no Storage com este conteúdo. Só que "está no
+        # Storage" não quer dizer "está no índice": uma ingestão que falhou no
+        # meio deixa o arquivo lá com zero trechos, e a mensagem "conteúdo
+        # idêntico já indexado" era falsa justamente nesse caso — reenviar não
+        # resolvia e a tela ainda dizia que não havia nada a fazer. Conferindo o
+        # índice, o arquivo entra na fila de ingestão em vez de ser ignorado.
+        try:
+            quantidade, _ = await medir_indice_atual(nome)
+        except Exception:
+            quantidade = 1  # índice indisponível: mantém o comportamento antigo
+        if quantidade:
+            envio.ignorados.append({"arquivo": nome, "motivo": "conteúdo idêntico já indexado"})
+            return
+        envio.salvos.append(nome)
+        envio.por_md5[md5] = {"nome": nome, "md5": md5}
+        envio.por_nome[nome] = {"nome": nome, "md5": md5}
         return
 
     # Conteúdo de A com o nome de B, sendo que B já existe com outro conteúdo:

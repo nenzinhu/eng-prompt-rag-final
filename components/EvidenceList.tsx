@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import { ChevronRight, FileText } from 'lucide-react'
 import { prefersReducedMotion } from '@/lib/reducedMotion'
+import TrechoNoContexto from '@/components/TrechoNoContexto'
 import type { Evidencia } from '@/lib/types'
 
 export default function EvidenceList({ items }: { items: Evidencia[] }) {
@@ -12,11 +13,18 @@ export default function EvidenceList({ items }: { items: Evidencia[] }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const arrowRef = useRef<SVGSVGElement>(null)
 
+  // Monta o painel antes de animar. O efeito de baixo depende do `wrapRef`,
+  // que só existe depois que `rendered` vira true — por isso são dois efeitos:
+  // num só, o `return` do ref nulo acontecia ANTES do setRendered e a lista
+  // nunca abria.
+  useLayoutEffect(() => {
+    if (open) setRendered(true)
+  }, [open])
+
   useLayoutEffect(() => {
     const el = wrapRef.current
     if (!el) return
     if (open) {
-      setRendered(true)
       if (prefersReducedMotion()) {
         gsap.set(el, { height: 'auto', autoAlpha: 1 })
         gsap.set(arrowRef.current, { rotate: 90 })
@@ -42,8 +50,7 @@ export default function EvidenceList({ items }: { items: Evidencia[] }) {
       })
       gsap.to(arrowRef.current, { rotate: 0, duration: 0.25, ease: 'power2.out' })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, rendered])
 
   if (!items.length) return null
 
@@ -67,6 +74,7 @@ export default function EvidenceList({ items }: { items: Evidencia[] }) {
                   {c.pagina ? ` · pág. ${c.pagina}` : ''}
                 </div>
                 <div className="line-clamp-3 text-[0.8rem] leading-relaxed text-muted">{c.conteudo}</div>
+                <TrechoNoContexto fonte={c.fonte} pagina={c.pagina} />
               </div>
             ))}
           </div>

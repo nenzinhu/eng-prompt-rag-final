@@ -25,7 +25,9 @@ CAMINHO = f"{index.PREFIXO_ENVIO}/{'a' * 32}/Apostila.pdf"
 @pytest.fixture
 def storage(monkeypatch):
     """Storage simulado: `objetos` guarda o bucket, `alteracoes` o que mudou."""
-    estado = {"objetos": {}, "alteracoes": [], "risco": None}
+    # `chunks` é quantos trechos o índice tem para o arquivo — o upload usa isso
+    # para saber se "já está no Storage" também significa "já está indexado".
+    estado = {"objetos": {}, "alteracoes": [], "risco": None, "chunks": 5}
 
     async def _listar():
         return [
@@ -54,6 +56,9 @@ def storage(monkeypatch):
     async def _risco(*_a):
         return estado["risco"]
 
+    async def _medir(_nome):
+        return estado["chunks"], estado["chunks"] * 900
+
     async def _url(caminho):
         return f"https://supabase.test/storage/v1/object/upload/sign/ementas/{caminho}?token=t"
 
@@ -63,6 +68,7 @@ def storage(monkeypatch):
     monkeypatch.setattr(index, "remover_documento_storage", _remover)
     monkeypatch.setattr(index, "renomear_fonte_chunks", _renomear)
     monkeypatch.setattr(index, "_risco_de_perda", _risco)
+    monkeypatch.setattr(index, "medir_indice_atual", _medir)
     monkeypatch.setattr(index, "url_envio_assinada", _url)
     index.app.dependency_overrides[index.exigir_admin] = lambda: None
     yield estado
@@ -124,6 +130,23 @@ def test_confirmar_conteudo_identico_e_ignorado(storage):
     assert r.json()["ignorados"][0]["motivo"] == "conteúdo idêntico já indexado"
     assert CAMINHO not in storage["objetos"]
     assert ("gravou", "Apostila.pdf") not in storage["alteracoes"]
+
+
+def test_conteudo_identico_sem_chunks_entra_para_reindexar(storage):
+    """Arquivo no Storage com ZERO trechos no índice não pode ser "ignorado".
+
+    Era o caso das apostilas cuja ingestão falhou no meio: o app dizia
+    "conteúdo idêntico já indexado" e a tela completava com "nada a
+    reindexar", então reenviar nunca resolvia.
+    """
+    storage["chunks"] = 0
+    storage["objetos"]["Apostila.pdf"] = b"mesmo"
+    storage["objetos"][CAMINHO] = b"mesmo"
+    r = _post("/api/upload/confirmar", {"caminho": CAMINHO})
+    assert r.status_code == 200
+    corpo = r.json()
+    assert corpo["ignorados"] == []
+    assert corpo["salvos"] == ["Apostila.pdf"]  # o front ingere o que está aqui
 
 
 def test_confirmar_bloqueado_mantem_provisorio_para_forcar_depois(storage):

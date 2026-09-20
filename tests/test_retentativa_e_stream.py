@@ -73,6 +73,29 @@ def test_llm_nao_repete_erro_definitivo(monkeypatch, chave):
     assert len(chamadas) == 1
 
 
+@pytest.mark.parametrize(
+    "corpo,trecho",
+    [
+        ({"error": {"message": "sem créditos"}}, "sem créditos"),
+        ({"algo": "outro formato"}, "sem 'choices'"),
+        ({"choices": []}, "sem 'choices'"),
+        ({"choices": [{"message": {"content": None}}]}, "sem texto"),
+    ],
+)
+def test_llm_com_200_fora_do_formato_vira_502(monkeypatch, chave, corpo, trecho):
+    """200 sem `choices` dava `KeyError: 'choices'` e virava HTTP 500.
+
+    É o formato que alguns provedores usam para erro (OpenRouter); o caminho de
+    streaming já tratava, o não-streaming não. No resumo de apostila isso
+    derrubava o documento inteiro.
+    """
+    monkeypatch.setattr(provedores, "_http", _Ctx([_resp(200, corpo)], []))
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(provedores.chamar_llm("groq", "m", "s", "u"))
+    assert e.value.status_code == 502
+    assert trecho in str(e.value.detail)
+
+
 def test_llm_desiste_na_segunda_falha(monkeypatch, chave):
     chamadas = []
     monkeypatch.setattr(provedores, "_http", _Ctx([_resp(503, {}), _resp(503, {})], chamadas))

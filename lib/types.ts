@@ -1,9 +1,12 @@
 export interface StatusResp {
-  status: 'ready' | 'empty'
-  total: number
+  /** 'offline' = o banco não respondeu. Não confundir com 'empty' (índice vazio). */
+  status: 'ready' | 'empty' | 'offline'
+  total: number | null
   /** 'anon' significa que a escrita ainda usa a chave pública — estado inseguro. */
   escrita_via?: 'service_role' | 'anon'
   cache?: boolean
+  /** Por que está offline, quando está. */
+  detalhe?: string
 }
 
 export interface ConfigResp {
@@ -52,6 +55,19 @@ export interface BuscarResp {
   resultados: BuscarResultado[]
 }
 
+/** Um turno já respondido, enviado de volta para a IA entender o acompanhamento. */
+export interface TurnoConversa {
+  pergunta: string
+  resposta: string
+}
+
+/** Página indexada inteira ("ver no contexto" da citação). */
+export interface TrechoResp {
+  fonte: string
+  pagina: number | null
+  paginas: { pagina: number | null; texto: string }[]
+}
+
 export interface PerguntarResp {
   resposta: string
   contexto: Evidencia[]
@@ -68,9 +84,14 @@ export interface ResumoApostilaResp {
   provider: string
   modelo: string
   arquivo: string
+  /** Trechos que realmente entraram no resumo. */
   chunks_usados: number
+  /** Trechos enviados ao modelo (>= chunks_usados quando algum falha). */
+  chunks_enviados?: number
   chunks_total: number
   amostrado: boolean
+  /** Trechos que o provedor não conseguiu ler. */
+  falhas?: number
 }
 
 export type NivelFidelidade = 'apoiada' | 'parcial' | 'nao_apoiada'
@@ -86,6 +107,8 @@ export interface FraseAuditada {
 export interface AuditarResp {
   frases: FraseAuditada[]
   resumo: { apoiadas: number; parciais: number; nao_apoiadas: number }
+  /** A resposta passou do teto e só parte dela foi auditada. */
+  truncada?: boolean
 }
 
 export interface ResolverResp {

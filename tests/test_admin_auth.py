@@ -10,11 +10,14 @@ import sys
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "api"))
 
 import index  # noqa: E402
+
+cliente = TestClient(index.app, raise_server_exceptions=False)
 
 
 @pytest.fixture
@@ -68,6 +71,44 @@ def test_login_sem_credenciais_configuradas_falha_fechada(monkeypatch):
 
 
 def test_credenciais_comparacao_constante(config_admin):
-    """A comparação de credenciais usa compare_digest (tempo constante)."""
-    assert index.secrets.compare_digest("senha", "senha") is True
-    assert index.secrets.compare_digest("senha", "outra") is False
+    """A comparação de credenciais é em tempo constante."""
+    assert index.iguais_em_tempo_constante("senha", "senha") is True
+    assert index.iguais_em_tempo_constante("senha", "outra") is False
+
+
+# ── Credenciais com acento (bug B-02: dava HTTP 500) ───────────────────────
+
+
+def test_comparacao_aceita_acento_sem_quebrar():
+    """`secrets.compare_digest` com str não-ASCII levantava TypeError.
+
+    Com acento na senha certa, o admin não entrava nem digitando certo.
+    """
+    assert index.iguais_em_tempo_constante("sénha", "sénha") is True
+    assert index.iguais_em_tempo_constante("sénha", "senha") is False
+    assert index.iguais_em_tempo_constante("", "") is True
+
+
+def test_login_com_senha_acentuada_errada_responde_401(config_admin):
+    """Senha acentuada errada é 401, não 500."""
+    r = cliente.post("/api/admin/login", json={"usuario": "admin-teste", "senha": "sénha"})
+    assert r.status_code == 401
+
+
+def test_login_com_senha_acentuada_correta_entra(config_admin, monkeypatch):
+    monkeypatch.setattr(index, "ADMIN_PASS", "sénha-falsa-de-teste")
+    r = cliente.post(
+        "/api/admin/login", json={"usuario": "admin-teste", "senha": "sénha-falsa-de-teste"}
+    )
+    assert r.status_code == 200
+    assert index.validar_sessao(r.json()["token"]) is True
+
+
+def test_token_de_admin_acentuado_responde_401(config_admin):
+    """Token com acento no header também era 500.
+
+    Cabeçalho HTTP trafega em latin-1, e o Starlette entrega a string já
+    decodificada — ou seja, com caractere fora do ASCII.
+    """
+    r = cliente.get("/api/admin/verificar", headers={"X-Admin-Token": "é".encode("latin-1")})
+    assert r.status_code == 401

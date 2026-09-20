@@ -96,3 +96,49 @@ def test_texto_extraido_troca_surrogate_solto():
         documentos._extrair_paginas_bruto = orig
     texto.encode("utf-8")  # não pode levantar
     assert texto.startswith("ok ") and texto.endswith(" fim")
+
+
+# ── Bug B-23: tabelas e notas ficavam fora do índice ───────────────────────
+
+
+def test_docx_indexa_o_conteudo_das_tabelas():
+    """`documento.paragraphs` não inclui células de tabela.
+
+    Material de curso põe comparações e resumos em tabela, e esse conteúdo
+    ficava fora do índice: a IA respondia "não encontrei" sobre algo que
+    estava na apostila.
+    """
+    doc = DocxDocument()
+    doc.add_paragraph("Texto normal.")
+    tabela = doc.add_table(rows=2, cols=2)
+    tabela.cell(0, 0).text = "Inovação incremental"
+    tabela.cell(0, 1).text = "melhoria contínua"
+    tabela.cell(1, 0).text = "Inovação radical"
+    tabela.cell(1, 1).text = "rompe o padrão"
+    buf = io.BytesIO()
+    doc.save(buf)
+
+    texto = "\n".join(t for _, t in index.extrair_paginas(buf.getvalue(), "com-tabela.docx"))
+    assert "Inovação incremental | melhoria contínua" in texto
+    assert "Inovação radical | rompe o padrão" in texto
+    assert "Texto normal." in texto
+
+
+def test_pptx_indexa_tabela_e_notas_do_slide():
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    caixa = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1))
+    caixa.text_frame.text = "Título do slide"
+    forma = slide.shapes.add_table(2, 2, Inches(1), Inches(3), Inches(4), Inches(1))
+    forma.table.cell(0, 0).text = "Conceito"
+    forma.table.cell(0, 1).text = "Definição"
+    forma.table.cell(1, 0).text = "RAG"
+    forma.table.cell(1, 1).text = "busca antes de gerar"
+    slide.notes_slide.notes_text_frame.text = "Explicar com o exemplo da apostila."
+    buf = io.BytesIO()
+    prs.save(buf)
+
+    texto = "\n".join(t for _, t in index.extrair_paginas(buf.getvalue(), "slides.pptx"))
+    assert "Título do slide" in texto
+    assert "RAG | busca antes de gerar" in texto
+    assert "Explicar com o exemplo da apostila." in texto

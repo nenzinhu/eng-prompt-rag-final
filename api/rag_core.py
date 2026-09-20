@@ -189,6 +189,8 @@ def formatar_alternativas(alternativas: dict[str, str]) -> str:
 _RE_THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _RE_TAG_THINK = re.compile(r"</?think>", re.IGNORECASE)
 _RE_RESPOSTA_DIRETA = re.compile(r"RESPOSTA\s*DIRETA\s*:?\**\s*(.+)", re.IGNORECASE)
+# Só o rótulo, para saber ONDE cortar o corpo (ver remover_linha_resposta_direta).
+_RE_ROTULO_RESPOSTA_DIRETA = re.compile(r"\**\s*RESPOSTA\s*DIRETA\s*:?\**", re.IGNORECASE)
 
 
 def limpar_resposta(texto: str) -> str:
@@ -244,7 +246,17 @@ def extrair_resposta_direta(texto: str) -> str:
 
 
 def remover_linha_resposta_direta(texto: str) -> str:
-    return re.sub(r"\**\s*RESPOSTA\s*DIRETA\s*:?\**.*$", "", texto, flags=re.IGNORECASE | re.DOTALL).strip()
+    """Tira do corpo a linha `RESPOSTA DIRETA: ...` — ela vai para o campo próprio.
+
+    Corta a partir da ÚLTIMA ocorrência, como `extrair_resposta_direta` já fazia.
+    Com a primeira, o corpo inteiro sumia quando o modelo mencionava "resposta
+    direta" no meio da explicação: "A resposta direta é citada abaixo. …" mais a
+    linha final de verdade deixava só "A" no card do modelo.
+    """
+    achadas = list(_RE_ROTULO_RESPOSTA_DIRETA.finditer(texto or ""))
+    if not achadas:
+        return (texto or "").strip()
+    return texto[: achadas[-1].start()].strip()
 
 
 _RE_BLOCO_JSON = re.compile(r"\{.*\}", re.DOTALL)
@@ -668,6 +680,12 @@ def extrair_termos_glossario(bruto: str) -> list[dict]:
 
     Aceita `exemplo` (string, formato antigo) como apelido de `exemplos`, para não
     descartar a explicação de um modelo que ignorou o formato novo.
+
+    Descarta repetições dentro do mesmo lote, comparando como o banco compara
+    (`termo_normalizado = lower(termo)`): o gravador usa `ON CONFLICT DO UPDATE`,
+    e duas linhas com a mesma chave no mesmo comando fazem o Postgres recusar o
+    INSERT inteiro (21000) — o modelo devolver "API" e "api" perdia o lote todo.
+    Fica o primeiro, que é o que o `merge-duplicates` guardaria.
     """
     bloco = extrair_bloco_json(bruto)
     if not bloco:
@@ -679,13 +697,23 @@ def extrair_termos_glossario(bruto: str) -> list[dict]:
     if not isinstance(parsed, dict):
         return []
     termos: list[dict] = []
-    for item in parsed.get("termos", []):
+    vistos: set[str] = set()
+    # `.get("termos", [])` não basta: o padrão só vale quando a chave NÃO existe.
+    # Com `{"termos": null}` o valor é None e o `for` levantava TypeError (500).
+    lista = parsed.get("termos") or []
+    if not isinstance(lista, list):
+        return []
+    for item in lista:
         if not isinstance(item, dict):
             continue
         termo = str(item.get("termo") or "").strip()
         explicacao = str(item.get("explicacao") or "").strip()
         if not termo or not explicacao:
             continue
+        chave = termo.lower()
+        if chave in vistos:
+            continue
+        vistos.add(chave)
         termos.append({
             "termo": termo,
             "explicacao": explicacao,

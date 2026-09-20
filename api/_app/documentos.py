@@ -27,7 +27,30 @@ def _extrair_paginas_docx(dados: bytes) -> list[tuple[int, str]]:
         if paragrafo.style.name == "Heading 1" and paginas[-1][1]:
             paginas.append((paginas[-1][0] + 1, []))
         paginas[-1][1].append(texto)
+    # `documento.paragraphs` NÃO inclui o que está dentro de tabelas. Material de
+    # curso costuma pôr comparações e resumos exatamente em tabela, e esse
+    # conteúdo ficava fora do índice — a IA respondia "não encontrei" sobre algo
+    # que estava na apostila. Vai tudo na última página aberta, com as células da
+    # linha separadas por " | " para a leitura não virar sopa de palavras.
+    for linha in _linhas_de_tabelas_docx(documento):
+        paginas[-1][1].append(linha)
     return [(num, "\n".join(linhas)) for num, linhas in paginas]
+
+
+def _linhas_de_tabelas_docx(documento) -> list[str]:
+    """Texto das tabelas do .docx, uma linha de texto por linha da tabela."""
+    linhas: list[str] = []
+    for tabela in documento.tables:
+        for linha in tabela.rows:
+            celulas = [c.text.strip().replace("\n", " ") for c in linha.cells]
+            # Célula mesclada aparece repetida nas colunas que ocupa.
+            unicas: list[str] = []
+            for celula in celulas:
+                if celula and (not unicas or unicas[-1] != celula):
+                    unicas.append(celula)
+            if unicas:
+                linhas.append(" | ".join(unicas))
+    return linhas
 
 
 def _extrair_paginas_pptx(dados: bytes) -> list[tuple[int, str]]:
@@ -35,13 +58,39 @@ def _extrair_paginas_pptx(dados: bytes) -> list[tuple[int, str]]:
     apresentacao = Presentation(io.BytesIO(dados))
     paginas = []
     for i, slide in enumerate(apresentacao.slides):
-        textos = [
-            forma.text_frame.text
-            for forma in slide.shapes
-            if forma.has_text_frame and forma.text_frame.text.strip()
-        ]
+        textos: list[str] = []
+        for forma in slide.shapes:
+            textos.extend(_texto_da_forma(forma))
+        # As notas do apresentador costumam ter a explicação que o slide resume.
+        if slide.has_notes_slide and slide.notes_slide.notes_text_frame is not None:
+            notas = slide.notes_slide.notes_text_frame.text.strip()
+            if notas:
+                textos.append(notas)
         paginas.append((i + 1, "\n".join(textos)))
     return paginas
+
+
+def _texto_da_forma(forma) -> list[str]:
+    """Texto de uma forma do slide, entrando em grupos e tabelas.
+
+    Antes só se lia `forma.text_frame`: tabela, grupo e SmartArt ficavam fora do
+    índice, embora seja onde o material costuma pôr comparações e resumos.
+    """
+    textos: list[str] = []
+    # Grupo: as formas de dentro é que têm o texto.
+    if getattr(forma, "shape_type", None) is not None and hasattr(forma, "shapes"):
+        for interna in forma.shapes:
+            textos.extend(_texto_da_forma(interna))
+        return textos
+    if getattr(forma, "has_table", False):
+        for linha in forma.table.rows:
+            celulas = [c.text.strip().replace("\n", " ") for c in linha.cells if c.text.strip()]
+            if celulas:
+                textos.append(" | ".join(celulas))
+        return textos
+    if forma.has_text_frame and forma.text_frame.text.strip():
+        textos.append(forma.text_frame.text)
+    return textos
 
 
 def _texto_gravavel(texto: str) -> str:
@@ -94,6 +143,20 @@ def _slug_arquivo(texto: str) -> str:
     return normalizado[:60] or "apostila"
 
 
+def marca_do_nome(nome: str) -> str:
+    """Marca curta e estável do nome original (FNV-1a de 32 bits, em hex).
+
+    Serve para desempatar nomes que somem por inteiro na limpeza ASCII. Não é
+    hash criptográfico: só precisa ser determinístico e idêntico ao do
+    navegador (`marcaDoNome` em lib/texto.ts), porque a aba PDFs mostra o nome
+    final antes do envio.
+    """
+    h = 0x811C9DC5
+    for b in nome.encode("utf-8"):
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return format(h, "08x")
+
+
 def nome_para_storage(nome: str) -> str:
     """Nome de arquivo que o Storage do Supabase aceita.
 
@@ -106,10 +169,16 @@ def nome_para_storage(nome: str) -> str:
     base = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode("ascii")
     base = re.sub(r"[^A-Za-z0-9 ._()\-]+", "_", base)
     base = re.sub(r"_{2,}", "_", base).strip(" _")
+    # Nome inteiramente fora do ASCII ("日本語.pdf") não sobra nada da limpeza.
+    # Chamar todos de "documento.pdf" fazia dois arquivos diferentes colidirem:
+    # o segundo entrava como "versão atualizada do mesmo arquivo" e substituía o
+    # primeiro. A marca do nome original desempata.
     raiz, ponto, extensao = base.rpartition(".")
     if ponto and not raiz.strip(" ._"):
-        base = f"documento.{extensao}"
-    return base or "documento"
+        return f"documento-{marca_do_nome(nome)}.{extensao}"
+    if not base:
+        return f"documento-{marca_do_nome(nome)}"
+    return base
 
 
 # ── Markdown da apostila → blocos ───────────────────────────────────────────

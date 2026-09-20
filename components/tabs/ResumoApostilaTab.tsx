@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import { FileText, TriangleAlert, Download, Library } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, baixarBlob } from '@/lib/api'
 import { prefersReducedMotion } from '@/lib/reducedMotion'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp, ResumoApostilaResp } from '@/lib/types'
@@ -48,12 +48,7 @@ export default function ResumoApostilaTab({ providers }: { providers: ProvidersR
     const blob = new Blob([`# Resumo — ${resultado.arquivo}\n\n${resultado.resumo}`], {
       type: 'text/markdown;charset=utf-8',
     })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `resumo-${resultado.arquivo.replace(/\.[^.]+$/, '')}.md`
-    a.click()
-    URL.revokeObjectURL(url)
+    baixarBlob(blob, `resumo-${resultado.arquivo.replace(/\.[^.]+$/, '')}.md`)
   }
 
   return (
@@ -139,8 +134,17 @@ export default function ResumoApostilaTab({ providers }: { providers: ProvidersR
             <div className="p-5">
               {resultado.amostrado && (
                 <div className="mb-4 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-[0.78rem] text-amber-300">
-                  Apostila grande: o resumo usou uma amostra de {resultado.chunks_usados} de{' '}
-                  {resultado.chunks_total} trechos, distribuídos por todo o documento.
+                  Apostila grande: o resumo leu uma amostra de{' '}
+                  {resultado.chunks_enviados ?? resultado.chunks_usados} de {resultado.chunks_total}{' '}
+                  trechos, distribuídos por todo o documento.
+                </div>
+              )}
+              {!!resultado.falhas && (
+                <div className="mb-4 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-[0.78rem] text-amber-300">
+                  Resumo parcial: {resultado.falhas} de{' '}
+                  {resultado.chunks_enviados ?? resultado.chunks_usados} trechos não foram lidos (o
+                  provedor recusou ou demorou demais). O resumo saiu com {resultado.chunks_usados}.
+                  Vale repetir, ou trocar de modelo.
                 </div>
               )}
               <Markdown>{resultado.resumo}</Markdown>

@@ -290,6 +290,32 @@ def test_remover_linha_resposta_direta():
     assert remover_linha_resposta_direta(texto) == "Conteúdo."
 
 
+def test_remover_corta_na_ultima_e_preserva_o_corpo():
+    """Bug B-03: com a menção em prosa, o card do modelo ficava só com "A".
+
+    O corte usava a PRIMEIRA ocorrência e o DOTALL apagava até o fim, enquanto
+    `extrair_resposta_direta` já lia a última. Os dois discordavam.
+    """
+    texto = (
+        "A resposta direta é citada abaixo.\n\n"
+        "Explicação longa do modelo.\n\n"
+        "RESPOSTA DIRETA: 42"
+    )
+    corpo = remover_linha_resposta_direta(texto)
+    assert corpo == "A resposta direta é citada abaixo.\n\nExplicação longa do modelo."
+    # O campo próprio continua com a conclusão de verdade.
+    assert extrair_resposta_direta(texto) == "42"
+
+
+def test_remover_sem_a_linha_devolve_o_texto_inteiro():
+    assert remover_linha_resposta_direta("Só o corpo.") == "Só o corpo."
+    assert remover_linha_resposta_direta("") == ""
+
+
+def test_remover_tira_os_asteriscos_do_rotulo():
+    assert remover_linha_resposta_direta("Corpo.\n\n**RESPOSTA DIRETA:** x") == "Corpo."
+
+
 def test_extrair_bloco_json():
     assert extrair_bloco_json('bla {"letra": "A"} tchau') == '{"letra": "A"}'
     assert extrair_bloco_json("sem json") is None

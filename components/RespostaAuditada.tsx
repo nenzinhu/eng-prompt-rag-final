@@ -31,22 +31,32 @@ const NIVEIS: Record<
 export default function RespostaAuditada({
   auditadas,
   auditando,
+  truncada = false,
 }: {
   texto: string
   auditadas: FraseAuditada[] | null
   auditando: boolean
+  /** A resposta passou do teto do servidor e só parte dela foi conferida. */
+  truncada?: boolean
 }) {
-  if (!auditadas || auditadas.length === 0) {
-    // Sem auditoria (não pedida, ainda carregando ou resposta sem frases).
-    if (auditando) {
-      return (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-dashed border-white/10 p-4 text-[0.8rem] text-muted">
-          <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
-          Verificando cada frase contra o material…
-        </div>
-      )
-    }
-    return null
+  if (auditando) {
+    return (
+      <div className="mb-4 flex items-center gap-2 rounded-lg border border-dashed border-white/10 p-4 text-[0.8rem] text-muted">
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+        Verificando cada frase contra o material…
+      </div>
+    )
+  }
+  if (!auditadas) return null // auditoria não foi pedida
+  if (auditadas.length === 0) {
+    // A auditoria rodou e não achou nada para conferir: a resposta não tem
+    // nenhuma frase longa o bastante (40+ caracteres). Antes a tela não
+    // mostrava nada, e o aluno ficava sem saber se a checagem tinha rodado.
+    return (
+      <div className="mb-3 rounded-lg border border-white/10 bg-white/[0.02] px-3.5 py-2.5 text-[0.8rem] text-muted">
+        Não havia frases longas o bastante para auditar nesta resposta.
+      </div>
+    )
   }
 
   // A auditoria veio: remonta a resposta pintando as frases não apoiadas.
@@ -57,7 +67,9 @@ export default function RespostaAuditada({
       <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-2.5 text-[0.8rem] text-emerald-300">
         <CircleCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
         <span>
-          Todas as frases desta resposta usam o vocabulário do material.{' '}
+          {truncada
+            ? 'Nenhum problema nas frases auditadas — a resposta é longa e só o começo foi conferido. '
+            : 'Todas as frases desta resposta usam o vocabulário do material. '}
           <span className="text-emerald-300/70">
             A auditoria confere palavras, não sentido: uma frase que diz o contrário da apostila passa.
           </span>
@@ -74,6 +86,11 @@ export default function RespostaAuditada({
       <div className="font-mono text-[0.68rem] uppercase tracking-wider text-muted">
         Auditoria de fidelidade
       </div>
+      {truncada && (
+        <div className="mb-1 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[0.78rem] text-amber-300">
+          Resposta longa: só o começo foi auditado. O resto não foi conferido contra o material.
+        </div>
+      )}
       <div className="mb-1 text-[0.78rem] text-muted">
         <span className="text-emerald-300">verde</span> = na apostila ·{' '}
         <span className="text-amber-300">âmbar</span> = apoio parcial ·{' '}

@@ -14,6 +14,7 @@ import { test } from 'node:test'
 import { deflateSync, inflateSync } from 'node:zlib'
 
 import {
+  PDFBool,
   PDFDict,
   PDFDocument,
   PDFName,
@@ -49,6 +50,8 @@ interface OpcoesPdfTeste {
   comPreditor?: boolean
   bitsPerComponent?: number
   comSmask?: boolean
+  /** Máscara por stream (`/Mask`) — transparência por recorte. */
+  comMask?: boolean
   /** Bytes brutos da imagem (quando não se quer gerar pixels). */
   conteudo?: Uint8Array
 }
@@ -115,6 +118,18 @@ async function pdfComImagem(op: OpcoesPdfTeste = {}): Promise<Uint8Array> {
     smaskDict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'))
     const mascara = new Uint8Array(largura * altura).fill(255)
     dict.set(PDFName.of('SMask'), contexto.register(PDFRawStream.of(smaskDict, mascara)))
+  }
+
+  if (op.comMask) {
+    const maskDict = PDFDict.withContext(contexto)
+    maskDict.set(PDFName.of('Type'), PDFName.of('XObject'))
+    maskDict.set(PDFName.of('Subtype'), PDFName.of('Image'))
+    maskDict.set(PDFName.of('Width'), PDFNumber.of(largura))
+    maskDict.set(PDFName.of('Height'), PDFNumber.of(altura))
+    maskDict.set(PDFName.of('ImageMask'), PDFBool.True)
+    maskDict.set(PDFName.of('BitsPerComponent'), PDFNumber.of(1))
+    const recorte = new Uint8Array(Math.ceil(largura / 8) * altura).fill(0)
+    dict.set(PDFName.of('Mask'), contexto.register(PDFRawStream.of(maskDict, recorte)))
   }
 
   return doc.save({ useObjectStreams: true })
@@ -187,6 +202,17 @@ test('JPEG embutido é repassado como jpeg (sem inflar)', async () => {
 
 test('imagem com máscara é deixada em paz', async () => {
   const original = await pdfComImagem({ comSmask: true })
+  const { deps, recebidas } = dublê(() => ({ bytes: jpegFalso(), largura: 200, altura: 200 }))
+  const r = await comprimirPdf(original, OPCOES, deps)
+  assert.deepEqual(recebidas, [], 'não devia nem tentar decodificar')
+  assert.equal(r.resumo.reencodadas, 0)
+  assert.ok(r.relatorio.some((i) => i.motivo === 'tem máscara'))
+})
+
+test('imagem com /Mask também é deixada em paz', async () => {
+  // Bug B-17: só `/ImageMask` e `/SMask` eram reconhecidos. Uma imagem com
+  // `/Mask` era reescrita sem a máscara e perdia a transparência.
+  const original = await pdfComImagem({ comMask: true })
   const { deps, recebidas } = dublê(() => ({ bytes: jpegFalso(), largura: 200, altura: 200 }))
   const r = await comprimirPdf(original, OPCOES, deps)
   assert.deepEqual(recebidas, [], 'não devia nem tentar decodificar')

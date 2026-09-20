@@ -30,9 +30,9 @@ function novoId() {
 }
 
 /** Acrescenta o bloco ao fim do campo, sem apagar o que já foi digitado. */
-function inserir(atual: string, bloco: string): string {
+function inserir(atual: string, bloco: string, separador: string): string {
   const existente = atual.trimEnd()
-  return existente ? `${existente}\n\n${bloco}` : bloco
+  return existente ? `${existente}${separador}${bloco}` : bloco
 }
 
 /**
@@ -40,12 +40,16 @@ function inserir(atual: string, bloco: string): string {
  * não é encontrado e nada é alterado — melhor não mexer do que apagar conteúdo
  * digitado à mão.
  */
-function removerBloco(atual: string, bloco: string): string {
+function removerBloco(atual: string, bloco: string, separador: string): string {
   if (!bloco) return atual
   const posicao = atual.indexOf(bloco)
   if (posicao < 0) return atual
+  // Junta as bordas que ficaram, sem colapsar o separador em uso: no modo lote
+  // ele é de duas linhas em branco, e achatar para uma grudava as questões
+  // restantes num bloco só.
+  const excesso = new RegExp(`\\n{${separador.length + 1},}`, 'g')
   return (atual.slice(0, posicao) + atual.slice(posicao + bloco.length))
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(excesso, separador)
     .trim()
 }
 
@@ -61,6 +65,7 @@ export default function AnexoImagem({
   desabilitado = false,
   onProcessando,
   aplicarFormatoAlternativas = true,
+  separador = '\n\n',
   resetToken,
   dica,
 }: {
@@ -71,6 +76,8 @@ export default function AnexoImagem({
   onProcessando?: (ocupado: boolean) => void
   /** Separa alternativas grudadas ("A) x B) y") em linhas — útil em questões. */
   aplicarFormatoAlternativas?: boolean
+  /** O que entra entre um bloco e o próximo. No modo lote, separa questões. */
+  separador?: string
   /** Muda de valor quando a aba limpa o campo: esvazia os anexos junto. */
   resetToken?: number
   dica?: string
@@ -80,6 +87,9 @@ export default function AnexoImagem({
   const fila = useRef<{ id: string; file: File }[]>([])
   const drenando = useRef(false)
   const anexosRef = useRef<Anexo[]>([])
+  // Ids cujo resultado deve ser ignorado quando a leitura terminar (o anexo
+  // foi removido, ou a aba limpou o campo, no meio do OCR).
+  const descartados = useRef<Set<string>>(new Set())
 
   const lendo = anexos.some((a) => a.status === 'lendo')
 
@@ -104,7 +114,10 @@ export default function AnexoImagem({
   // então aqui não se toca no campo.
   useEffect(() => {
     if (resetToken === undefined) return
-    for (const a of anexosRef.current) if (a.url) URL.revokeObjectURL(a.url)
+    for (const a of anexosRef.current) {
+      descartados.current.add(a.id)
+      if (a.url) URL.revokeObjectURL(a.url)
+    }
     fila.current = []
     setAnexos([])
   }, [resetToken])
@@ -123,13 +136,18 @@ export default function AnexoImagem({
         : await extrairTextoDocumento(file, progresso)
       const limpo = ehImagem ? limparTextoOcr(bruto) : bruto.replace(/\n{3,}/g, '\n\n').trim()
       if (!limpo) {
-        atualizar(id, { status: 'vazio', progresso: 1 })
+        if (!descartados.current.has(id)) atualizar(id, { status: 'vazio', progresso: 1 })
         return
       }
+      // O anexo pode ter sido removido (ou a aba limpa) durante a leitura. Sem
+      // esta checagem, o texto era inserido no campo mesmo assim — e, como o
+      // anexo já não existia, não havia como tirá-lo pela interface.
+      if (descartados.current.has(id)) return
       const bloco = aplicarFormatoAlternativas ? formatarAlternativas(limpo) : limpo
-      setTexto((atual) => inserir(atual, bloco))
+      setTexto((atual) => inserir(atual, bloco, separador))
       atualizar(id, { status: 'pronto', progresso: 1, texto: bloco })
     } catch (e) {
+      if (descartados.current.has(id)) return
       atualizar(id, {
         status: 'erro',
         progresso: 0,
@@ -199,13 +217,15 @@ export default function AnexoImagem({
   function remover(id: string) {
     const alvo = anexos.find((a) => a.id === id)
     if (!alvo) return
+    descartados.current.add(id)
     if (alvo.url) URL.revokeObjectURL(alvo.url)
-    if (alvo.texto) setTexto((atual) => removerBloco(atual, alvo.texto))
+    if (alvo.texto) setTexto((atual) => removerBloco(atual, alvo.texto, separador))
     fila.current = fila.current.filter((i) => i.id !== id)
     setAnexos((atual) => atual.filter((a) => a.id !== id))
   }
 
   function reler(id: string, file: File) {
+    descartados.current.delete(id)
     atualizar(id, { status: 'lendo', progresso: 0, erro: undefined })
     fila.current.push({ id, file })
     void drenar()
@@ -213,8 +233,9 @@ export default function AnexoImagem({
 
   function limpar() {
     for (const a of anexos) {
+      descartados.current.add(a.id)
       if (a.url) URL.revokeObjectURL(a.url)
-      if (a.texto) setTexto((atual) => removerBloco(atual, a.texto))
+      if (a.texto) setTexto((atual) => removerBloco(atual, a.texto, separador))
     }
     fila.current = []
     setAnexos([])

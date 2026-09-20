@@ -30,6 +30,8 @@ const OCIOSIDADE_MS = 60_000 // devolve a memória do worker quando a leitura pa
 let workerPromessa: Promise<WorkerTesseract> | null = null
 let reportarProgresso: ((fracao: number) => void) | null = null
 let temporizadorOcioso: ReturnType<typeof setTimeout> | null = null
+/** Leituras em curso. Enquanto houver alguma, o worker não é encerrado. */
+let leiturasEmAndamento = 0
 
 /**
  * Ajusta a imagem antes de entregá-la ao OCR.
@@ -122,14 +124,25 @@ export async function reconhecerImagem(
   file: Blob,
   onProgresso?: (fracao: number) => void
 ): Promise<string> {
+  // Cancela o encerramento por ociosidade ANTES de começar. O temporizador é
+  // armado no `finally` da leitura anterior e só era limpo quando outra leitura
+  // TERMINAVA: uma leitura iniciada perto do fim da contagem era interrompida no
+  // meio por um `terminate()`, e o aluno via erro no anexo sem motivo aparente.
+  if (temporizadorOcioso) {
+    clearTimeout(temporizadorOcioso)
+    temporizadorOcioso = null
+  }
   const preparada = await prepararImagem(file)
   const worker = await obterWorker()
   reportarProgresso = onProgresso ?? null
+  leiturasEmAndamento += 1
   try {
     const { data } = await worker.recognize(preparada)
     return data.text ?? ''
   } finally {
+    leiturasEmAndamento -= 1
     reportarProgresso = null
-    agendarEncerramento()
+    // Só começa a contar a ociosidade quando não há mais nada sendo lido.
+    if (leiturasEmAndamento === 0) agendarEncerramento()
   }
 }

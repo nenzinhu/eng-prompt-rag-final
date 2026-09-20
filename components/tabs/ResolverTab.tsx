@@ -12,7 +12,7 @@ import WarnBanner from '../WarnBanner'
 import Markdown from '../Markdown'
 import AnexoImagem from '../AnexoImagem'
 import Exemplos from '../Exemplos'
-import { formatarAlternativas } from '@/lib/texto'
+import { SEPARADOR_QUESTAO, dividirQuestoes, formatarAlternativas } from '@/lib/texto'
 
 interface ResultadoLote {
   questao: string
@@ -107,14 +107,7 @@ export default function ResolverTab({
   }
 
   async function analisarLote() {
-    const blocos = textoLote
-      .split(/\n\s*\n\s*\n|\n{3,}/)
-      .map((b) => b.trim())
-      .filter(Boolean)
-    // Se não houver separação clara por linhas em branco duplas, tenta por padrão comum "QUESTÃO N"
-    const questoes =
-      blocos.length > 1 ? blocos : textoLote.split(/(?=^\s*QUEST[ÃA]O\s*\d+)/im).map((b) => b.trim()).filter(Boolean)
-
+    const questoes = dividirQuestoes(textoLote)
     if (questoes.length === 0) return
     setProcessandoLote(true)
     setResultadosLote([])
@@ -402,8 +395,10 @@ export default function ResolverTab({
       ) : (
         <div>
           <p className="mb-2.5 text-[0.8rem] leading-relaxed text-muted">
-            Cole <strong className="font-medium text-text">várias questões</strong> separadas por linha em branco
-            (ou &ldquo;QUESTÃO 1&rdquo;, &ldquo;QUESTÃO 2&rdquo;...), ou envie um print de cada uma. Todas são analisadas em sequência.
+            Cole <strong className="font-medium text-text">várias questões</strong> separadas por{' '}
+            <strong className="font-medium text-text">duas linhas em branco</strong> (ou
+            &ldquo;QUESTÃO 1&rdquo;, &ldquo;QUESTÃO 2&rdquo;...), ou envie um print de cada uma.
+            Todas são analisadas em sequência.
           </p>
           <textarea
             value={textoLote}
@@ -419,6 +414,10 @@ export default function ResolverTab({
             setTexto={setTextoLote}
             desabilitado={processandoLote}
             onProcessando={setOcrLoading}
+            // Cada print é uma questão: entra separado do anterior pelo mesmo
+            // separador que `dividirQuestoes` reconhece. Com o padrão (uma linha
+            // em branco), dois prints viravam uma questão só.
+            separador={SEPARADOR_QUESTAO}
             resetToken={anexoReset}
             dica="Um print por questão — o texto entra no campo, na ordem em que você anexar"
           />

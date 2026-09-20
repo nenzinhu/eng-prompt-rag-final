@@ -45,7 +45,10 @@ def montar(monkeypatch, *, analises: list, chunks: list[dict]):
         chamadas["inseridos"] += len(rows)
 
     async def _maior_id(_nome):
-        return 500  # chunks antigos têm id <= 500
+        # Chunks antigos têm id <= 500; os novos nascem acima disso, como a
+        # sequência `identity` do Postgres faz. A ingestão confere isso antes de
+        # apagar os antigos (guarda do S-1).
+        return 500 + chamadas["inseridos"]
 
     async def _apagar_ate(_nome, corte):
         chamadas.setdefault("apagou", []).append((corte, chamadas["inseridos"]))
@@ -206,3 +209,29 @@ def test_forcar_ignora_o_bloqueio(monkeypatch):
     monkeypatch.setattr(index, "_analisar_ingestao", _analisar)
     r = asyncio.run(index.ingerir(index.IngerirReq(arquivo="doc.pdf", offset=0, forcar=True)))
     assert r["processado"] == 10
+
+
+# ── Guarda S-1: ids novos precisam ficar ACIMA do corte ────────────────────
+
+
+def test_nao_apaga_os_antigos_quando_os_ids_novos_nao_sobem(monkeypatch):
+    """Sequência do banco atrás do maior id da tabela.
+
+    Acontece numa restauração com id explícito e sem `setval`. Os chunks novos
+    nasceriam com id ABAIXO do corte e a limpeza final apagaria também eles: o
+    documento ficava vazio com "✓ Concluído" na tela. Agora a ingestão para
+    antes de apagar e explica o que fazer.
+    """
+    chamadas = montar(monkeypatch, analises=[], chunks=[{}] * 3)
+
+    async def _maior_id_parado(_nome):
+        return 500  # nunca sobe: a sequência está atrás
+
+    monkeypatch.setattr(index, "maior_id_da_fonte", _maior_id_parado)
+
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(index.ingerir(index.IngerirReq(arquivo="doc.pdf", offset=0)))
+
+    assert e.value.status_code == 409
+    assert "setval" in str(e.value.detail)
+    assert "apagou" not in chamadas, "os chunks antigos não podem ser apagados aqui"

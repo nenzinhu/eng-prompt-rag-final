@@ -21,6 +21,8 @@ interface Item {
   ganho?: number
   /** Resumo do que foi feito (para PDF: quantas imagens foram reencodadas). */
   detalhe?: string
+  /** Formato REAL da saída de imagem — define a extensão do download. */
+  formatoSaida?: 'jpeg' | 'png'
   erro?: string
   url?: string
 }
@@ -62,7 +64,11 @@ export default function ComprimirTab() {
   useEffect(() => {
     api
       .config()
-      .then((c) => setLimiteMb(c.max_upload_mb))
+      // O teto que vale aqui é o da aba PDFs, que usa o ENVIO DIRETO ao
+      // Storage (~50 MB). Usar `max_upload_mb` (4,5 MB, o limite de um corpo
+      // de requisição na Vercel) mandava o aluno comprimir muito além do
+      // necessário, e ainda sugeria "indexe pelo app local" sem precisar.
+      .then((c) => setLimiteMb(c.envio_direto_mb ?? c.max_upload_mb))
       .catch(() => undefined)
   }, [])
 
@@ -141,7 +147,9 @@ export default function ComprimirTab() {
     const opcoes: OpcoesImagem = { larguraMax, qualidade, formato }
     const r = await comprimirImagem(item.arquivo, opcoes)
     const detalhe = `${r.larguraOriginal}×${r.alturaOriginal} → ${r.largura}×${r.altura} · ${r.formato.toUpperCase()}`
-    return { saida: r.blob, tamanho: r.blob.size, ganho: r.ganho, detalhe }
+    // O formato de saída vem do compressor, não da escolha do aluno: em "auto"
+    // uma imagem com transparência sai PNG mesmo partindo de .jpg.
+    return { saida: r.blob, tamanho: r.blob.size, ganho: r.ganho, detalhe, formatoSaida: r.formato }
   }
 
   async function processar() {
@@ -178,8 +186,14 @@ export default function ComprimirTab() {
     if (!item.url) return
     const a = document.createElement('a')
     a.href = item.url
-    a.download = nomeSaida(item.nome, item.tipo === 'imagem' && item.detalhe?.includes('JPEG') ? 'jpeg' : undefined)
+    // A extensão precisa bater com o conteúdo: antes só o JPEG era tratado, e
+    // uma saída PNG vinda de um .jpg baixava como "x-comprimido.jpg" com bytes
+    // de PNG dentro.
+    a.download = nomeSaida(item.nome, item.tipo === 'imagem' ? item.formatoSaida : undefined)
+    a.style.display = 'none'
+    document.body.appendChild(a)
     a.click()
+    setTimeout(() => a.remove(), 60_000)
   }
 
   const prontos = itens.filter((i) => i.status === 'pronto' && i.tamanho)
@@ -383,8 +397,9 @@ export default function ComprimirTab() {
         <div role="alert" className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3.5 py-2.5 text-[0.78rem] text-amber-200">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>
-            {acimaDoLimite} {acimaDoLimite === 1 ? 'PDF ainda está' : 'PDFs ainda estão'} acima de {limiteMb} MB.
-            Tente qualidade menor e largura de 800 px. Se não for suficiente, indexe pelo app local.
+            {acimaDoLimite} {acimaDoLimite === 1 ? 'PDF ainda está' : 'PDFs ainda estão'} acima de {limiteMb} MB,
+            o teto da aba PDFs. Tente qualidade menor e largura de 800 px. Se não for suficiente,
+            divida o arquivo ou indexe pelo app local.
           </span>
         </div>
       )}

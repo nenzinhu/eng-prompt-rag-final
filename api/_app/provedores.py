@@ -213,6 +213,34 @@ def _espera_retentativa(r: Optional[httpx.Response]) -> float:
     return 1.0
 
 
+def _conteudo_da_resposta(provider: str, r: httpx.Response) -> str:
+    """Tira o texto de um 200 do provedor sem confiar no formato.
+
+    Nem todo 200 traz `choices`: alguns provedores (OpenRouter, por exemplo)
+    respondem 200 com `{"error": {...}}` — o caminho de streaming já tratava
+    isso, mas aqui um `KeyError: 'choices'` cru virava HTTP 500 e derrubava o
+    resumo inteiro. Também cobre `content` nulo (modelo que só devolve
+    raciocínio) e corpo que nem é JSON.
+    """
+    try:
+        dados = r.json()
+    except ValueError:
+        raise HTTPException(502, f"Erro do provedor {provider}: resposta não é JSON ({r.text[:200]}).")
+    if not isinstance(dados, dict):
+        raise HTTPException(502, f"Erro do provedor {provider}: resposta em formato inesperado.")
+    if dados.get("error"):
+        erro = dados["error"]
+        detalhe = erro.get("message") if isinstance(erro, dict) else erro
+        raise HTTPException(502, f"Erro do provedor {provider}: {str(detalhe)[:300]}")
+    escolhas = dados.get("choices")
+    if not isinstance(escolhas, list) or not escolhas or not isinstance(escolhas[0], dict):
+        raise HTTPException(502, f"Erro do provedor {provider}: resposta sem 'choices'.")
+    conteudo = (escolhas[0].get("message") or {}).get("content")
+    if not conteudo:
+        raise HTTPException(502, f"O modelo respondeu sem texto pelo provedor {provider}. Tente outro modelo.")
+    return conteudo
+
+
 async def chamar_llm(
     provider: str,
     modelo: str,
@@ -253,7 +281,7 @@ async def chamar_llm(
                 raise HTTPException(502, f"Erro de conexão com o provedor {provider}: {type(e).__name__}")
         else:
             if r.status_code == 200:
-                return r.json()["choices"][0]["message"]["content"]
+                return _conteudo_da_resposta(provider, r)
             if tentativa == 2 or r.status_code not in STATUS_TRANSITORIOS:
                 raise HTTPException(502, f"Erro do provedor {provider}: {r.text[:300]}")
 

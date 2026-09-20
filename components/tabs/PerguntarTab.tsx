@@ -3,16 +3,19 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import { Wand2, GraduationCap, ShieldCheck, Download, TriangleAlert, MessageCircle } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, baixarBlob } from '@/lib/api'
 import { prefersReducedMotion } from '@/lib/reducedMotion'
 import { useProviderModel } from '@/lib/useProviderModel'
-import type { AuditarResp, ProvidersResp, PerguntarResp } from '@/lib/types'
+import type { AuditarResp, ProvidersResp, PerguntarResp, TurnoConversa } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
 import EvidenceList from '../EvidenceList'
 import WarnBanner from '../WarnBanner'
 import Markdown from '../Markdown'
 import RespostaAuditada from '../RespostaAuditada'
 import AnexoImagem from '../AnexoImagem'
+
+/** Turnos guardados no navegador. O servidor aplica o próprio teto. */
+const MAX_TURNOS = 3
 
 export default function PerguntarTab({
   providers,
@@ -61,6 +64,11 @@ export default function PerguntarTab({
   const cancelarRef = useRef<AbortController | null>(null)
   // A pergunta que gerou a resposta na tela — a caixa de texto pode já ter outra.
   const [perguntaFeita, setPerguntaFeita] = useState('')
+
+  // Turnos já respondidos, para a próxima pergunta ser entendida como
+  // acompanhamento ("e no caso de X?"). O servidor corta o excesso; aqui só
+  // guardamos os últimos para não crescer sem fim.
+  const [conversa, setConversa] = useState<TurnoConversa[]>([])
 
   function encerrarRodada() {
     cancelarRef.current?.abort()
@@ -115,9 +123,15 @@ export default function PerguntarTab({
           if (vale()) setResultado((r) => (r ? { ...r, resposta: acumulado } : r))
         },
         cancelar.signal,
+        conversa,
       )
       if (!vale()) return
       setResultado(d)
+      // Resposta interrompida não vira contexto: metade de um texto confundiria
+      // mais do que ajudaria na pergunta seguinte.
+      if (d.resposta && !d.interrompida) {
+        setConversa((c) => [...c, { pergunta: texto, resposta: d.resposta }].slice(-MAX_TURNOS))
+      }
       // Dispara a auditoria frase por frase automaticamente, se ligada. Resposta
       // interrompida não é auditada sozinha: gastaria cota verificando meio texto.
       if (auditarAuto && d.resposta && !d.interrompida) {
@@ -138,6 +152,7 @@ export default function PerguntarTab({
 
   function limpar() {
     encerrarRodada()
+    setConversa([])
     setPergunta('')
     setPerguntaFeita('')
     setResultado(null)
@@ -232,12 +247,7 @@ export default function PerguntarTab({
       ),
     ]
     const blob = new Blob([linhas.join('\n')], { type: 'text/markdown;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `resposta-${Date.now()}.md`
-    a.click()
-    URL.revokeObjectURL(url)
+    baixarBlob(blob, `resposta-${Date.now()}.md`)
   }
 
   return (
@@ -251,6 +261,28 @@ export default function PerguntarTab({
         onModeloChange={setModelo}
         nenhumConfigurado={nenhumConfigurado}
       />
+      {conversa.length > 0 && (
+        <div className="mb-3 rounded-xl border border-violet/20 bg-violet/[0.06] p-3">
+          <div className="mb-1.5 flex items-center justify-between gap-3">
+            <span className="font-mono text-[0.67rem] uppercase tracking-wider text-violet">
+              Conversa em andamento — pode perguntar &ldquo;e no caso de…?&rdquo;
+            </span>
+            <button
+              onClick={() => setConversa([])}
+              className="font-mono text-[0.67rem] text-muted underline-offset-2 transition-colors hover:text-text hover:underline"
+            >
+              nova conversa
+            </button>
+          </div>
+          <ol className="flex flex-col gap-0.5">
+            {conversa.map((t, i) => (
+              <li key={i} className="truncate text-[0.75rem] text-muted">
+                {i + 1}. {t.pergunta}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
       <textarea
         value={pergunta}
         onChange={(e) => setPergunta(e.target.value)}
@@ -388,7 +420,14 @@ export default function PerguntarTab({
               {auditando && auditoria === null && (
                 <RespostaAuditada texto={resultado.resposta} auditadas={null} auditando />
               )}
-              {auditoria && <RespostaAuditada texto={resultado.resposta} auditadas={auditoria.frases} auditando={false} />}
+              {auditoria && (
+                <RespostaAuditada
+                  texto={resultado.resposta}
+                  auditadas={auditoria.frases}
+                  auditando={false}
+                  truncada={auditoria.truncada}
+                />
+              )}
 
               {respostaSimples && (
                 <div className="mb-4 rounded-lg border border-cyan/20 bg-cyan/[0.05] p-4">

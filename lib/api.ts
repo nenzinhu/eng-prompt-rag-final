@@ -6,6 +6,8 @@ import type {
   ConfigResp,
   ProvidersResp,
   BuscarResp,
+  TrechoResp,
+  TurnoConversa,
   PerguntarResp,
   ResolverResp,
   PdfsResp,
@@ -56,6 +58,19 @@ export class ApiError extends Error {
 function mensagemDe(data: unknown, status: number, texto: string): string {
   const detalhe = (data as { detail?: unknown } | null)?.detail
   if (typeof detalhe === 'string') return detalhe
+  // Erro de validação do FastAPI (422): `detail` é uma LISTA de problemas por
+  // campo. Sem tratar, caía no texto cru e a tela mostrava o JSON inteiro
+  // ('Erro 422: {"detail":[{"type":"missing"...').
+  if (Array.isArray(detalhe)) {
+    const problemas = detalhe
+      .map((item) => {
+        const p = item as { loc?: unknown[]; msg?: string }
+        const campo = Array.isArray(p.loc) ? p.loc.filter((x) => x !== 'body').join('.') : ''
+        return campo ? `${campo}: ${p.msg ?? 'inválido'}` : (p.msg ?? '')
+      })
+      .filter(Boolean)
+    if (problemas.length) return `Dados inválidos — ${problemas.join('; ')}`
+  }
   if (detalhe && typeof detalhe === 'object') {
     const obj = detalhe as { mensagem?: string; avisos?: string[] }
     if (obj.mensagem) return [obj.mensagem, ...(obj.avisos ?? [])].join(' ')
@@ -93,6 +108,28 @@ function postJson<T>(url: string, body: unknown, token?: string): Promise<T> {
   })
 }
 
+/**
+ * Dispara o download de um blob.
+ *
+ * O `revokeObjectURL` ia logo depois do `click()`: alguns navegadores ainda não
+ * tinham começado a baixar e cancelavam o arquivo. Revogar no próximo ciclo
+ * (e depois de um tempo folgado) resolve sem vazar a URL. O link também entra
+ * no documento — sem isso, o clique é ignorado em parte dos navegadores.
+ */
+export function baixarBlob(blob: Blob, nome: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nome
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  setTimeout(() => {
+    a.remove()
+    URL.revokeObjectURL(url)
+  }, 60_000)
+}
+
 /** Extrai o nome do arquivo do header Content-Disposition, com um padrão de fallback. */
 function nomeDoContentDisposition(header: string | null, padrao: string): string {
   const m = header?.match(/filename="?([^"]+)"?/)
@@ -118,12 +155,7 @@ async function baixarArquivo(url: string, body: unknown, nomePadrao: string): Pr
   }
   const blob = await r.blob()
   const nome = nomeDoContentDisposition(r.headers.get('Content-Disposition'), nomePadrao)
-  const objUrl = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = objUrl
-  a.download = nome
-  a.click()
-  URL.revokeObjectURL(objUrl)
+  baixarBlob(blob, nome)
 }
 
 /** Eventos do /api/perguntar/stream (uma linha JSON cada). */
@@ -152,11 +184,13 @@ async function perguntarStream(
   onTexto: (acumulado: string) => void,
   /** Cancela o stream (nova pergunta ou "Limpar"): a conexão fecha e a promessa rejeita com AbortError. */
   signal?: AbortSignal,
+  /** Turnos anteriores da conversa, do mais antigo ao mais recente. O servidor corta o excesso. */
+  historico: TurnoConversa[] = [],
 ): Promise<PerguntarResp> {
   const r = await fetch('/api/perguntar/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pergunta, provider, modelo, persona }),
+    body: JSON.stringify({ pergunta, provider, modelo, persona, historico }),
     signal,
   })
   if (!r.ok || !r.body) {
@@ -233,6 +267,12 @@ export const api = {
   config: () => pedir<ConfigResp>('/api/config'),
   providers: () => pedir<ProvidersResp>('/api/providers'),
   buscar: (query: string, n = 6) => postJson<BuscarResp>('/api/buscar', { query, n }),
+  /** Página indexada inteira, para conferir a citação da resposta. */
+  trecho: (fonte: string, pagina?: number | null, vizinhas = true) => {
+    const q = new URLSearchParams({ fonte, vizinhas: String(vizinhas) })
+    if (pagina) q.set('pagina', String(pagina))
+    return pedir<TrechoResp>(`/api/trecho?${q}`)
+  },
   perguntar: (pergunta: string, provider: string, modelo: string, persona: string = 'padrao') =>
     postJson<PerguntarResp>('/api/perguntar', { pergunta, provider, modelo, persona }),
   simplificar: (pergunta: string, resposta: string, contexto: Evidencia[], provider: string, modelo: string) =>

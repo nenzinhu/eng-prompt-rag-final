@@ -161,9 +161,9 @@ export async function reencodarImagem(
   } else {
     const rgba = pixelsParaRgba(entrada)
     const dados = new ImageData(rgba, entrada.largura, entrada.altura)
-    const tela = await criarTela(entrada.largura, entrada.altura)
     // A tela recebe o pixel exato: desenhar de uma tela para outra poderia
-    // reamostrar a imagem antes de qualquer redução.
+    // reamostrar a imagem antes de qualquer redução. (A tela do tamanho cheio
+    // era criada aqui e nunca usada — memória à toa numa imagem grande.)
     if (typeof OffscreenCanvas !== 'undefined') {
       const direta = new OffscreenCanvas(entrada.largura, entrada.altura)
       direta.getContext('2d')?.putImageData(dados, 0, 0)
@@ -174,7 +174,6 @@ export async function reencodarImagem(
       direta.height = entrada.altura
       direta.getContext('2d')?.putImageData(dados, 0, 0)
       origem = await createImageBitmap(direta)
-      void tela
     }
   }
 

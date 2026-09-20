@@ -124,6 +124,36 @@ def test_glossario_com_json_invalido_nao_quebra():
     assert extrair_termos_glossario("") == []
 
 
+# ── Bug B-09: repetição no lote perdia TODOS os termos ─────────────────────
+
+
+def test_glossario_descarta_repetido_ignorando_maiusculas():
+    """O banco compara por `lower(termo)`.
+
+    Duas linhas com a mesma chave no mesmo INSERT fazem o Postgres recusar o
+    comando inteiro (21000) — e nenhum termo do lote era salvo.
+    """
+    bruto = (
+        '{"termos": ['
+        '{"termo": "API", "explicacao": "primeira"},'
+        '{"termo": "api", "explicacao": "segunda"},'
+        '{"termo": " Api ", "explicacao": "terceira"},'
+        '{"termo": "RAG", "explicacao": "outra"}'
+        "]}"
+    )
+    termos = extrair_termos_glossario(bruto)
+    assert [t["termo"] for t in termos] == ["API", "RAG"]
+    # Fica o primeiro, que é o que o merge-duplicates guardaria.
+    assert termos[0]["explicacao"] == "primeira"
+
+
+def test_glossario_com_termos_nulo_nao_quebra():
+    """`.get("termos", [])` só usa o padrão quando a chave NÃO existe."""
+    assert extrair_termos_glossario('{"termos": null}') == []
+    assert extrair_termos_glossario('{"termos": "texto"}') == []
+    assert extrair_termos_glossario('{"outra_chave": 1}') == []
+
+
 # ── Resolver (questão) ──────────────────────────────────────────────────────
 
 
