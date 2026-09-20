@@ -189,6 +189,12 @@ LIMITE_LLM_POR_MINUTO = 20  # por IP (ver as duas camadas em _limitar_llm)
 LIMITE_LLM_POR_DIA_IP = int(os.environ.get("LIMITE_LLM_POR_DIA_IP", "300"))
 LIMITE_LLM_GLOBAL_POR_DIA = int(os.environ.get("LIMITE_LLM_GLOBAL_POR_DIA", "5000"))
 
+# Tentativas de login de admin por IP, na janela abaixo. O login era a única
+# rota de credencial sem limite nenhum: dava para tentar senha à vontade.
+# 8 em 15 min é folgado para quem erra de digitação e inviável para força bruta.
+LIMITE_LOGIN_ADMIN = int(os.environ.get("LIMITE_LOGIN_ADMIN", "8"))
+JANELA_LOGIN_ADMIN = 900
+
 
 EXTENSOES_DOCUMENTO = (".pdf", ".txt", ".md", ".docx", ".pptx")
 
@@ -453,6 +459,36 @@ def _ip_cliente(request: Request) -> str:
     return (request.client.host if request.client else "?") or "?"
 
 
+def _hash_ip(ip: str) -> str:
+    """Identificador do IP para as chaves de cota.
+
+    O IP não vai para o banco em claro: a chave é um hash com segredo.
+    """
+    sal = (SESSION_SECRET or ADMIN_TOKEN or SUPABASE_SERVICE_ROLE_KEY).encode()
+    return hmac.new(sal, ip.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+async def _consumir_cota(chave: str, limite: int, janela: int) -> Optional[bool]:
+    """Consome uma unidade da cota compartilhada no Supabase.
+
+    Devolve True (dentro do limite), False (estourou) ou None quando a camada
+    compartilhada está indisponível — migração não aplicada, rede, timeout.
+    Quem chama decide o que fazer com o None.
+    """
+    try:
+        async with _http(httpx.Timeout(5.0, connect=3.0)) as client:
+            r = await client.post(
+                f"{SUPABASE_URL}/rest/v1/rpc/consumir_cota",
+                headers={**_h_escrita(), "Content-Type": "application/json"},
+                json={"p_chave": chave, "p_limite": limite, "p_janela_seg": janela},
+            )
+        r.raise_for_status()
+        return bool(r.json())
+    except Exception as e:
+        print(f"[limite] cota distribuída indisponível ({type(e).__name__})", flush=True)
+        return None
+
+
 async def _limitar_llm(request: Request):
     """Limite das rotas que gastam chave de IA, em duas camadas.
 
@@ -470,9 +506,7 @@ async def _limitar_llm(request: Request):
     _limitar_em_memoria(ip)
     if not (SUPABASE_URL and escrita_via_service_role()):
         return
-    # O IP não vai para o banco em claro: a chave é um hash com segredo.
-    sal = (SESSION_SECRET or ADMIN_TOKEN or SUPABASE_SERVICE_ROLE_KEY).encode()
-    ip_hash = hmac.new(sal, ip.encode(), hashlib.sha256).hexdigest()[:32]
+    ip_hash = _hash_ip(ip)
     cotas = [
         (f"ip-min:{ip_hash}", LIMITE_LLM_POR_MINUTO, 60, "Muitas requisições em sequência. Tente de novo em instantes."),
         (f"ip-dia:{ip_hash}", LIMITE_LLM_POR_DIA_IP, 86400, "Limite diário de uso atingido para este acesso. Volte amanhã."),
@@ -481,20 +515,55 @@ async def _limitar_llm(request: Request):
     for chave, limite, janela, mensagem in cotas:
         if limite <= 0:
             continue
-        try:
-            async with _http(httpx.Timeout(5.0, connect=3.0)) as client:
-                r = await client.post(
-                    f"{SUPABASE_URL}/rest/v1/rpc/consumir_cota",
-                    headers={**_h_escrita(), "Content-Type": "application/json"},
-                    json={"p_chave": chave, "p_limite": limite, "p_janela_seg": janela},
-                )
-            r.raise_for_status()
-            permitido = r.json()
-        except Exception as e:  # função ausente (migração não aplicada), rede, timeout
-            print(f"[limite] cota distribuída indisponível ({type(e).__name__}); só limite local", flush=True)
-            return
+        permitido = await _consumir_cota(chave, limite, janela)
+        if permitido is None:
+            return  # sem a camada compartilhada, vale só o limite local
         if permitido is False:
             raise HTTPException(429, mensagem)
+
+
+# Tentativas de login por IP na memória da instância: {ip: [instantes]}.
+_logins_por_ip: dict[str, list[float]] = {}
+
+
+async def _limitar_login(request: Request):
+    """Limita as tentativas de login de admin por IP, em duas camadas.
+
+    Mesma ideia do `_limitar_llm`, e com a mesma ressalva honesta: em serverless
+    a memória é por instância, então a camada que segura de verdade é a do
+    Supabase (`consumir_cota`), compartilhada. Aqui, porém, a camada
+    compartilhada FECHA a porta quando o banco não responde não seria seguro —
+    o admin ficaria trancado fora por uma instabilidade —, então cai no limite
+    local, que já barra a rajada vinda de um mesmo IP.
+
+    Conta TENTATIVAS, não falhas: com `consumir_cota` não há como devolver a
+    unidade num login bem-sucedido, e 8 tentativas em 15 minutos sobram para uso
+    legítimo.
+    """
+    ip = _ip_cliente(request)
+    agora = time.time()
+    if len(_logins_por_ip) > MAX_IPS_RASTREADOS:
+        for outro, marcas in list(_logins_por_ip.items()):
+            if all(agora - t >= JANELA_LOGIN_ADMIN for t in marcas):
+                del _logins_por_ip[outro]
+    recentes = [t for t in _logins_por_ip.get(ip, []) if agora - t < JANELA_LOGIN_ADMIN]
+    if len(recentes) >= LIMITE_LOGIN_ADMIN:
+        raise HTTPException(429, MENSAGEM_LIMITE_LOGIN)
+    recentes.append(agora)
+    _logins_por_ip[ip] = recentes
+
+    if not (SUPABASE_URL and escrita_via_service_role()):
+        return
+    permitido = await _consumir_cota(
+        f"login-adm:{_hash_ip(ip)}", LIMITE_LOGIN_ADMIN, JANELA_LOGIN_ADMIN
+    )
+    if permitido is False:
+        raise HTTPException(429, MENSAGEM_LIMITE_LOGIN)
+
+
+MENSAGEM_LIMITE_LOGIN = (
+    "Muitas tentativas de login. Espere alguns minutos antes de tentar de novo."
+)
 
 
 def _limitar_em_memoria(ip: str):
@@ -911,13 +980,18 @@ class LoginReq(BaseModel):
 
 
 @app.post("/api/admin/login")
-def admin_login(req: LoginReq):
+async def admin_login(req: LoginReq, request: Request):
     """Autentica o administrador e devolve uma sessão.
 
     Valida usuário e senha (comparação em tempo constante para evitar ataque de
     timing). Emite um token de sessão assinado com validade de 8 h, que o front
     envia no header X-Admin-Token nas rotas de escrita.
+
+    O limite por IP vem antes da validação: sem ele, dava para tentar senha à
+    vontade, e a comparação em tempo constante não adianta nada contra quem
+    simplesmente chuta muitas vezes.
     """
+    await _limitar_login(request)
     if not (ADMIN_USER and ADMIN_PASS and ADMIN_TOKEN):
         raise HTTPException(
             503,

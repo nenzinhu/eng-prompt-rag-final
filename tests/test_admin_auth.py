@@ -27,6 +27,14 @@ def config_admin(monkeypatch):
     monkeypatch.setattr(index, "ADMIN_TOKEN", "segredo-de-teste")
 
 
+@pytest.fixture(autouse=True)
+def limite_de_login_zerado():
+    """O contador de tentativas vive no módulo e vazaria de um teste para o outro."""
+    index._logins_por_ip.clear()
+    yield
+    index._logins_por_ip.clear()
+
+
 def test_login_valido_emite_sessao(config_admin):
     token, exp = index.emitir_sessao("admin-teste")
     assert token.count(".") == 1  # payload.assinatura
@@ -112,3 +120,52 @@ def test_token_de_admin_acentuado_responde_401(config_admin):
     """
     r = cliente.get("/api/admin/verificar", headers={"X-Admin-Token": "é".encode("latin-1")})
     assert r.status_code == 401
+
+
+# ── Limite de tentativas de login por IP ──────────────────────────────────
+
+
+def _tentar(senha="errada"):
+    return cliente.post("/api/admin/login", json={"usuario": "admin-teste", "senha": senha})
+
+
+def test_login_bloqueia_apos_o_limite_de_tentativas(config_admin):
+    """Sem limite, dava para chutar senha à vontade nesta rota."""
+    for _ in range(index.LIMITE_LOGIN_ADMIN):
+        assert _tentar().status_code == 401
+    r = _tentar()
+    assert r.status_code == 429
+    assert "tentativas" in r.json()["detail"]
+
+
+def test_bloqueio_vale_tambem_para_a_senha_certa(config_admin):
+    """Passado o limite, nem a senha certa passa — senão o freio não freia."""
+    for _ in range(index.LIMITE_LOGIN_ADMIN):
+        _tentar()
+    assert _tentar("senha-falsa-de-teste").status_code == 429
+
+
+def test_tentativas_antigas_saem_da_janela(config_admin, monkeypatch):
+    for _ in range(index.LIMITE_LOGIN_ADMIN):
+        _tentar()
+    assert _tentar().status_code == 429
+    # Envelhece as marcas para além da janela: o IP volta a poder tentar.
+    envelhecidas = {
+        ip: [t - index.JANELA_LOGIN_ADMIN - 1 for t in marcas]
+        for ip, marcas in index._logins_por_ip.items()
+    }
+    index._logins_por_ip.update(envelhecidas)
+    assert _tentar().status_code == 401
+
+
+def test_limite_conta_por_ip(config_admin):
+    """Um IP bloqueado não pode travar o login de outro."""
+    for _ in range(index.LIMITE_LOGIN_ADMIN):
+        _tentar()
+    assert _tentar().status_code == 429
+    outro = cliente.post(
+        "/api/admin/login",
+        json={"usuario": "admin-teste", "senha": "errada"},
+        headers={"x-forwarded-for": "203.0.113.9"},
+    )
+    assert outro.status_code == 401

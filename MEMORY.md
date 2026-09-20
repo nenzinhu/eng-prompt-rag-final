@@ -95,6 +95,16 @@ Todo o resto do relatório de 19/09 — sobrou só o que está na tabela de pend
 - **S-2 · `listar_arquivos_storage` sem `limit`** (o padrão do Storage é 100 itens).
 - **S-3 · Glossário compartilhado:** teto de 25 verbetes gravados por requisição.
 
+### Depois do push (20/09)
+
+- **Limite de tentativas no login de admin** (era o item 1 da lista abaixo). 8 tentativas por
+  IP a cada 15 min, ajustável por `LIMITE_LOGIN_ADMIN`. Duas camadas, como o limite da IA: a
+  memória da instância e, com a `service_role`, o `consumir_cota` compartilhado. Conta
+  TENTATIVAS, não falhas — `consumir_cota` não devolve a unidade num login bem-sucedido, e 8
+  em 15 min sobram para uso legítimo. O bloqueio vale inclusive para a senha certa, senão não
+  freia nada. De quebra saiu a duplicação do `consumir_cota`, agora em `_consumir_cota`, e o
+  hash do IP virou `_hash_ip`. Testes em `tests/test_admin_auth.py`.
+
 ### Features novas
 
 - **N-05 · "Ver no contexto"** — rota `GET /api/trecho?fonte=&pagina=&vizinhas=` devolve a
@@ -162,12 +172,11 @@ produto/infra, não defeitos:
 
 | Prioridade | Item | Ref. |
 |---|---|---|
-| 1 | Limite de falhas por IP no login de admin (hoje não há) | A3-03 |
-| 2 | Resumo: semáforo e nº de trechos limitado pelo limite por minuto do provedor (dispara até 40 chamadas juntas) | A3-06 / A1-13 |
-| 3 | Limites de tamanho nos demais campos de texto (`resolver`, `simplificar`, `verificar`, `aprender/*`, personas) | A3-03 |
-| 4 | Cota própria para busca e auditoria; teto diário de resumos por IP | A3-11a |
-| 5 | Contadores de erro (504, 429, truncadas) na tabela de cota | A3-10 |
-| 6 | `REVOKE` dos privilégios de INSERT/UPDATE/DELETE da chave pública (o RLS já nega) | PROJECT.md §10 |
+| 1 | Resumo: semáforo e nº de trechos limitado pelo limite por minuto do provedor (dispara até 40 chamadas juntas) | A3-06 / A1-13 |
+| 2 | Limites de tamanho nos demais campos de texto (`resolver`, `simplificar`, `verificar`, `aprender/*`, personas) | A3-03 |
+| 3 | Cota própria para busca e auditoria; teto diário de resumos por IP | A3-11a |
+| 4 | Contadores de erro (504, 429, truncadas) na tabela de cota | A3-10 |
+| 5 | `REVOKE` dos privilégios de INSERT/UPDATE/DELETE da chave pública (o RLS já nega) | PROJECT.md §10 |
 
 Ideias novas ainda não implementadas (N-02 a N-04, N-06 a N-12) em
 `.analise-4-agentes/2026-09-19_2230/04-ideias.md` — não estão no `IDEIAS.md`.
