@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   MessageCircle,
   GraduationCap,
@@ -71,6 +71,8 @@ export default function Home() {
 
   const grupos = [...new Set(TABS.map((t) => t.grupo))]
   const grupoAtivo = TABS.find((t) => t.id === active)?.grupo ?? grupos[0]
+  // Referência estável: o TabNav reposiciona o traço e rola a barra quando `tabs` muda.
+  const abasDoGrupo = useMemo(() => TABS.filter((t) => t.grupo === grupoAtivo), [grupoAtivo])
 
   // Voltar a um grupo reabre a última aba usada nele, não sempre a primeira.
   const ultimaPorGrupo = useRef<Record<string, string>>({})
@@ -85,7 +87,7 @@ export default function Home() {
   return (
     <>
       <Header refreshSignal={statusTick} grupos={grupos} grupoAtivo={grupoAtivo} onGrupo={trocarGrupo} />
-      <TabNav tabs={TABS.filter((t) => t.grupo === grupoAtivo)} active={active} onChange={setActive} />
+      <TabNav tabs={abasDoGrupo} active={active} onChange={setActive} />
       <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-6">
         <div className="relative">
           <TabPanel active={active === 'perguntar'}>
