@@ -139,7 +139,7 @@ export default function PerguntarTab({
       }
     } catch (e) {
       if (!vale()) return
-      setErro(e instanceof Error ? e.message : 'Erro ao gerar resposta')
+      setErro(e instanceof Error ? e.message : 'Não consegui gerar a resposta. Tente novamente.')
       setResultado(null)
     } finally {
       if (vale()) {
@@ -315,7 +315,7 @@ export default function PerguntarTab({
           onClick={limpar}
           className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-text transition-colors hover:bg-white/[0.06]"
         >
-          Limpar
+          Começar de novo
         </button>
       </div>
 

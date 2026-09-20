@@ -36,19 +36,19 @@ import ElencoMainTab from '@/components/tabs/ElencoMainTab'
 import SuporteTab from '@/components/tabs/SuporteTab'
 
 const TABS: TabDef[] = [
-  { id: 'perguntar', grupo: 'Estudar', label: 'Perguntar', labelShort: 'Perguntar', icon: MessageCircle },
-  { id: 'professor', grupo: 'Estudar', label: 'Professor Sabe Tudo', labelShort: 'Professor', icon: GraduationCap },
-  { id: 'aprender', grupo: 'Estudar', label: 'Aprender (Feynman)', labelShort: 'Aprender', icon: Lightbulb },
-  { id: 'buscar', grupo: 'Estudar', label: 'Buscar', labelShort: 'Busca', icon: Search },
-  { id: 'resolver', grupo: 'Estudar', label: 'Resolver Questão', labelShort: 'Resolver', icon: Target },
-  { id: 'glossario', grupo: 'Estudar', label: 'Glossário', labelShort: 'Glossário', icon: Library },
-  { id: 'comparar', grupo: 'Estudar', label: 'Comparar Modelos', labelShort: 'Comparar', icon: Scale },
-  { id: 'apostila', grupo: 'Produzir', label: 'Gerador de Apostilas', labelShort: 'Apostilas', icon: BookOpen },
-  { id: 'comprimir', grupo: 'Arquivos', label: 'Comprimir Arquivos', labelShort: 'Comprimir', icon: FileArchive },
-  { id: 'pdfs', grupo: 'Arquivos', label: 'PDFs', labelShort: 'PDFs', icon: FileStack },
-  { id: 'perfis-comportamentais', grupo: 'Comunicar', label: 'Perfis Comportamentais', labelShort: 'Perfis', icon: Shield },
-  { id: 'elenco', grupo: 'Comunicar', label: 'Elenco — Fale o que pensa', labelShort: 'Elenco', icon: PartyPopper },
-  { id: 'suporte', grupo: 'Suporte', label: 'Tecnologia — Suporte em TI e IA', labelShort: 'Suporte TI', icon: LifeBuoy },
+  { id: 'perguntar', grupo: 'Aprender', label: 'Perguntar', labelShort: 'Perguntar', icon: MessageCircle },
+  { id: 'professor', grupo: 'Aprender', label: 'Professor', labelShort: 'Professor', icon: GraduationCap },
+  { id: 'aprender', grupo: 'Aprender', label: 'Aprender', labelShort: 'Aprender', icon: Lightbulb },
+  { id: 'buscar', grupo: 'Aprender', label: 'Buscar no material', labelShort: 'Buscar', icon: Search },
+  { id: 'resolver', grupo: 'Aprender', label: 'Resolver questão', labelShort: 'Resolver', icon: Target },
+  { id: 'glossario', grupo: 'Aprender', label: 'Glossário', labelShort: 'Glossário', icon: Library },
+  { id: 'comparar', grupo: 'Aprender', label: 'Comparar modelos', labelShort: 'Comparar', icon: Scale },
+  { id: 'apostila', grupo: 'Criar', label: 'Criar apostila', labelShort: 'Apostila', icon: BookOpen },
+  { id: 'comprimir', grupo: 'Arquivos', label: 'Comprimir', labelShort: 'Comprimir', icon: FileArchive },
+  { id: 'pdfs', grupo: 'Arquivos', label: 'Meus PDFs', labelShort: 'PDFs', icon: FileStack },
+  { id: 'perfis-comportamentais', grupo: 'Mensagens', label: 'Perfis de resposta', labelShort: 'Respostas', icon: Shield },
+  { id: 'elenco', grupo: 'Mensagens', label: 'Elenco', labelShort: 'Elenco', icon: PartyPopper },
+  { id: 'suporte', grupo: 'Suporte', label: 'Suporte', labelShort: 'Suporte', icon: LifeBuoy },
 ]
 
 export default function Home() {
@@ -75,43 +75,43 @@ export default function Home() {
       <TabNav tabs={TABS} active={active} onChange={setActive} />
       <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-4">
         <div className="relative">
-          <TabPanel active={active === 'perguntar'}>
+          <TabPanel id="perguntar" active={active === 'perguntar'}>
             <PerguntarTab providers={providers} />
           </TabPanel>
-          <TabPanel active={active === 'professor'}>
+          <TabPanel id="professor" active={active === 'professor'}>
             <ProfessorTab providers={providers} />
           </TabPanel>
-          <TabPanel active={active === 'aprender'}>
+          <TabPanel id="aprender" active={active === 'aprender'}>
             <AprenderTab providers={providers} />
           </TabPanel>
-          <TabPanel active={active === 'apostila'}>
+          <TabPanel id="apostila" active={active === 'apostila'}>
             <ApostilaTab providers={providers} />
           </TabPanel>
-          <TabPanel active={active === 'buscar'}>
+          <TabPanel id="buscar" active={active === 'buscar'}>
             <BuscarTab />
           </TabPanel>
-          <TabPanel active={active === 'comparar'}>
+          <TabPanel id="comparar" active={active === 'comparar'}>
             <CompararTab providers={providers} />
           </TabPanel>
-          <TabPanel active={active === 'resolver'}>
+          <TabPanel id="resolver" active={active === 'resolver'}>
             <ResolverTab providers={providers} onEnviarGlossario={enviarParaGlossario} />
           </TabPanel>
-          <TabPanel active={active === 'glossario'}>
+          <TabPanel id="glossario" active={active === 'glossario'}>
             <GlossarioTab providers={providers} seed={glossarioSeed} />
           </TabPanel>
-          <TabPanel active={active === 'comprimir'}>
+          <TabPanel id="comprimir" active={active === 'comprimir'}>
             <ComprimirTab />
           </TabPanel>
-          <TabPanel active={active === 'pdfs'}>
+          <TabPanel id="pdfs" active={active === 'pdfs'}>
             <PdfsTab onStatusChange={() => setStatusTick((t) => t + 1)} />
           </TabPanel>
-          <TabPanel active={active === 'perfis-comportamentais'}>
+          <TabPanel id="perfis-comportamentais" active={active === 'perfis-comportamentais'}>
             <PerfisComportamentaisTab providers={providers} />
           </TabPanel>
-          <TabPanel active={active === 'elenco'}>
+          <TabPanel id="elenco" active={active === 'elenco'}>
             <ElencoMainTab providers={providers} />
           </TabPanel>
-          <TabPanel active={active === 'suporte'}>
+          <TabPanel id="suporte" active={active === 'suporte'}>
             <SuporteTab providers={providers} />
           </TabPanel>
         </div>

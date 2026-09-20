@@ -54,7 +54,7 @@ export default function PerfisComportamentaisTab({ providers }: { providers: Pro
     if (!mensagem.trim()) return
     setResposta('')
     setCopiado(false)
-    const texto = await executar(() => api.perfilComportamental(contexto, mensagem, temperamentId, provider, modelo).then((d) => d.resposta), 'Erro ao gerar resposta')
+    const texto = await executar(() => api.perfilComportamental(contexto, mensagem, temperamentId, provider, modelo).then((d) => d.resposta), 'Não consegui criar a resposta. Tente novamente.')
     if (texto) adicionarHistorico(texto, contexto || mensagem)
   }
 
@@ -190,7 +190,7 @@ export default function PerfisComportamentaisTab({ providers }: { providers: Pro
         {!loading && !erro && !resposta && (
           <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
             <Shield className="h-6 w-6 opacity-50" aria-hidden="true" />
-            <span className="text-[0.82rem]">A resposta pronta para envio aparecerá aqui</span>
+            <span className="text-[0.82rem]">Sua resposta aparecerá aqui</span>
           </div>
         )}
       </div>

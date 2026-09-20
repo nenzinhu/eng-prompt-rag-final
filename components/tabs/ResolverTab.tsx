@@ -209,7 +209,7 @@ export default function ResolverTab({
                 disabled={loading || ocrLoading || !pronto}
                 className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
               >
-                {loading ? 'Analisando…' : 'Analisar Questão'}
+                {loading ? 'Analisando…' : 'Analisar questão'}
               </button>
               <button
                 onClick={() => {

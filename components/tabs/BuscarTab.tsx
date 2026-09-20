@@ -87,8 +87,8 @@ export default function BuscarTab() {
       {!loading && !erro && !resultados && (
         <div className="flex flex-col items-center py-12 text-center text-muted">
           <Search className="mb-2 h-6 w-6 opacity-50" aria-hidden="true" />
-          <div className="mb-1 font-medium text-text">Pronto para buscar</div>
-          Digite qualquer conceito do curso — RAG, few-shot, embeddings, fine-tuning…
+          <div className="mb-1 font-medium text-text">Busque no material</div>
+          Digite um conceito, palavra-chave ou trecho do curso.
         </div>
       )}
     </div>

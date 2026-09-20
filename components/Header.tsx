@@ -122,9 +122,9 @@ export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }
   }
 
   const label =
-    status === 'ready' ? `${total.toLocaleString('pt-BR')} chunks` :
-    status === 'empty' ? 'sem dados' :
-    status === 'offline' ? 'offline' : 'conectando…'
+    status === 'ready' ? `${total.toLocaleString('pt-BR')} trechos disponíveis` :
+    status === 'empty' ? 'Nenhum material indexado' :
+    status === 'offline' ? 'Sem conexão' : 'Verificando conexão…'
 
   return (
     <header
@@ -167,7 +167,7 @@ export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }
             title="O backend ainda escreve no banco com a chave pública. Defina SUPABASE_SERVICE_ROLE_KEY e ligue o RLS."
           >
             <TriangleAlert className="h-3 w-3" aria-hidden="true" />
-            escrita insegura
+            Configuração de segurança pendente
           </div>
         )}
         <div

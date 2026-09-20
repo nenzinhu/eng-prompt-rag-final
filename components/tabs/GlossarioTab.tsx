@@ -83,7 +83,7 @@ export default function GlossarioTab({
       setAviso(d.aviso_salvamento ?? d.aviso_geracao ?? '')
       buscarSalvos(busca)
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao gerar glossário')
+      setErro(e instanceof Error ? e.message : 'Não consegui criar o sumário. Tente novamente.')
       setTermos(null)
     } finally {
       setLoading(false)
@@ -123,7 +123,7 @@ export default function GlossarioTab({
           )}
           {!buscando && !erroBusca && termosSalvos.length === 0 && (
             <div className="text-[0.78rem] text-muted">
-              {busca.trim() ? 'Nenhum termo salvo encontrado com esse filtro.' : 'Nenhum termo salvo ainda — gere um sumário abaixo.'}
+              {busca.trim() ? 'Nenhum termo salvo encontrado com esse filtro.' : 'Ainda não há termos salvos. Crie um sumário para começar.'}
             </div>
           )}
           {!buscando && termosSalvos.length > 0 && (

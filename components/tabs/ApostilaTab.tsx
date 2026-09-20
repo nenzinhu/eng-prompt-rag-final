@@ -58,7 +58,7 @@ export default function ApostilaTab({ providers }: { providers: ProvidersResp })
       await api.gerarApostila(tema.trim(), formato, provider, modelo, interesses)
       setOk(true)
     } catch (e) {
-      setErro(e instanceof ApiError ? e.message : 'Erro ao gerar apostila')
+      setErro(e instanceof ApiError ? e.message : 'Não consegui criar a apostila. Tente novamente.')
     } finally {
       setLoading(false)
     }
@@ -169,7 +169,7 @@ export default function ApostilaTab({ providers }: { providers: ProvidersResp })
           disabled={loading || ocrLoading || !tema.trim() || !pronto}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {loading ? 'Escrevendo apostila…' : 'Gerar apostila'}
+          {loading ? 'Escrevendo apostila…' : 'Criar apostila'}
         </button>
       </div>
 

@@ -107,7 +107,7 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
       )
       setResultado(d)
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao comparar')
+      setErro(e instanceof Error ? e.message : 'Não consegui comparar os modelos. Tente novamente.')
       setResultado(null)
     } finally {
       setLoading(false)
@@ -186,7 +186,7 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
           disabled={loading || slots.length < MIN_MODELOS}
           className="rounded-lg bg-gradient-to-r from-violet to-cyan px-5 py-2.5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {loading ? 'Consultando…' : `Comparar ${slots.length} modelos`}
+          {loading ? 'Consultando…' : 'Comparar'}
         </button>
         <button
           onClick={() => {

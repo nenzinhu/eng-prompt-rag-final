@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import type { LucideIcon } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { prefersReducedMotion } from '@/lib/reducedMotion'
+import { deveCompactar } from '@/lib/barraCompacta'
 
 export interface TabDef {
   id: string
@@ -25,6 +27,11 @@ export default function TabNav({
   const navRef = useRef<HTMLDivElement>(null)
   const indicatorRef = useRef<HTMLDivElement>(null)
   const [topo, setTopo] = useState(54)
+  // Barra encolhida enquanto o aluno rola para ler a resposta.
+  const [compacto, setCompacto] = useState(false)
+  // Lista de grupos aberta (o seletor que substituiu a fileira de pílulas).
+  const [menuAberto, setMenuAberto] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   // O título do cabeçalho quebra em duas linhas em telas estreitas; um `top` fixo
   // deixava a barra escondida atrás dele ao rolar.
@@ -46,10 +53,38 @@ export default function TabNav({
   ultimaPorGrupo.current[grupoAtivo] = active
 
   function trocarGrupo(grupo: string) {
+    setMenuAberto(false)
     if (grupo === grupoAtivo) return
     const destino = ultimaPorGrupo.current[grupo] ?? tabs.find((t) => t.grupo === grupo)?.id
     if (destino) onChange(destino)
   }
+
+  // A barra encolhe ao rolar: a altura volta para o conteúdo justamente quando
+  // o aluno está lendo. `deveCompactar` tem histerese — sem ela, parar a
+  // rolagem em cima do limite faz a barra piscar (ver lib/barraCompacta.ts).
+  useEffect(() => {
+    const aoRolar = () => setCompacto((atual) => deveCompactar(window.scrollY, atual))
+    aoRolar()
+    window.addEventListener('scroll', aoRolar, { passive: true })
+    return () => window.removeEventListener('scroll', aoRolar)
+  }, [])
+
+  // Fecha a lista de grupos ao clicar fora ou apertar Esc.
+  useEffect(() => {
+    if (!menuAberto) return
+    const foraDoMenu = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuAberto(false)
+    }
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuAberto(false)
+    }
+    document.addEventListener('mousedown', foraDoMenu)
+    document.addEventListener('keydown', aoTeclar)
+    return () => {
+      document.removeEventListener('mousedown', foraDoMenu)
+      document.removeEventListener('keydown', aoTeclar)
+    }
+  }, [menuAberto])
 
   // x/y/width acompanham o botão ativo tanto em linha única quanto com as abas
   // quebrando em várias linhas; a altura fica travada em 3px (underline). O
@@ -141,27 +176,75 @@ export default function TabNav({
     onChange(id)
   }
 
+  function navegarPorTeclado(event: React.KeyboardEvent, id: string) {
+    const ids = abasDoGrupo.map((t) => t.id)
+    const indice = ids.indexOf(id)
+    if (indice === -1) return
+
+    let proximo: string | null = null
+    if (event.key === 'ArrowRight') proximo = ids[(indice + 1) % ids.length]
+    if (event.key === 'ArrowLeft') proximo = ids[(indice - 1 + ids.length) % ids.length]
+    if (event.key === 'Home') proximo = ids[0]
+    if (event.key === 'End') proximo = ids[ids.length - 1]
+    if (!proximo || proximo === id) return
+
+    event.preventDefault()
+    onChange(proximo)
+    requestAnimationFrame(() => btnRefs.current[proximo]?.focus())
+  }
+
   return (
-    <nav className="sticky z-40 bg-bg/80 px-2 py-1.5 backdrop-blur-xl sm:px-4" style={{ top: topo }}>
-      <div className="no-scrollbar mx-auto mb-1 flex max-w-full items-center justify-center gap-1 overflow-x-auto">
-        {grupos.map((g) => (
+    <nav
+      aria-label="Navegação de ferramentas"
+      className={`sticky z-40 bg-bg/80 px-2 backdrop-blur-xl transition-[padding] duration-200 sm:px-4 ${
+        compacto ? 'py-0.5' : 'py-1.5'
+      }`}
+      style={{ top: topo }}
+    >
+      <div className="mx-auto flex max-w-full items-end justify-center gap-2">
+        {/* O grupo virou seletor: economiza a fileira de pílulas que ficava
+            sempre visível. `trocarGrupo` já reabre a última aba usada no grupo. */}
+        <div ref={menuRef} className="relative shrink-0 pb-1">
           <button
-            key={g}
-            onClick={() => trocarGrupo(g)}
-            aria-pressed={g === grupoAtivo}
-            className={`shrink-0 rounded-full px-3 py-1 font-mono text-[0.68rem] uppercase tracking-wider transition-colors ${
-              g === grupoAtivo ? 'bg-white/[0.07] text-lime' : 'text-muted hover:text-text'
-            }`}
+            onClick={() => setMenuAberto((o) => !o)}
+            aria-expanded={menuAberto}
+            aria-haspopup="menu"
+            aria-label={`Grupo: ${grupoAtivo}. Trocar de grupo`}
+            className="flex min-h-10 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 font-mono text-[0.72rem] uppercase tracking-wider text-lime transition-colors hover:bg-white/[0.08]"
           >
-            {g}
+            {grupoAtivo}
+            <ChevronDown
+              className={`h-3 w-3 transition-transform duration-200 ${menuAberto ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            />
           </button>
-        ))}
-      </div>
-      <div
-        ref={navRef}
-        className="no-scrollbar relative mx-auto flex max-w-full items-center gap-1 overflow-x-auto border-b border-white/10 px-1 sm:flex-wrap sm:justify-center sm:overflow-visible"
-        style={{ width: 'fit-content' }}
-      >
+          {menuAberto && (
+            <div
+              role="menu"
+              className="absolute left-0 top-full z-50 mt-1 min-w-[11rem] rounded-lg border border-white/10 bg-bg/95 p-1 shadow-xl backdrop-blur-xl"
+            >
+              {grupos.map((g) => (
+                <button
+                  key={g}
+                  role="menuitem"
+                  onClick={() => trocarGrupo(g)}
+                  className={`block w-full rounded-md px-3 py-2 text-left font-mono text-[0.75rem] uppercase tracking-wider transition-colors ${
+                    g === grupoAtivo ? 'bg-white/[0.07] text-lime' : 'text-muted hover:bg-white/[0.04] hover:text-text'
+                  }`}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div
+          ref={navRef}
+          role="tablist"
+          aria-label={`Abas de ${grupoAtivo}`}
+          className="no-scrollbar relative flex min-w-0 items-center gap-1 overflow-x-auto border-b border-white/10 px-1 sm:flex-wrap sm:justify-center sm:overflow-visible"
+          style={{ width: 'fit-content' }}
+        >
         <div
           ref={indicatorRef}
           className="pointer-events-none absolute left-0 top-0 h-[3px] rounded-full bg-gradient-to-r from-lime to-hotpink"
@@ -175,24 +258,38 @@ export default function TabNav({
               ref={(el) => {
                 btnRefs.current[t.id] = el
               }}
+              id={`aba-${t.id}`}
+              role="tab"
+              aria-selected={active === t.id}
+              aria-controls={`painel-${t.id}`}
+              tabIndex={active === t.id ? 0 : -1}
+              onKeyDown={(e) => navegarPorTeclado(e, t.id)}
               onClick={() => onClickBtn(t.id)}
               onMouseEnter={() => onEnterBtn(t.id)}
               onMouseLeave={() => onLeaveBtn(t.id)}
-              aria-current={active === t.id ? 'true' : undefined}
-              className={`relative z-10 flex shrink-0 items-center gap-2 whitespace-nowrap px-3 py-2 text-[0.83rem] font-medium transition-colors sm:px-3.5 sm:text-sm ${
-                active === t.id ? 'text-white' : 'text-muted hover:text-lime active:text-lime'
-              }`}
+              // O rótulo some no modo compacto, então o nome precisa continuar
+              // acessível ao leitor de tela e ao tooltip do mouse.
+              aria-label={t.label}
+              title={t.label}
+              className={`relative z-10 flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap px-3 text-[0.875rem] font-medium transition-[color,padding] duration-200 sm:px-3.5 sm:text-[0.9375rem] ${
+                compacto ? 'py-1.5' : 'py-2.5'
+              } ${active === t.id ? 'text-white' : 'text-muted hover:text-lime active:text-lime'}`}
             >
               <Icon
                 className={`h-4 w-4 shrink-0 ${active === t.id ? 'text-lime' : ''}`}
                 aria-hidden="true"
                 strokeWidth={2}
               />
-              <span className="hidden sm:inline">{t.label}</span>
-              <span className="sm:hidden">{t.labelShort}</span>
+              {/* Mobile keeps icon + short label on every tab so users do not
+                  have to guess an icon-only control. */}
+              <>
+                <span className="hidden sm:inline">{t.label}</span>
+                <span className="sm:hidden">{t.labelShort}</span>
+              </>
             </button>
           )
         })}
+        </div>
       </div>
     </nav>
   )

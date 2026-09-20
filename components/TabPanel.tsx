@@ -7,9 +7,11 @@ import { prefersReducedMotion } from '@/lib/reducedMotion'
 export default function TabPanel({
   active,
   children,
+  id,
 }: {
   active: boolean
   children: React.ReactNode
+  id: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const mounted = useRef(false)
@@ -51,7 +53,10 @@ export default function TabPanel({
 
   return (
     <div
+      id={id}
       ref={ref}
+      role="tabpanel"
+      aria-labelledby={`aba-${id}`}
       className={active ? 'relative' : 'pointer-events-none absolute inset-0 invisible'}
     >
       {jaAtivouUmaVez.current ? children : null}

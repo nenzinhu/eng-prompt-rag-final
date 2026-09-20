@@ -228,7 +228,7 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
       {!explicando && !explicacao && !erro && (
         <div className="mt-6 flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
           <Lightbulb className="h-6 w-6 opacity-50" aria-hidden="true" />
-          <span className="text-[0.82rem]">Escolha um tema e um nível para começar</span>
+          <span className="text-[0.82rem]">Escolha um tema e como quer receber a explicação</span>
         </div>
       )}
 
@@ -349,7 +349,7 @@ export default function AprenderTab({ providers }: { providers: ProvidersResp })
               className="flex items-center gap-1 text-[0.72rem] text-muted transition-colors hover:text-rose-300"
             >
               <Trash2 className="h-3 w-3" aria-hidden="true" />
-              Limpar
+              Limpar histórico
             </button>
           </div>
           <div className="flex flex-col gap-1.5">
