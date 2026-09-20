@@ -212,6 +212,23 @@ _CHAVES_FALE = {"INTENCAO": "intencao", "ANALISE": "analise", "MENSAGEM": "mensa
 # Linhas separadoras ("---", "***") que alguns modelos põem entre as seções.
 _RE_SEPARADOR_BORDA = re.compile(r"^(?:\s*[-*_]{3,}\s*$\n?)+|(?:\n?^\s*[-*_]{3,}\s*$)+\Z", re.MULTILINE)
 _RE_SEPARADOR_FIM_LINHA = re.compile(r"\s+[-*_]{3,}\s*\Z")
+# Sobra de negrito no começo do corpo ("**MENSAGEM:** **" seguido de quebra de linha).
+_RE_ASTERISCOS_INICIAIS = re.compile(r"\A(?:[ \t]*\*[* \t]*(?:\n|\Z))+")
+
+
+def _titulos_fale_validos(achados: list[re.Match]) -> list[re.Match]:
+    """Descarta linhas do corpo que só parecem título ("Dica: leve casaco").
+
+    Título "forte" é o que vem sozinho na linha ou marcado com `#`/`**` (um `*` único
+    é marcador de lista, não título). Quando uma seção já tem um título forte, um
+    "Nome: texto" sem marcação é conteúdo, não título.
+    Se o modelo só usou o formato sem marcação, todos continuam valendo.
+    """
+    def forte(m: re.Match) -> bool:
+        return m.group("resto") is None or m.group(0).lstrip().startswith(("#", "**"))
+
+    com_titulo_forte = {m.group(1).upper() for m in achados if forte(m)}
+    return [m for m in achados if forte(m) or m.group(1).upper() not in com_titulo_forte]
 
 
 def separar_secoes_fale(texto: str) -> dict[str, str]:
@@ -222,14 +239,16 @@ def separar_secoes_fale(texto: str) -> dict[str, str]:
     """
     secoes = {"intencao": "", "analise": "", "mensagem": "", "dica": ""}
     limpo = limpar_resposta(texto)
-    titulos = list(_RE_TITULO_FALE.finditer(limpo))
+    titulos = _titulos_fale_validos(list(_RE_TITULO_FALE.finditer(limpo)))
     for i, m in enumerate(titulos):
         nome = unicodedata.normalize("NFKD", m.group(1).upper())
         nome = "".join(c for c in nome if not unicodedata.combining(c))
         fim = titulos[i + 1].start() if i + 1 < len(titulos) else len(limpo)
-        corpo = (m.group("resto") or "") + limpo[m.end():fim]
-        trecho = _RE_SEPARADOR_BORDA.sub("", corpo.strip()).strip()
-        secoes[_CHAVES_FALE[nome]] = _RE_SEPARADOR_FIM_LINHA.sub("", trecho)
+        corpo = _RE_ASTERISCOS_INICIAIS.sub("", ((m.group("resto") or "") + limpo[m.end():fim]).strip())
+        trecho = _RE_SEPARADOR_BORDA.sub("", corpo).strip()
+        chave = _CHAVES_FALE[nome]
+        # Título repetido: junta em vez de deixar o último apagar o primeiro.
+        secoes[chave] = "\n".join(p for p in (secoes[chave], _RE_SEPARADOR_FIM_LINHA.sub("", trecho)) if p)
     if not secoes["mensagem"]:
         secoes["mensagem"] = limpo
     msg = secoes["mensagem"]
