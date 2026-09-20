@@ -108,7 +108,7 @@ confirmação explícita.
 
 | Camada | Tecnologia |
 |---|---|
-| Frontend | Next.js 15.5, React 19, TypeScript 5.9, Tailwind 3.4, GSAP (animações), lucide-react (ícones), react-markdown + remark-gfm |
+| Frontend | Next.js 15.5, React 19, TypeScript 5.9, Tailwind 3.4 (visual grafite: paleta cinza e fonte Barlow, sem bibliotecas de animação), lucide-react (ícones), react-markdown + remark-gfm |
 | Processamento no navegador | pdfjs-dist e pdf-lib (PDF), mammoth (.docx), tesseract.js (OCR) |
 | Backend | Python, FastAPI, httpx, pypdf + fonttools, python-docx, python-pptx, fpdf2 |
 | Dados | Supabase: Postgres + pgvector, Storage, Edge Functions (Deno) |
@@ -218,6 +218,7 @@ usar o backend de produção, defina `BACKEND_URL`.
 | `ruff check .` | Lint Python |
 | `npm run test:js` | 6 arquivos: leitura do streaming da API, laço de indexação da aba PDFs, nome do arquivo no Storage, redimensionamento de imagem, compressão de PDF e decodificação de preditores PNG/TIFF |
 | `npm run lint` / `npm run typecheck` / `npm run build` | eslint, tsc e build |
+| `npm run contraste` | mede o contraste WCAG (mínimo 4,5:1) dos pares de cor do `tailwind.config.ts` e do fundo em `app/globals.css`; roda no CI |
 | `python scripts/smoke.py [--url ...]` | Chama as rotas reais, locais ou de produção |
 
 O GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) roda tudo isso

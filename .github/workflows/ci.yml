@@ -42,5 +42,7 @@ jobs:
         run: npm run typecheck
       - name: Testes (node --test)
         run: npm run test:js
+      - name: Contraste das cores (WCAG 4,5:1)
+        run: npm run contraste
       - name: Build
         run: npm run build
