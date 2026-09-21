@@ -114,7 +114,7 @@ def test_stream_de_pergunta_em_ndjson(monkeypatch):
     async def _emb(_t):
         return [[0.0] * 384]
 
-    async def _buscar(_e, n=6):
+    async def _buscar(_e, n=6, texto=None):
         return [{"content": "trecho", "source": "a.pdf", "page": 3, "similarity": 0.8}]
 
     async def _stream(*_a, **_k):

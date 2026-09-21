@@ -1,9 +1,30 @@
-# Onde paramos — 20/09/2026
+# Onde paramos — 21/09/2026
 
 Registro de trabalho para retomar sem reler a conversa. O estado geral do projeto está em
 [PROJECT.md](PROJECT.md); a análise mais recente em
 `.analise-4-agentes/2026-09-20_2149/RELATORIO.md` (média 7,0/10, **aprovado**; as
 anteriores continuam na pasta).
+
+## Feito em 21/09/2026 — mistral-embed + busca híbrida ligada
+
+- **Busca híbrida ligada ao código.** `match_ementas_hibrido` (vetor + full-text
+  `portuguese`, RRF) já existia no banco de produção, sem cópia no repositório e sem
+  ninguém chamando. Registrada em `supabase-backup/migracoes/2026-09-19-busca-hibrida.sql`.
+  `buscar_chunks(emb, n, texto=...)` usa a híbrida quando recebe o texto (todas as rotas,
+  menos `/api/auditar`, que mede apoio semântico frase a frase) e cai na vetorial pura se a
+  RPC falhar. `BUSCA_HIBRIDA=0` desliga. **Padrão: ligada.**
+- **mistral-embed (1024) ao lado do gte-small (384).** Migração
+  `2026-09-21-embedding-mistral.sql` **aplicada em produção em 21/09** (coluna
+  `embedding_mistral`, índice HNSW, `match_ementas_mistral`, `match_ementas_hibrido_mistral`;
+  só acréscimos). A busca usa o Mistral com `EMBEDDINGS_BUSCA=mistral` e cai no gte se ele
+  falhar; o tamanho do vetor escolhe a função. A ingestão grava os dois vetores quando há
+  `MISTRAL_API_KEY`.
+- Limiares por modelo: `LIMIAR_CONFIANCA` (index.py) e `LIMIARES_FIDELIDADE` (rag_core.py).
+  Os do Mistral são **provisórios** (copiados do gte).
+- Scripts: `scripts/vetorizar_mistral.py` (preenche os 894 trechos) e
+  `scripts/calibrar_embeddings.py` (recall gte x mistral + limiares sugeridos).
+- 339 testes pytest e `ruff` passando. **Pendente:** deploy, rodar os dois scripts (precisam
+  de `.env` com as chaves), ajustar os limiares, depois `EMBEDDINGS_BUSCA=mistral` na Vercel.
 
 ## Feito nesta sessão (20/09 noite, orquestrador + correções)
 

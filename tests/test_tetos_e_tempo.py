@@ -39,7 +39,7 @@ def auditoria(monkeypatch):
         visto["frases"] = len(textos)
         return [[0.0] * 384 for _ in textos]
 
-    async def _buscar(_emb, n=6):
+    async def _buscar(_emb, n=6, texto=None):
         visto["n"].append(n)
         return [CHUNK]
 
@@ -139,7 +139,7 @@ def test_rota_passa_o_orcamento_ao_modelo(monkeypatch):
     async def _embeddings(_textos):
         return [[0.0] * 384]
 
-    async def _buscar(_emb, n=6):
+    async def _buscar(_emb, n=6, texto=None):
         return [CHUNK]
 
     async def _llm(_prov, _mod, _system, _user, timeout=None):
@@ -177,7 +177,7 @@ def test_pergunta_no_limite_nao_e_recusada_por_tamanho(monkeypatch):
     async def _embeddings(_textos):
         return [[0.0] * 384]
 
-    async def _buscar(_emb, n=6):
+    async def _buscar(_emb, n=6, texto=None):
         return [CHUNK]
 
     async def _llm(_prov, _mod, _system, _user, timeout=None):
@@ -209,7 +209,7 @@ def test_busca_no_limite_nao_e_recusada_por_tamanho(monkeypatch):
     async def _embeddings(_textos):
         return [[0.0] * 384]
 
-    async def _buscar(_emb, n=6):
+    async def _buscar(_emb, n=6, texto=None):
         return [CHUNK]
 
     monkeypatch.setattr(index, "_limitar_llm", _nada)

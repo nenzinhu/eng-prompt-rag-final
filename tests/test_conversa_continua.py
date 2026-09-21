@@ -34,7 +34,7 @@ def espiao(monkeypatch):
         visto["busca"].append(textos[0])
         return [[0.0] * 384]
 
-    async def _buscar(_emb, n=6):
+    async def _buscar(_emb, n=6, texto=None):
         return [CHUNK]
 
     async def _llm(_prov, _mod, _system, user, **_k):

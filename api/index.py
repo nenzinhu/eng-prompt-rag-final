@@ -3,7 +3,8 @@ Engenharia de Prompt — RAG API (cloud)
 
 Roda como Vercel Serverless Function (Python/ASGI). Sem backend local:
 - Banco vetorial + storage dos documentos: Supabase (Postgres/pgvector + Storage)
-- Embeddings: Supabase Edge Function "embeddings" (modelo gte-small, gratuito)
+- Embeddings: Supabase Edge Function "embeddings" (modelo gte-small, gratuito) e,
+  com EMBEDDINGS_BUSCA=mistral, o mistral-embed (plano gratuito), com o gte de reserva
 - Geração de resposta: provedor de IA escolhido no dropdown do frontend
   (OpenRouter, Groq, NVIDIA NIM, Nous Portal, ...) via API OpenAI-compatible
 
@@ -129,7 +130,10 @@ ALLOWED_ORIGINS = [
     o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",") if o.strip()
 ]
 
-LIMIAR_CONFIANCA = 0.35  # abaixo disso, avisamos que a resposta é pouco embasada na apostila
+# Abaixo disso, avisamos que a resposta é pouco embasada na apostila. Um valor
+# por modelo de embeddings: cada um tem sua escala de similaridade. O do Mistral
+# é PROVISÓRIO até rodar scripts/calibrar_embeddings.py.
+LIMIAR_CONFIANCA = {"gte": 0.35, "mistral": 0.35}
 
 # Teto de upload. NÃO é escolha do app: a função serverless da Vercel recusa
 # qualquer requisição acima de 4,5 MB ANTES do código rodar (413
@@ -663,7 +667,7 @@ async def _embeddings_lote(client: httpx.AsyncClient, lote: list[str]) -> list[l
     return r.json()["embeddings"]
 
 
-async def gerar_embeddings(textos: list[str]) -> list[list[float]]:
+async def gerar_embeddings_gte(textos: list[str]) -> list[list[float]]:
     _checar_config_supabase()
     resultado: list[list[float]] = []
     async with _http(_TIMEOUT) as client:
@@ -672,15 +676,117 @@ async def gerar_embeddings(textos: list[str]) -> list[list[float]]:
     return resultado
 
 
-async def buscar_chunks(query_embedding: list[float], n: int = 6) -> list[dict]:
+# ── Embeddings do Mistral (mistral-embed, plano gratuito) ───────────────────
+# O gte-small foi treinado só em inglês e o material é em português. O
+# mistral-embed é multilíngue e a chave já existe (provedor "mistral").
+# Cada trecho guarda os DOIS vetores: `embedding` (gte, 384) e
+# `embedding_mistral` (1024). A busca usa o que EMBEDDINGS_BUSCA pedir e cai
+# para o gte se o Mistral falhar (429, queda, chave ausente) — o aluno nunca
+# fica sem resposta por causa do provedor de embeddings.
+# Ligar só DEPOIS de rodar `scripts/vetorizar_mistral.py` (trechos sem vetor
+# Mistral ficam de fora da busca) e calibrar os limiares (scripts/calibrar_embeddings.py).
+MISTRAL_EMBED_URL = "https://api.mistral.ai/v1/embeddings"
+MISTRAL_EMBED_MODELO = "mistral-embed"
+DIMENSAO_MISTRAL = 1024
+MISTRAL_EMBED_LOTE = 32  # ~900 caracteres por trecho: bem abaixo do teto de tokens por requisição
+EMBEDDINGS_BUSCA = os.environ.get("EMBEDDINGS_BUSCA", "gte").strip().lower()
+
+
+def _chave_mistral() -> str:
+    return os.environ.get("MISTRAL_API_KEY", "")
+
+
+def busca_usa_mistral() -> bool:
+    return EMBEDDINGS_BUSCA == "mistral" and bool(_chave_mistral())
+
+
+async def gerar_embeddings_mistral(textos: list[str]) -> list[list[float]]:
+    chave = _chave_mistral()
+    if not chave:
+        raise RuntimeError("MISTRAL_API_KEY não configurada.")
+    resultado: list[list[float]] = []
     async with _http(_TIMEOUT) as client:
-        r = await client.post(
-            f"{SUPABASE_URL}/rest/v1/rpc/match_ementas",
-            headers={**_h_leitura(), "Content-Type": "application/json"},
-            json={"query_embedding": query_embedding, "match_count": n},
-        )
+        for i in range(0, len(textos), MISTRAL_EMBED_LOTE):
+            lote = textos[i : i + MISTRAL_EMBED_LOTE]
+            for tentativa in (1, 2):
+                try:
+                    r = await client.post(
+                        MISTRAL_EMBED_URL,
+                        headers={"Authorization": f"Bearer {chave}", "Content-Type": "application/json"},
+                        json={"model": MISTRAL_EMBED_MODELO, "input": lote},
+                    )
+                except httpx.TransportError:
+                    if tentativa == 2:
+                        raise
+                    await asyncio.sleep(0.5)
+                    continue
+                if r.status_code in (429, 500, 502, 503, 504) and tentativa == 1:
+                    await asyncio.sleep(1.0)
+                    continue
+                break
+            r.raise_for_status()
+            dados = sorted(r.json()["data"], key=lambda d: d["index"])
+            vetores = [d["embedding"] for d in dados]
+            if len(vetores) != len(lote) or any(len(v) != DIMENSAO_MISTRAL for v in vetores):
+                raise ValueError("Resposta do mistral-embed fora do formato esperado.")
+            resultado.extend(vetores)
+    return resultado
+
+
+async def gerar_embeddings(textos: list[str]) -> list[list[float]]:
+    """Vetores para BUSCA. Todos do mesmo modelo; o tamanho do vetor diz qual
+    (1024 = Mistral, 384 = gte) e `buscar_chunks` escolhe a coluna por ele."""
+    if busca_usa_mistral():
+        try:
+            return await gerar_embeddings_mistral(textos)
+        except (httpx.HTTPError, RuntimeError, ValueError, KeyError, TypeError) as e:
+            print(f"[embeddings] mistral-embed falhou ({type(e).__name__}); usando gte-small", file=sys.stderr)
+    return await gerar_embeddings_gte(textos)
+
+
+def modelo_do_vetor(vetor: list[float]) -> str:
+    return "mistral" if len(vetor) == DIMENSAO_MISTRAL else "gte"
+
+
+# Busca híbrida: vetor + full-text em português, fundidos por RRF no banco
+# (match_ementas_hibrido*). Siglas e termos exatos ("RAG", "LGPD", números)
+# escapam do vetor; a busca por palavra recupera. BUSCA_HIBRIDA=0 desliga.
+BUSCA_HIBRIDA = os.environ.get("BUSCA_HIBRIDA", "1").strip() not in ("0", "false", "nao", "não")
+
+
+async def buscar_chunks(query_embedding: list[float], n: int = 6, texto: str | None = None) -> list[dict]:
+    """Trechos mais próximos. Com `texto`, busca híbrida; sem ele (auditoria,
+    que mede apoio semântico frase a frase), só o vetor."""
+    modelo = modelo_do_vetor(query_embedding)
+    sufixo = "_mistral" if modelo == "mistral" else ""
+    chamadas = []
+    if texto and texto.strip() and BUSCA_HIBRIDA:
+        chamadas.append((
+            f"match_ementas_hibrido{sufixo}",
+            {"query_embedding": query_embedding, "query_text": texto, "match_count": n},
+        ))
+    chamadas.append((f"match_ementas{sufixo}", {"query_embedding": query_embedding, "match_count": n}))
+    async with _http(_TIMEOUT) as client:
+        for i, (funcao, corpo) in enumerate(chamadas):
+            r = await client.post(
+                f"{SUPABASE_URL}/rest/v1/rpc/{funcao}",
+                headers={**_h_leitura(), "Content-Type": "application/json"},
+                json=corpo,
+            )
+            # Híbrida ausente ou com erro (banco restaurado sem a função, tsquery
+            # estranha): cai para a vetorial pura em vez de derrubar a resposta.
+            if r.status_code < 400 or i == len(chamadas) - 1:
+                break
+            print(f"[busca] {funcao} falhou (HTTP {r.status_code}); usando só o vetor", file=sys.stderr)
     r.raise_for_status()
-    return r.json()
+    # A escala de similaridade muda de um modelo para outro: os limiares
+    # (confiança, fidelidade) leem daqui qual modelo gerou o número.
+    return [{**c, "modelo": modelo} for c in r.json()]
+
+
+def pouco_embasado(chunks: list[dict], media: float) -> bool:
+    modelo = chunks[0].get("modelo", "gte") if chunks else "gte"
+    return media < LIMIAR_CONFIANCA.get(modelo, LIMIAR_CONFIANCA["gte"])
 
 
 async def inserir_chunks(rows: list[dict]):
@@ -1096,7 +1202,7 @@ async def buscar(req: BuscarReq, request: Request):
         raise HTTPException(400, f"Termo de busca longo demais: até {MAX_CHARS_BUSCA} caracteres.")
     n = max(1, min(req.n, MAX_RESULTADOS_BUSCA))
     emb = (await gerar_embeddings([req.query]))[0]
-    chunks = await buscar_chunks(emb, n=n)
+    chunks = await buscar_chunks(emb, n=n, texto=req.query)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
     return {
@@ -1530,8 +1636,9 @@ async def _preparar_pergunta(
         raise HTTPException(400, f"Pergunta longa demais: até {MAX_CHARS_PERGUNTA} caracteres.")
     modelo = resolver_modelo(req.provider, req.modelo)
     turnos = _turnos_recentes(req.historico)
-    emb = (await gerar_embeddings([_texto_para_busca(req.pergunta, turnos)]))[0]
-    chunks = await buscar_chunks(emb, n=6)
+    texto_busca = _texto_para_busca(req.pergunta, turnos)
+    emb = (await gerar_embeddings([texto_busca]))[0]
+    chunks = await buscar_chunks(emb, n=6, texto=texto_busca)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
     contexto, media = montar_contexto(chunks)
@@ -1548,7 +1655,7 @@ def _meta_pergunta(req: PerguntaReq, chunks: list[dict], media: float, modelo: s
             {"conteudo": c["content"], "fonte": c["source"], "pagina": c["page"], "relevancia": round(c["similarity"], 3)}
             for c in chunks
         ],
-        "pouco_embasado": media < LIMIAR_CONFIANCA,
+        "pouco_embasado": pouco_embasado(chunks, media),
         "confianca_media": round(media, 3),
         "provider": req.provider,
         "modelo": modelo,
@@ -1654,7 +1761,7 @@ async def gerar_apostila(req: ApostilaReq, request: Request):
     contexto = ""
     try:
         emb = (await gerar_embeddings([tema]))[0]
-        chunks = await buscar_chunks(emb, n=8)
+        chunks = await buscar_chunks(emb, n=8, texto=tema)
         if chunks:
             contexto, _ = montar_contexto(chunks)
     except Exception:
@@ -1862,7 +1969,7 @@ async def aprender_explicar(req: AprenderExplicarReq, request: Request):
         raise HTTPException(400, f"Nível desconhecido: {req.nivel}.")
     await _limitar_llm(request)
     emb = (await gerar_embeddings([req.tema]))[0]
-    chunks = await buscar_chunks(emb, n=6)
+    chunks = await buscar_chunks(emb, n=6, texto=req.tema)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
 
@@ -1876,7 +1983,7 @@ async def aprender_explicar(req: AprenderExplicarReq, request: Request):
             {"conteudo": c["content"], "fonte": c["source"], "pagina": c["page"], "relevancia": round(c["similarity"], 3)}
             for c in chunks
         ],
-        "pouco_embasado": media < LIMIAR_CONFIANCA,
+        "pouco_embasado": pouco_embasado(chunks, media),
         "provider": req.provider,
         "modelo": modelo,
     }
@@ -2031,7 +2138,7 @@ async def auditar(req: AuditarReq, request: Request):
     truncada = len(frases) > MAX_FRASES_AUDITORIA or len(resposta) > MAX_CHARS_AUDITORIA
     frases = frases[:MAX_FRASES_AUDITORIA]
 
-    # Embeddings de todas as frases de uma vez (1 chamada ao gte-small).
+    # Embeddings de todas as frases de uma vez (1 chamada ao modelo de busca).
     embeddings = await gerar_embeddings(frases)
     # O `n` vai para o `match_count` do banco; sem clamp, um valor enorme pedia
     # o índice inteiro por frase. Mesmo teto da /api/buscar.
@@ -2043,7 +2150,7 @@ async def auditar(req: AuditarReq, request: Request):
         # e o chunk mais próximo nem sempre contém o trecho literal.
         chunks = await buscar_chunks(emb, n=por_frase)
         melhor = max((c["similarity"] for c in chunks), default=0.0)
-        nivel = classificar_fidelidade(melhor)
+        nivel = classificar_fidelidade(melhor, chunks[0].get("modelo", "gte") if chunks else "gte")
         # A similaridade sozinha dá falso-positivo (frase inventada curta acha
         # um chunk parecido). O apoio textual rebaixa o nível conforme a
         # cobertura real das palavras da frase nos chunks:
@@ -2085,7 +2192,7 @@ async def glossario(req: GlossarioReq, request: Request):
     # 12 chunks em vez de 25: o glossário é a rota com o maior contexto e era a
     # única que estourava o tempo da função. Metade do contexto acelera a resposta
     # sem perder os termos relevantes (o material por assunto vem nos primeiros).
-    chunks = await buscar_chunks(emb, n=12)
+    chunks = await buscar_chunks(emb, n=12, texto=query)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
 
@@ -2159,7 +2266,7 @@ async def resolver(req: ResolverReq, request: Request):
         raise HTTPException(400, "Não foi possível identificar alternativas (A, B, C...) no texto.")
 
     emb = (await gerar_embeddings([questao]))[0]
-    chunks = await buscar_chunks(emb, n=8)
+    chunks = await buscar_chunks(emb, n=8, texto=questao)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
 
@@ -2205,7 +2312,7 @@ async def resolver(req: ResolverReq, request: Request):
         "por_que_correta": por_que_correta,
         "exemplos": exemplos,
         "alternativas_erradas": alternativas_erradas,
-        "pouco_embasado": media < LIMIAR_CONFIANCA,
+        "pouco_embasado": pouco_embasado(chunks, media),
         "confianca_media": round(media, 3),
         "contexto": [{"conteudo": c["content"], "fonte": c["source"], "pagina": c["page"]} for c in chunks[:4]],
         "provider": req.provider,
@@ -2246,7 +2353,7 @@ async def comparar(req: CompararReq, request: Request):
         raise HTTPException(400, "Informe entre 2 e 4 modelos para comparar.")
 
     emb = (await gerar_embeddings([pergunta]))[0]
-    chunks = await buscar_chunks(emb, n=6)
+    chunks = await buscar_chunks(emb, n=6, texto=pergunta)
     if not chunks:
         raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
 
@@ -2316,7 +2423,7 @@ async def comparar(req: CompararReq, request: Request):
         **comparacao,
         "modelos_ok": len(boas),
         "modelos_total": len(req.modelos),
-        "pouco_embasado": media < LIMIAR_CONFIANCA,
+        "pouco_embasado": pouco_embasado(chunks, media),
         "confianca_media": round(media, 3),
         "contexto": [
             {"conteudo": c["content"], "fonte": c["source"], "pagina": c["page"], "relevancia": round(c["similarity"], 3)}
@@ -2529,11 +2636,25 @@ async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
 
     fatia = linhas[req.offset : req.offset + LOTE_INGESTAO]
     if fatia:
-        embeddings = await gerar_embeddings([l["texto"] for l in fatia])
+        textos = [l["texto"] for l in fatia]
+        embeddings = await gerar_embeddings_gte(textos)
         rows = [
             {"content": l["texto"], "embedding": emb, "source": req.arquivo, "page": l["pagina"]}
             for l, emb in zip(fatia, embeddings)
         ]
+        # O vetor Mistral entra junto sempre que houver chave. Com a busca no
+        # Mistral ele é obrigatório (trecho sem ele some da busca); com a busca
+        # no gte, uma falha passageira não trava a ingestão — o
+        # scripts/vetorizar_mistral.py completa depois.
+        if _chave_mistral():
+            try:
+                vetores_mistral = await gerar_embeddings_mistral(textos)
+            except (httpx.HTTPError, RuntimeError, ValueError, KeyError, TypeError):
+                if busca_usa_mistral():
+                    raise HTTPException(502, "Falha ao gerar os vetores do Mistral. Tente o lote de novo.")
+            else:
+                for row, vetor in zip(rows, vetores_mistral):
+                    row["embedding_mistral"] = vetor
         await inserir_chunks(rows)
 
     proximo = req.offset + len(fatia)

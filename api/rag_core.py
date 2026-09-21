@@ -345,15 +345,22 @@ def frase_tem_apoio_textual(frase: str, chunks: list[dict]) -> str:
     return "nenhum"
 
 
-def classificar_fidelidade(similaridade: float) -> str:
-    """Converte a similaridade de uma frase com o material em um nível.
+# (apoiada a partir de, parcial a partir de) — cosine, um par por modelo de
+# embeddings, porque cada modelo tem sua escala. gte-small: acima de 0.6 a
+# frase está claramente apoiada; abaixo de 0.4 provavelmente foi inventada.
+# mistral-embed: PROVISÓRIO até rodar scripts/calibrar_embeddings.py.
+LIMIARES_FIDELIDADE = {
+    "gte": (0.60, 0.40),
+    "mistral": (0.60, 0.40),
+}
 
-    Limiares calibrados para o gte-small (cosine). Acima de 0.6 a frase está
-    claramente apoiada no material; abaixo de 0.4 provavelmente foi inventada.
-    """
-    if similaridade >= 0.60:
+
+def classificar_fidelidade(similaridade: float, modelo: str = "gte") -> str:
+    """Converte a similaridade de uma frase com o material em um nível."""
+    apoiada, parcial = LIMIARES_FIDELIDADE.get(modelo, LIMIARES_FIDELIDADE["gte"])
+    if similaridade >= apoiada:
         return "apoiada"
-    if similaridade >= 0.40:
+    if similaridade >= parcial:
         return "parcial"
     return "nao_apoiada"
 

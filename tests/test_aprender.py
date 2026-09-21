@@ -32,7 +32,7 @@ def dubles(monkeypatch):
     async def _emb(textos):
         return [[0.0] * 3 for _ in textos]
 
-    async def _chunks(emb, n=6):
+    async def _chunks(emb, n=6, texto=None):
         return [CHUNK]
 
     monkeypatch.setattr(index, "chamar_llm", _llm)
