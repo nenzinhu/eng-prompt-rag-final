@@ -132,11 +132,13 @@ ALLOWED_ORIGINS = [
 
 # Abaixo disso, avisamos que a resposta é pouco embasada na apostila. Um valor
 # por modelo de embeddings: cada um tem sua escala de similaridade.
-# mistral: calibrado em 21/09/2026 (scripts/calibrar_embeddings.py, 40 trechos):
-# média do contexto p10 0,821 em perguntas do material x p90 0,778 fora do tema.
-# gte: a mesma medição deu 0,866 x 0,858 — o gte-small quase não separa os dois
-# casos, e 0.35 nunca dispara; fica como estava porque ele só é a reserva.
-LIMIAR_CONFIANCA = {"gte": 0.35, "mistral": 0.80}
+# Medido em 21/09/2026 com perguntas CURTAS reais na busca híbrida: a média do
+# contexto NÃO separa perguntas do material (0,65-0,85) das de fora do tema
+# (0,68-0,78), nem a melhor similaridade isolada separa. Com 0.80 (calibrado
+# com perguntas longas) 17 de 20 perguntas reais viravam "pouco embasadas".
+# 0.65 só avisa em casos extremos — o mesmo efeito do 0.35 no gte-small, que
+# nunca disparava. Um aviso confiável precisa de outro sinal (apoio textual).
+LIMIAR_CONFIANCA = {"gte": 0.35, "mistral": 0.65}
 
 # Teto de upload. NÃO é escolha do app: a função serverless da Vercel recusa
 # qualquer requisição acima de 4,5 MB ANTES do código rodar (413
