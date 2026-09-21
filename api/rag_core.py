@@ -348,10 +348,13 @@ def frase_tem_apoio_textual(frase: str, chunks: list[dict]) -> str:
 # (apoiada a partir de, parcial a partir de) — cosine, um par por modelo de
 # embeddings, porque cada modelo tem sua escala. gte-small: acima de 0.6 a
 # frase está claramente apoiada; abaixo de 0.4 provavelmente foi inventada.
-# mistral-embed: PROVISÓRIO até rodar scripts/calibrar_embeddings.py.
+# mistral-embed, calibrado em 21/09/2026 (scripts/calibrar_embeddings.py):
+# afirmações verdadeiras reescritas têm p25 0,882; frases fora do tema ficam
+# abaixo de ~0,78. Entre as duas é "parcial" (do tema, sem apoio claro). As
+# falsas do MESMO tema chegam a 0,875 — quem as pega é o apoio textual.
 LIMIARES_FIDELIDADE = {
     "gte": (0.60, 0.40),
-    "mistral": (0.60, 0.40),
+    "mistral": (0.88, 0.80),
 }
 
 

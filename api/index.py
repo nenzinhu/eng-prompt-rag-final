@@ -131,9 +131,12 @@ ALLOWED_ORIGINS = [
 ]
 
 # Abaixo disso, avisamos que a resposta é pouco embasada na apostila. Um valor
-# por modelo de embeddings: cada um tem sua escala de similaridade. O do Mistral
-# é PROVISÓRIO até rodar scripts/calibrar_embeddings.py.
-LIMIAR_CONFIANCA = {"gte": 0.35, "mistral": 0.35}
+# por modelo de embeddings: cada um tem sua escala de similaridade.
+# mistral: calibrado em 21/09/2026 (scripts/calibrar_embeddings.py, 40 trechos):
+# média do contexto p10 0,821 em perguntas do material x p90 0,778 fora do tema.
+# gte: a mesma medição deu 0,866 x 0,858 — o gte-small quase não separa os dois
+# casos, e 0.35 nunca dispara; fica como estava porque ele só é a reserva.
+LIMIAR_CONFIANCA = {"gte": 0.35, "mistral": 0.80}
 
 # Teto de upload. NÃO é escolha do app: a função serverless da Vercel recusa
 # qualquer requisição acima de 4,5 MB ANTES do código rodar (413

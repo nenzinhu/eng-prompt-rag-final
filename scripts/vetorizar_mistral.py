@@ -35,7 +35,8 @@ def carregar_env(caminho: Path) -> None:
         if not linha or linha.startswith("#") or "=" not in linha:
             continue
         chave, _, valor = linha.partition("=")
-        os.environ.setdefault(chave.strip(), valor.strip())
+        # `vercel env pull` grava CHAVE="valor": as aspas não fazem parte do valor.
+        os.environ.setdefault(chave.strip(), valor.strip().strip('"').strip("'"))
 
 
 def requisicao(metodo: str, url: str, headers: dict, corpo: dict | list | None = None):
