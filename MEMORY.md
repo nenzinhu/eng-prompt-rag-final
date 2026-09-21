@@ -5,6 +5,19 @@ Registro de trabalho para retomar sem reler a conversa. O estado geral do projet
 `.analise-4-agentes/2026-09-20_2149/RELATORIO.md` (média 7,0/10, **aprovado**; as
 anteriores continuam na pasta).
 
+## ▶ Retomar daqui — direção de produto (21/09/2026, noite)
+
+Brainstorming em andamento, **nada implementado**. Tudo em
+[docs/2026-09-21-direcao-de-produto.md](docs/2026-09-21-direcao-de-produto.md).
+
+- Frentes escolhidas: (1) **nunca falhar e nunca inventar** — delimitada, vem primeiro;
+  (2) **três abas + tela "o que eu estudo agora?"** — arquitetura, processo com spec.
+- Decidido na (1): opção **B, transparente** — conhecimento geral só num bloco
+  "fora da apostila", separado e sem citação (os prompts hoje mandam misturar).
+- **Pergunta em aberto:** ao trocar de modelo por falha, avisar o aluno? A) aviso
+  discreto (recomendado), B) silencioso, C) perguntar antes. Comparar e Laboratório
+  nunca trocam de modelo.
+
 ## Feito em 21/09/2026 (tarde) — OCR das imagens, limpeza da extração, índice refeito
 
 - **Diagnóstico:** `Logica_Programacao_Python.pdf` e `Empreendedorismo_Inovacao_Tecnologia.pdf`
