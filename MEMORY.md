@@ -19,12 +19,18 @@ anteriores continuam na pasta).
   só acréscimos). A busca usa o Mistral com `EMBEDDINGS_BUSCA=mistral` e cai no gte se ele
   falhar; o tamanho do vetor escolhe a função. A ingestão grava os dois vetores quando há
   `MISTRAL_API_KEY`.
-- Limiares por modelo: `LIMIAR_CONFIANCA` (index.py) e `LIMIARES_FIDELIDADE` (rag_core.py).
-  Os do Mistral são **provisórios** (copiados do gte).
-- Scripts: `scripts/vetorizar_mistral.py` (preenche os 894 trechos) e
-  `scripts/calibrar_embeddings.py` (recall gte x mistral + limiares sugeridos).
-- 339 testes pytest e `ruff` passando. **Pendente:** deploy, rodar os dois scripts (precisam
-  de `.env` com as chaves), ajustar os limiares, depois `EMBEDDINGS_BUSCA=mistral` na Vercel.
+- **Em produção desde 21/09 (commits a960864, b17f4f9, 9af8fd5):** os 894 trechos têm
+  vetor Mistral e `EMBEDDINGS_BUSCA=mistral` está na Vercel (projeto `eng-prompt-rag-final`;
+  o projeto duplicado `nenzinhu-eng-prompt-rag-final` NÃO tem a variável).
+- Calibração (`scripts/calibrar_embeddings.py`, 40 trechos): recall@6 gte 55% → mistral 88%,
+  recall@1 20% → 38%. `LIMIARES_FIDELIDADE` mistral = (0.88, 0.80).
+- **Aviso "pouco embasado" não tem sinal confiável.** Com perguntas curtas reais, nem a
+  média do contexto nem o top-1 separam material x fora do tema (o 0.80 calibrado com
+  perguntas longas avisava 17 de 20 perguntas reais). `LIMIAR_CONFIANCA` mistral = 0.65,
+  que só dispara em casos extremos — igual ao 0.35 do gte, que nunca disparava. Para um
+  aviso útil, usar outro sinal (ex.: apoio textual da resposta).
+- `.env` local tem SUPABASE_URL, ANON, SERVICE_ROLE e MISTRAL (fora do git). As variáveis
+  do Supabase na Vercel são *Sensitive*: `vercel env pull` não traz o valor.
 
 ## Feito nesta sessão (20/09 noite, orquestrador + correções)
 
