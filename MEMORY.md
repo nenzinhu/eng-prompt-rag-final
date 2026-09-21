@@ -5,6 +5,31 @@ Registro de trabalho para retomar sem reler a conversa. O estado geral do projet
 `.analise-4-agentes/2026-09-20_2149/RELATORIO.md` (média 7,0/10, **aprovado**; as
 anteriores continuam na pasta).
 
+## Feito em 21/09/2026 (tarde) — OCR das imagens, limpeza da extração, índice refeito
+
+- **Diagnóstico:** `Logica_Programacao_Python.pdf` e `Empreendedorismo_Inovacao_Tecnologia.pdf`
+  com 1 trecho NÃO eram falha: são ementas de 1 página. O problema real era texto/código
+  em IMAGEM: exemplos de Python da apostila de algoritmos (prints), 12 páginas inteiras em
+  imagem no livro de Node, tabelas do artigo de práticas gerenciais, exemplos do Playbook.
+- **OCR:** `scripts/ocr_imagens.py` lê as imagens (largura >= 600, sem as repetidas em 3+
+  páginas) com o `ministral-8b` (visão, plano gratuito; a API de OCR do Mistral dá limite
+  0/min) e grava `ementas/ocr/<nome>.json`. A ingestão junta à página (`mesclar_ocr`,
+  `baixar_ocr`, `paginas_do_documento`). Documento novo com imagem: rodar o script ANTES
+  de indexar. Rodado nos 7 PDFs com imagem (65 trechos vindos de OCR).
+- **Limpeza na extração** (`limpar_texto_extraido`): tira linhas repetidas em >= 50% das
+  páginas (rodapé "Voltar ao Sumário", "Alcance Revista", "leaders.tec.br") e junta
+  "tornar -se" -> "tornar-se". Aplica também ao resumo de apostila.
+- **Empreendedorismo:** o PDF do Storage (123 páginas) estava indexado só até a página 46
+  (ingestão interrompida: 4 lotes de 24). Reindexado inteiro; a versão órfã
+  `_completo` (384 trechos, sem arquivo, restaurada de dump) foi APAGADA — há cópia em
+  `supabase-backup/dumps/` e `supabase-backup/reconstruido/`.
+- PDF do MCP, que estava no Storage sem índice, foi indexado (26 trechos).
+- `scripts/indexar.py` roda a rota /api/ingerir localmente (sem 60 s nem sessão de admin).
+- Índice: 994 trechos, 13 documentos, todos com arquivo e vetor Mistral.
+- Calibração depois (amostra NOVA, não comparável): mistral recall@1 55%, recall@6 75%.
+  Afirmações verdadeiras p25 0,863 < limiar "apoiada" 0,88 — vale rever com mais amostra.
+- `scripts/dados/` fora do git (texto dos livros).
+
 ## Feito em 21/09/2026 — mistral-embed + busca híbrida ligada
 
 - **Busca híbrida ligada ao código.** `match_ementas_hibrido` (vetor + full-text

@@ -80,6 +80,7 @@ from _app.prompts import (  # noqa: E402
 )
 from _app.documentos import (  # noqa: E402
     extrair_paginas,
+    mesclar_ocr,
     montar_contexto,
     contexto_para_texto,
     _slug_arquivo,
@@ -955,6 +956,39 @@ async def baixar_documento_storage(filename: str) -> bytes:
         r = await client.get(f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(filename)}", headers=_h_documentos())
     r.raise_for_status()
     return r.content
+
+
+# Transcrição das imagens de um documento (scripts/ocr_imagens.py), guardada ao
+# lado dele no bucket: ementas/ocr/<nome>.json. A ingestão roda em lotes de
+# 60 s e extrai o PDF de novo a cada lote — ler as imagens ali não caberia no
+# tempo; lida uma vez e guardada, entra de graça em toda reindexação.
+PASTA_OCR = "ocr"
+
+
+def caminho_ocr(nome: str) -> str:
+    return f"{PASTA_OCR}/{nome}.json"
+
+
+async def baixar_ocr(nome: str) -> dict:
+    """`{}` quando não há transcrição ou ela não pôde ser lida: o OCR é um
+    complemento e nunca pode derrubar a ingestão."""
+    try:
+        async with _http(_TIMEOUT) as client:
+            r = await client.get(
+                f"{SUPABASE_URL}/storage/v1/object/ementas/{quote(caminho_ocr(nome))}",
+                headers=_h_documentos(),
+            )
+        if r.status_code != 200:
+            return {}
+        dados = r.json()
+        return dados if isinstance(dados, dict) else {}
+    except (httpx.HTTPError, ValueError):
+        return {}
+
+
+async def paginas_do_documento(nome: str, dados: bytes) -> list[tuple[int, str]]:
+    """Texto das páginas mais a transcrição das imagens, quando houver."""
+    return mesclar_ocr(extrair_paginas(dados, nome), await baixar_ocr(nome))
 
 
 async def url_envio_assinada(caminho: str) -> str:
@@ -2467,7 +2501,7 @@ async def _analisar_ingestao(arquivo: str) -> dict:
 
     dados = await baixar_documento_storage(arquivo)
     try:
-        paginas = extrair_paginas(dados, arquivo)
+        paginas = await paginas_do_documento(arquivo, dados)
     except Exception as e:
         # Um PDF ilegível não pode derrubar a rota com "Internal Server Error":
         # o usuário precisa saber QUAL arquivo e POR QUÊ. Caso real: um
@@ -2611,7 +2645,7 @@ async def ingerir(req: IngerirReq, _: None = Depends(exigir_admin)):
         analise = None
 
     dados = await baixar_documento_storage(req.arquivo)
-    linhas = preparar_linhas(extrair_paginas(dados, req.arquivo))
+    linhas = preparar_linhas(await paginas_do_documento(req.arquivo, dados))
 
     if not linhas:
         return {

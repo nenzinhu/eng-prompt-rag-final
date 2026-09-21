@@ -127,7 +127,76 @@ def _texto_gravavel(texto: str) -> str:
 
 def extrair_paginas(pdf_bytes: bytes, nome: str = "") -> list[tuple[int, str]]:
     """Devolve [(numero_da_pagina, texto)]. Aceita PDF, TXT, MD, DOCX e PPTX."""
-    return [(n, _texto_gravavel(t)) for n, t in _extrair_paginas_bruto(pdf_bytes, nome)]
+    return limpar_texto_extraido(
+        [(n, _texto_gravavel(t)) for n, t in _extrair_paginas_bruto(pdf_bytes, nome)]
+    )
+
+
+# Linha que se repete em pelo menos esta fração das páginas é cabeçalho/rodapé.
+FRACAO_LINHA_REPETIDA = 0.5
+MIN_PAGINAS_PARA_RODAPE = 3
+MIN_CHARS_RODAPE = 12  # "1", "•", "Sumário" em toda página não são rodapé com conteúdo
+# O pypdf separa o pronome do verbo: "tornar -se", "ajudá -lo". Só junta quando
+# há letra logo antes do espaço — "- se" em lista e " - " de travessão ficam.
+_RE_ENCLISE = re.compile(r"(?<=\w) -(se|lo|la|los|las|me|te|nos|lhe|lhes)\b")
+
+
+def _chave_de_linha(linha: str) -> str:
+    """Linha comparável entre páginas: sem número de página e sem espaço extra."""
+    return re.sub(r"\s+", " ", re.sub(r"\d+", "#", linha)).strip().lower()
+
+
+def limpar_texto_extraido(paginas: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """Tira cabeçalhos/rodapés repetidos e junta pronomes separados do verbo.
+
+    Rodapé repetido ("Voltar ao Sumário | v1.3 DataWay 8") entrava em quase todo
+    trecho do Playbook, e a busca por palavra achava o documento inteiro em
+    qualquer pergunta com "engenharia de prompt". A comparação ignora números,
+    então o número da página no rodapé não esconde a repetição.
+    """
+    repetidas: set[str] = set()
+    if len(paginas) >= MIN_PAGINAS_PARA_RODAPE:
+        contagem: dict[str, int] = {}
+        for _, texto in paginas:
+            for chave in {_chave_de_linha(linha) for linha in texto.splitlines()}:
+                contagem[chave] = contagem.get(chave, 0) + 1
+        minimo = max(MIN_PAGINAS_PARA_RODAPE, -(-len(paginas) * FRACAO_LINHA_REPETIDA // 1))
+        repetidas = {c for c, n in contagem.items() if n >= minimo and len(c) >= MIN_CHARS_RODAPE}
+
+    limpas = []
+    for numero, texto in paginas:
+        if repetidas:
+            texto = "\n".join(linha for linha in texto.splitlines() if _chave_de_linha(linha) not in repetidas)
+            texto = re.sub(r"\n{3,}", "\n\n", texto).strip()
+        limpas.append((numero, _RE_ENCLISE.sub(r"-\1", texto)))
+    return limpas
+
+
+def mesclar_ocr(paginas: list[tuple[int, str]], ocr: dict | None) -> list[tuple[int, str]]:
+    """Acrescenta a transcrição das imagens (scripts/ocr_imagens.py) às páginas.
+
+    `ocr` é `{"<página>": ["texto da imagem", ...]}`. Página só com imagem (sem
+    texto extraído) passa a existir. Entrada malformada é ignorada: o OCR é um
+    complemento e nunca pode derrubar a ingestão.
+    """
+    if not isinstance(ocr, dict):
+        return paginas
+    extras: dict[int, str] = {}
+    for chave, textos in ocr.items():
+        if not str(chave).isdigit() or not isinstance(textos, list):
+            continue
+        blocos = [t.strip() for t in textos if isinstance(t, str) and t.strip()]
+        if blocos:
+            numero = int(chave)
+            extras[numero] = "\n\n".join(f"[Imagem da página {numero}]\n{_texto_gravavel(b)}" for b in blocos)
+    if not extras:
+        return paginas
+    resultado = []
+    for numero, texto in paginas:
+        extra = extras.pop(numero, None)
+        resultado.append((numero, f"{texto}\n\n{extra}" if extra and texto.strip() else (extra or texto)))
+    resultado.extend(extras.items())
+    return sorted(resultado, key=lambda p: p[0])
 
 
 def _extrair_paginas_bruto(pdf_bytes: bytes, nome: str = "") -> list[tuple[int, str]]:

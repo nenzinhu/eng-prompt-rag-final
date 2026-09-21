@@ -21,6 +21,8 @@ sys.path.insert(0, str(RAIZ / "api"))
 import index  # noqa: E402
 from rag_core import classificar_fidelidade  # noqa: E402
 
+BAIXAR_OCR_REAL = index.baixar_ocr
+
 
 def _resp(status, corpo):
     return httpx.Response(status, json=corpo, request=httpx.Request("POST", "https://x"))
@@ -45,6 +47,10 @@ class _Cliente:
     async def post(self, url, json=None, **_):
         self.chamadas.append((url, json))
         return self.responder(url, json)
+
+    async def get(self, url, **_):
+        self.chamadas.append((url, None))
+        return self.responder(url, None)
 
 
 def _mistral_ok(url, corpo):
@@ -235,6 +241,34 @@ def test_ingestao_com_busca_no_mistral_exige_o_vetor(ambiente):
         _ingerir()
     assert erro.value.status_code == 502
     assert inseridas == [], "nada entra no índice sem o vetor que a busca usa"
+
+
+def test_ingestao_junta_a_transcricao_das_imagens(ambiente):
+    inseridas = _montar_ingestao(ambiente, _mistral_1024)
+    vistos = []
+
+    async def _ocr(nome):
+        vistos.append(nome)
+        return {"2": ["for c in texto:\n    print(c)"]}
+
+    ambiente.setattr(index, "baixar_ocr", _ocr)
+    _ingerir()
+    assert "doc.pdf" in vistos
+    assert any("[Imagem da página 2]" in r["content"] and "print(c)" in r["content"] for r in inseridas)
+
+
+@pytest.mark.parametrize(
+    "resposta,esperado",
+    [
+        (_resp(404, {"error": "not found"}), {}),
+        (_resp(400, {"error": "Object not found"}), {}),
+        (_resp(200, ["não é objeto"]), {}),
+        (_resp(200, {"1": ["x"]}), {"1": ["x"]}),
+    ],
+)
+def test_baixar_ocr_ausente_ou_invalido_devolve_vazio(ambiente, resposta, esperado):
+    ambiente.setattr(index, "_http", _Cliente(lambda *_: resposta))
+    assert asyncio.run(BAIXAR_OCR_REAL("doc.pdf")) == esperado
 
 
 def test_ingestao_com_busca_no_gte_segue_sem_o_vetor_mistral(ambiente):

@@ -51,3 +51,6 @@ public/pdf.worker.min.mjs
 
 # Mockups do brainstorming visual (superpowers) — local, nao vai para o repo
 .superpowers/
+
+# Cópias locais geradas pelos scripts (texto dos livros, cache da calibração)
+scripts/dados/
