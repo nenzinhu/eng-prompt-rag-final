@@ -29,6 +29,11 @@ anteriores continuam na pasta).
 - Calibração depois (amostra NOVA, não comparável): mistral recall@1 55%, recall@6 75%.
   Afirmações verdadeiras p25 0,863 < limiar "apoiada" 0,88 — vale rever com mais amostra.
 - `scripts/dados/` fora do git (texto dos livros).
+- **Adiado pelo usuário: reranker.** Desenho aprovado em conversa, não implementado: buscar
+  20 candidatos na híbrida, reordenar com Voyage (`rerank-3-lite`, 200M tokens grátis na
+  linha rerank-3; limite alto só com cartão cadastrado) ou Jina (cota única ~10M), cair na
+  ordem atual se falhar/passar de 3 s, flag `RERANKER` desligada até medir com um conjunto
+  FIXO de perguntas (ainda não existe — pré-requisito).
 
 ## Feito em 21/09/2026 — mistral-embed + busca híbrida ligada
 
