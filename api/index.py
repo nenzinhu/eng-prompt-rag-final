@@ -1077,6 +1077,11 @@ def listar_providers():
     }
 
 
+# Teto de tamanho do termo de busca: sem isto a rota aceitava qualquer volume
+# de texto por 1 unidade de cota, gastando parsing e embeddings à toa.
+MAX_CHARS_BUSCA = 2000
+
+
 class BuscarReq(BaseModel):
     query: str
     n: int = 6
@@ -1087,6 +1092,8 @@ async def buscar(req: BuscarReq, request: Request):
     await _limitar_llm(request)
     if not req.query.strip():
         raise HTTPException(400, "Informe um termo de busca.")
+    if len(req.query) > MAX_CHARS_BUSCA:
+        raise HTTPException(400, f"Termo de busca longo demais: até {MAX_CHARS_BUSCA} caracteres.")
     n = max(1, min(req.n, MAX_RESULTADOS_BUSCA))
     emb = (await gerar_embeddings([req.query]))[0]
     chunks = await buscar_chunks(emb, n=n)
@@ -1440,6 +1447,13 @@ class TurnoConversa(BaseModel):
     resposta: str = ""
 
 
+# Teto da pergunta em si: o histórico já é cortado turno a turno em
+# `_turnos_recentes` (MAX_CHARS_HISTORICO), mas a pergunta atual não passava
+# por nenhum corte — um texto gigante gastava parsing/embeddings por 1 unidade
+# de cota, sem que o limite por minuto/dia barrasse (é 1 requisição só).
+MAX_CHARS_PERGUNTA = 4000
+
+
 class PerguntaReq(BaseModel):
     pergunta: str
     provider: str = "nous"
@@ -1512,6 +1526,8 @@ async def _preparar_pergunta(
     await _limitar_llm(request)
     if not req.pergunta.strip():
         raise HTTPException(400, "Pergunta vazia.")
+    if len(req.pergunta) > MAX_CHARS_PERGUNTA:
+        raise HTTPException(400, f"Pergunta longa demais: até {MAX_CHARS_PERGUNTA} caracteres.")
     modelo = resolver_modelo(req.provider, req.modelo)
     turnos = _turnos_recentes(req.historico)
     emb = (await gerar_embeddings([_texto_para_busca(req.pergunta, turnos)]))[0]
@@ -1922,6 +1938,54 @@ async def aprender_avaliar(req: AprenderAvaliarReq, request: Request):
         # Plano B: o modelo não devolveu JSON — mostra o texto como comentário livre.
         avaliacao["comentario"] = bruto.strip()
     return {**avaliacao, "provider": req.provider, "modelo": modelo}
+
+
+# ── Laboratório de Prompts ───────────────────────────────────────────────────
+# O aluno escreve o próprio prompt (system + user) e vê a resposta crua do
+# modelo, sem persona fixa e sem RAG — é o único lugar do app onde o texto do
+# aluno vai direto ao modelo como instrução, não como dado. Por isso os tetos
+# de tamanho aqui são mais curtos que os das outras rotas (ex.: MAX_CHARS_
+# PERGUNTA), e a cota é a mesma de qualquer outra chamada de IA (_limitar_llm):
+# sem isso, seria uma porta lateral para uso irrestrito da chave do servidor.
+MAX_CHARS_LAB_SYSTEM = 2000
+MAX_CHARS_LAB_USER = 4000
+
+
+class LaboratorioReq(BaseModel):
+    system_prompt: str = ""
+    user_prompt: str
+    provider: str = "nous"
+    modelo: Optional[str] = None
+
+
+@app.post("/api/laboratorio")
+async def laboratorio(req: LaboratorioReq, request: Request):
+    """Executa o prompt exatamente como o aluno escreveu — sem persona, sem RAG.
+
+    Existe para o aluno PRATICAR o próprio ofício do curso (escrever prompts),
+    em vez de só consumir respostas já embaladas em uma persona fixa. A saída
+    não passa por `limpar_resposta`: esconder o `<think>` seria mentir sobre o
+    que o modelo realmente devolveu para quem está justamente estudando como
+    modelos respondem a prompts.
+    """
+    await _limitar_llm(request)
+    user_prompt = req.user_prompt.strip()
+    if not user_prompt:
+        raise HTTPException(400, "Escreva o prompt do usuário.")
+    if len(user_prompt) > MAX_CHARS_LAB_USER:
+        raise HTTPException(400, f"Prompt do usuário longo demais: até {MAX_CHARS_LAB_USER} caracteres.")
+    system_prompt = req.system_prompt.strip()
+    if len(system_prompt) > MAX_CHARS_LAB_SYSTEM:
+        raise HTTPException(400, f"Prompt de sistema longo demais: até {MAX_CHARS_LAB_SYSTEM} caracteres.")
+    modelo = resolver_modelo(req.provider, req.modelo)
+    resposta = await chamar_llm(
+        req.provider,
+        modelo,
+        system_prompt or "Você é um assistente útil.",
+        user_prompt,
+        timeout=tempo_restante_llm(request),
+    )
+    return {"resposta": resposta, "provider": req.provider, "modelo": modelo}
 
 
 # Tetos da auditoria. Rota pública que faz uma busca vetorial POR FRASE, em

@@ -96,8 +96,19 @@ function agendarEncerramento() {
   temporizadorOcioso = setTimeout(() => void encerrarWorker(), OCIOSIDADE_MS)
 }
 
-/** Encerra o worker e libera a memória (chamado no desmonte e após ociosidade). */
+/**
+ * Encerra o worker e libera a memória (chamado no desmonte e após ociosidade).
+ *
+ * O worker é compartilhado por TODOS os `AnexoImagem` montados (é global do
+ * módulo). Se um componente desmonta enquanto OUTRO está lendo uma imagem com
+ * esse mesmo worker, encerrar agora derrubaria a leitura alheia no meio —
+ * `worker.recognize()` levanta erro e o anexo vira "erro" sem causa aparente.
+ * Por isso, com leitura em andamento, esta chamada não faz nada: quando a
+ * última leitura terminar, `leiturasEmAndamento` chega a zero e o encerramento
+ * por ociosidade (`agendarEncerramento`) cuida da limpeza sozinho.
+ */
 export async function encerrarWorker(): Promise<void> {
+  if (leiturasEmAndamento > 0) return
   if (temporizadorOcioso) {
     clearTimeout(temporizadorOcioso)
     temporizadorOcioso = null

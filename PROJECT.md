@@ -29,7 +29,7 @@ para que o aluno não gaste nada por padrão ([api/_app/provedores.py](api/_app/
 
 ## 2. Funcionalidades
 
-A interface tem 13 abas em 5 grupos ([app/page.tsx](app/page.tsx)).
+A interface tem 14 abas em 5 grupos ([app/page.tsx](app/page.tsx)).
 
 ### Estudar
 
@@ -42,6 +42,7 @@ A interface tem 13 abas em 5 grupos ([app/page.tsx](app/page.tsx)).
 | **Resolver Questão** | Analisa questões de múltipla escolha com IA + RAG. Aceita texto colado ou print/foto, lido por OCR no navegador. Envia os termos técnicos da questão ao Glossário e permite comparar com o gabarito | `/api/resolver` |
 | **Glossário** | Extrai termos técnicos do material e explica de forma simples. Os termos ficam salvos no banco e podem ser consultados depois | `/api/glossario`, `/api/glossario/termos` |
 | **Comparar Modelos** | Faz a mesma pergunta a vários modelos e aponta onde divergem (números, nomes, conclusão). "Onde eles discordarem é onde vale estudar" | `/api/comparar` |
+| **Laboratório de Prompts** | O aluno escreve o próprio prompt (system + user) e vê a resposta crua do modelo — sem persona fixa, sem RAG. Único lugar do app onde o texto do aluno vai ao modelo como instrução, não como dado; a resposta não passa por `limpar_resposta` | `/api/laboratorio` |
 
 ### Produzir
 

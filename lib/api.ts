@@ -24,6 +24,7 @@ import type {
   TermoGlossario,
   AuditarResp,
   ResumoApostilaResp,
+  LaboratorioResp,
   PerfisComportamentaisResp,
   PerfilComportamentalResp,
   ElencoPersonasResp,
@@ -283,6 +284,13 @@ export const api = {
     postJson<AprenderExplicarResp>('/api/aprender/explicar', { tema, nivel, provider, modelo }),
   aprenderAvaliar: (tema: string, explicacao_aluno: string, contexto: Evidencia[], provider: string, modelo: string) =>
     postJson<AprenderAvaliarResp>('/api/aprender/avaliar', { tema, explicacao_aluno, contexto, provider, modelo }),
+  laboratorio: (systemPrompt: string, userPrompt: string, provider: string, modelo: string) =>
+    postJson<LaboratorioResp>('/api/laboratorio', {
+      system_prompt: systemPrompt,
+      user_prompt: userPrompt,
+      provider,
+      modelo,
+    }),
   resolver: (texto: string, provider: string, modelo: string) =>
     postJson<ResolverResp>('/api/resolver', { texto, provider, modelo }),
   glossario: (tema: string, provider: string, modelo: string) =>

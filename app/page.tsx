@@ -15,6 +15,7 @@ import {
   PartyPopper,
   LifeBuoy,
   Lightbulb,
+  FlaskConical,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { ProvidersResp } from '@/lib/types'
@@ -24,6 +25,7 @@ import TabPanel from '@/components/TabPanel'
 import PerguntarTab from '@/components/tabs/PerguntarTab'
 import ProfessorTab from '@/components/tabs/ProfessorTab'
 import AprenderTab from '@/components/tabs/AprenderTab'
+import LaboratorioTab from '@/components/tabs/LaboratorioTab'
 import BuscarTab from '@/components/tabs/BuscarTab'
 import ResolverTab from '@/components/tabs/ResolverTab'
 import CompararTab from '@/components/tabs/CompararTab'
@@ -39,6 +41,7 @@ const TABS: TabDef[] = [
   { id: 'perguntar', grupo: 'Aprender', label: 'Perguntar', labelShort: 'Perguntar', icon: MessageCircle },
   { id: 'professor', grupo: 'Aprender', label: 'Professor', labelShort: 'Professor', icon: GraduationCap },
   { id: 'aprender', grupo: 'Aprender', label: 'Aprender', labelShort: 'Aprender', icon: Lightbulb },
+  { id: 'laboratorio', grupo: 'Aprender', label: 'Laboratório de Prompts', labelShort: 'Laboratório', icon: FlaskConical },
   { id: 'buscar', grupo: 'Aprender', label: 'Buscar no material', labelShort: 'Buscar', icon: Search },
   { id: 'resolver', grupo: 'Aprender', label: 'Resolver questão', labelShort: 'Resolver', icon: Target },
   { id: 'glossario', grupo: 'Aprender', label: 'Glossário', labelShort: 'Glossário', icon: Library },
@@ -83,6 +86,9 @@ export default function Home() {
           </TabPanel>
           <TabPanel id="aprender" active={active === 'aprender'}>
             <AprenderTab providers={providers} />
+          </TabPanel>
+          <TabPanel id="laboratorio" active={active === 'laboratorio'}>
+            <LaboratorioTab providers={providers} />
           </TabPanel>
           <TabPanel id="apostila" active={active === 'apostila'}>
             <ApostilaTab providers={providers} />

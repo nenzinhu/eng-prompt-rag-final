@@ -5,6 +5,9 @@
   60 s da função (504 em texto puro) gastando só 1 unidade de cota.
 - B-12: o timeout do modelo era fixo e não descontava o tempo já gasto com
   embedding e busca, então a soma passava do limite da plataforma.
+- B-2 (análise 2026-09-20): `pergunta` (`/api/perguntar`) e `query`
+  (`/api/buscar`) não tinham teto de tamanho — um texto de várias centenas de
+  KB era aceito por inteiro, gastando parsing/embeddings por 1 unidade de cota.
 
     .venv/Scripts/python.exe -m pytest tests/test_tetos_e_tempo.py -v
 """
@@ -152,3 +155,66 @@ def test_rota_passa_o_orcamento_ao_modelo(monkeypatch):
     assert cliente.post("/api/perguntar", json={"pergunta": "algo"}).status_code == 200
     assert visto["timeout"] is not None
     assert 5.0 <= visto["timeout"] <= index.TIMEOUT_LLM
+
+
+# ── B-2 — teto de tamanho em /api/perguntar e /api/buscar ─────────────────
+
+
+def test_pergunta_longa_demais_e_recusada(monkeypatch):
+    async def _nada(_request):
+        return None
+
+    monkeypatch.setattr(index, "_limitar_llm", _nada)
+    gigante = "a" * (index.MAX_CHARS_PERGUNTA + 1)
+    r = cliente.post("/api/perguntar", json={"pergunta": gigante})
+    assert r.status_code == 400
+
+
+def test_pergunta_no_limite_nao_e_recusada_por_tamanho(monkeypatch):
+    async def _nada(_request):
+        return None
+
+    async def _embeddings(_textos):
+        return [[0.0] * 384]
+
+    async def _buscar(_emb, n=6):
+        return [CHUNK]
+
+    async def _llm(_prov, _mod, _system, _user, timeout=None):
+        return "resposta"
+
+    monkeypatch.setattr(index, "_limitar_llm", _nada)
+    monkeypatch.setattr(index, "gerar_embeddings", _embeddings)
+    monkeypatch.setattr(index, "buscar_chunks", _buscar)
+    monkeypatch.setattr(index, "chamar_llm", _llm)
+    no_limite = "a" * index.MAX_CHARS_PERGUNTA
+    r = cliente.post("/api/perguntar", json={"pergunta": no_limite})
+    assert r.status_code == 200
+
+
+def test_busca_longa_demais_e_recusada(monkeypatch):
+    async def _nada(_request):
+        return None
+
+    monkeypatch.setattr(index, "_limitar_llm", _nada)
+    gigante = "a" * (index.MAX_CHARS_BUSCA + 1)
+    r = cliente.post("/api/buscar", json={"query": gigante})
+    assert r.status_code == 400
+
+
+def test_busca_no_limite_nao_e_recusada_por_tamanho(monkeypatch):
+    async def _nada(_request):
+        return None
+
+    async def _embeddings(_textos):
+        return [[0.0] * 384]
+
+    async def _buscar(_emb, n=6):
+        return [CHUNK]
+
+    monkeypatch.setattr(index, "_limitar_llm", _nada)
+    monkeypatch.setattr(index, "gerar_embeddings", _embeddings)
+    monkeypatch.setattr(index, "buscar_chunks", _buscar)
+    no_limite = "a" * index.MAX_CHARS_BUSCA
+    r = cliente.post("/api/buscar", json={"query": no_limite})
+    assert r.status_code == 200

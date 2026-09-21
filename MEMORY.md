@@ -2,7 +2,34 @@
 
 Registro de trabalho para retomar sem reler a conversa. O estado geral do projeto está em
 [PROJECT.md](PROJECT.md); a análise mais recente em
-`.analise-4-agentes/2026-09-19_2230/RELATORIO.md` (a anterior, de 17/09, continua na pasta).
+`.analise-4-agentes/2026-09-20_2149/RELATORIO.md` (média 7,0/10, **aprovado**; as
+anteriores continuam na pasta).
+
+## Feito nesta sessão (20/09 noite, orquestrador + correções)
+
+Rodada de 4 agentes (`.analise-4-agentes/2026-09-20_2149/`) e, em seguida, os itens 1 e 2
+dos achados mais importantes, mais uma feature nova pedida (item "abas organizadas, igual
+Aprender"):
+
+- **Bug do OCR (worker global do tesseract).** `encerrarWorker()` (`lib/ocr.ts`) agora
+  respeita `leiturasEmAndamento`: antes, desmontar QUALQUER `AnexoImagem` (trocar de aba,
+  "Recomeçar") derrubava o worker global mesmo com outro anexo ainda lendo — a leitura em
+  andamento virava "erro" sem causa aparente. A aba Aprender tem 2 instâncias simultâneas,
+  era o caso mais fácil de reproduzir.
+- **Tetos de tamanho ausentes.** `MAX_CHARS_PERGUNTA` (4000) em `/api/perguntar` e
+  `MAX_CHARS_BUSCA` (2000) em `/api/buscar` — mesmo padrão já usado em
+  `/api/fale-o-que-pensa` e `/api/auditar`. Testes novos em `tests/test_tetos_e_tempo.py`.
+- **Feature nova: Laboratório de Prompts.** Aba nova (`components/tabs/LaboratorioTab.tsx`,
+  rota `/api/laboratorio`) onde o aluno escreve o próprio prompt (system + user) e vê a
+  resposta CRUA do modelo — sem persona fixa, sem RAG, sem `limpar_resposta` (o `<think>`
+  fica visível de propósito: é para o aluno aprender a diagnosticar o próprio prompt). É o
+  item 1 do relatório de ideias de 19/09 e 20/09 (lacuna: nenhuma aba deixava o aluno
+  praticar o próprio ofício do curso). Tetos próprios (`MAX_CHARS_LAB_SYSTEM`=2000,
+  `MAX_CHARS_LAB_USER`=4000), mesma cota de qualquer chamada de IA (`_limitar_llm`).
+  Testes em `tests/test_laboratorio.py`. Registrada no grupo "Aprender" da navegação,
+  logo depois de Aprender.
+- Conferido: 319 testes pytest, 82 testes JS, `ruff`, `tsc`, `eslint` e `next build`
+  passando. **Não conferido no navegador** — só testes automatizados.
 
 ## Feito nesta sessão (19/09 noite → 20/09)
 

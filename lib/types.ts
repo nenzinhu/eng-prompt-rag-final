@@ -382,3 +382,12 @@ export interface AprenderAvaliarResp {
   provider: string
   modelo: string
 }
+
+// ── Laboratório de Prompts ──────────────────────────────────────────────────
+
+export interface LaboratorioResp {
+  /** Resposta crua do modelo — sem `limpar_resposta`, nem o `<think>` some. */
+  resposta: string
+  provider: string
+  modelo: string
+}
