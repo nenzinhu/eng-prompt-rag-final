@@ -1,10 +1,11 @@
 'use client'
 
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import { Wand2, GraduationCap, ShieldCheck, Download, TriangleAlert, MessageCircle } from 'lucide-react'
 import { api, baixarBlob } from '@/lib/api'
 import { prefersReducedMotion } from '@/lib/reducedMotion'
+import { registrarEstudo } from '@/lib/progresso'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { AuditarResp, ProvidersResp, PerguntarResp, TurnoConversa } from '@/lib/types'
 import ProviderSelect from '../ProviderSelect'
@@ -22,11 +23,14 @@ export default function PerguntarTab({
   persona = 'padrao',
   titulo = 'Pergunta livre — resposta gerada pela IA com base nas apostilas',
   placeholder = 'Ex: Como funciona few-shot prompting? Me mostra um exemplo em Python.',
+  seed,
 }: {
   providers: ProvidersResp
   persona?: string
   titulo?: string
   placeholder?: string
+  /** Pergunta vinda de outra tela (ex.: Hoje): preenche a caixa e já envia. */
+  seed?: { texto: string; tick: number }
 }) {
   const { provider, modelo, trocarProvider, setModelo, pronto, nenhumConfigurado } = useProviderModel(providers)
   const [pergunta, setPergunta] = useState('')
@@ -87,13 +91,13 @@ export default function PerguntarTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rodada])
 
-  async function enviar() {
-    if (!pergunta.trim()) return
+  async function enviar(textoForcado?: string) {
+    const texto = textoForcado ?? pergunta
+    if (!texto.trim()) return
     const minha = encerrarRodada()
     const vale = () => rodadaAtualRef.current === minha
     const cancelar = new AbortController()
     cancelarRef.current = cancelar
-    const texto = pergunta
     setPerguntaFeita(texto)
     setLoading(true)
     setErro('')
@@ -131,6 +135,7 @@ export default function PerguntarTab({
       // mais do que ajudaria na pergunta seguinte.
       if (d.resposta && !d.interrompida) {
         setConversa((c) => [...c, { pergunta: texto, resposta: d.resposta }].slice(-MAX_TURNOS))
+        registrarEstudo(texto, d.contexto)
       }
       // Dispara a auditoria frase por frase automaticamente, se ligada. Resposta
       // interrompida não é auditada sozinha: gastaria cota verificando meio texto.
@@ -149,6 +154,19 @@ export default function PerguntarTab({
       }
     }
   }
+
+  // A pergunta aparece na caixa na hora; o envio espera o provedor ficar
+  // pronto, senão sairia com o modelo vazio.
+  const seedEnviada = useRef(0)
+  useEffect(() => {
+    if (seed?.texto.trim()) setPergunta(seed.texto)
+  }, [seed?.tick, seed?.texto])
+  useEffect(() => {
+    if (!seed?.texto.trim() || !pronto || seedEnviada.current === seed.tick) return
+    seedEnviada.current = seed.tick
+    void enviar(seed.texto)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed?.tick, pronto])
 
   function limpar() {
     encerrarRodada()
@@ -301,7 +319,7 @@ export default function PerguntarTab({
       <div className="mt-3 flex gap-2">
         <button
           ref={enviarBtnRef}
-          onClick={enviar}
+          onClick={() => enviar()}
           onMouseEnter={() => gsap.to(enviarBtnRef.current, { scale: 1.03, duration: 0.2, ease: 'power2.out' })}
           onMouseLeave={() => gsap.to(enviarBtnRef.current, { scale: 1, duration: 0.25, ease: 'power2.out' })}
           onMouseDown={() => gsap.to(enviarBtnRef.current, { scale: 0.96, duration: 0.1 })}

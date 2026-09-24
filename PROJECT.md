@@ -29,7 +29,7 @@ para que o aluno não gaste nada por padrão ([api/_app/provedores.py](api/_app/
 
 ## 2. Funcionalidades
 
-A interface tem 14 abas em 5 grupos ([app/page.tsx](app/page.tsx)).
+A interface abre na tela **Hoje** ("o que eu estudo agora?": continuar de onde parou, páginas estudadas por apostila, atalhos), e as outras 14 abas ficam em 4 grupos: **Estudar**, **Praticar**, **Material** e **Mais** ([app/page.tsx](app/page.tsx)). O progresso fica no navegador ([lib/progresso.ts](lib/progresso.ts)). As tabelas abaixo descrevem cada aba.
 
 ### Estudar
 

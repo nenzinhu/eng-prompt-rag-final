@@ -16,6 +16,7 @@ import {
   LifeBuoy,
   Lightbulb,
   FlaskConical,
+  House,
 } from 'lucide-react'
 import { api, EVENTO_SESSAO_EXPIRADA } from '@/lib/api'
 import { limparTokenAdmin } from '@/lib/admin'
@@ -24,6 +25,7 @@ import Header from '@/components/Header'
 import Login from '@/components/Login'
 import TabNav, { type TabDef } from '@/components/TabNav'
 import TabPanel from '@/components/TabPanel'
+import HojeTab from '@/components/tabs/HojeTab'
 import PerguntarTab from '@/components/tabs/PerguntarTab'
 import ProfessorTab from '@/components/tabs/ProfessorTab'
 import AprenderTab from '@/components/tabs/AprenderTab'
@@ -39,32 +41,41 @@ import PerfisComportamentaisTab from '@/components/tabs/PerfisComportamentaisTab
 import ElencoMainTab from '@/components/tabs/ElencoMainTab'
 import SuporteTab from '@/components/tabs/SuporteTab'
 
+// Organização do mapa "de 14 abas para 3": Hoje diz o que estudar; Estudar,
+// Praticar e Material são o caminho do estudo; o resto fica em Mais.
 const TABS: TabDef[] = [
-  { id: 'perguntar', grupo: 'Aprender', label: 'Perguntar', labelShort: 'Perguntar', icon: MessageCircle },
-  { id: 'professor', grupo: 'Aprender', label: 'Professor', labelShort: 'Professor', icon: GraduationCap },
-  { id: 'aprender', grupo: 'Aprender', label: 'Aprender', labelShort: 'Aprender', icon: Lightbulb },
-  { id: 'laboratorio', grupo: 'Aprender', label: 'Laboratório de Prompts', labelShort: 'Laboratório', icon: FlaskConical },
-  { id: 'buscar', grupo: 'Aprender', label: 'Buscar no material', labelShort: 'Buscar', icon: Search },
-  { id: 'resolver', grupo: 'Aprender', label: 'Resolver questão', labelShort: 'Resolver', icon: Target },
-  { id: 'glossario', grupo: 'Aprender', label: 'Glossário', labelShort: 'Glossário', icon: Library },
-  { id: 'comparar', grupo: 'Aprender', label: 'Comparar modelos', labelShort: 'Comparar', icon: Scale },
-  { id: 'apostila', grupo: 'Criar', label: 'Criar apostila', labelShort: 'Apostila', icon: BookOpen },
-  { id: 'comprimir', grupo: 'Arquivos', label: 'Comprimir', labelShort: 'Comprimir', icon: FileArchive },
-  { id: 'pdfs', grupo: 'Arquivos', label: 'Meus PDFs', labelShort: 'PDFs', icon: FileStack },
-  { id: 'perfis-comportamentais', grupo: 'Mensagens', label: 'Perfis de resposta', labelShort: 'Respostas', icon: Shield },
-  { id: 'elenco', grupo: 'Mensagens', label: 'Elenco', labelShort: 'Elenco', icon: PartyPopper },
-  { id: 'suporte', grupo: 'Suporte', label: 'Suporte', labelShort: 'Suporte', icon: LifeBuoy },
+  { id: 'hoje', grupo: 'Hoje', label: 'O que estudar agora', labelShort: 'Hoje', icon: House },
+  { id: 'perguntar', grupo: 'Estudar', label: 'Conversa', labelShort: 'Conversa', icon: MessageCircle },
+  { id: 'professor', grupo: 'Estudar', label: 'Professor', labelShort: 'Professor', icon: GraduationCap },
+  { id: 'resolver', grupo: 'Praticar', label: 'Resolver questão', labelShort: 'Resolver', icon: Target },
+  { id: 'aprender', grupo: 'Praticar', label: 'Explicar com minhas palavras', labelShort: 'Feynman', icon: Lightbulb },
+  { id: 'pdfs', grupo: 'Material', label: 'Minhas apostilas', labelShort: 'Apostilas', icon: FileStack },
+  { id: 'buscar', grupo: 'Material', label: 'Buscar no material', labelShort: 'Buscar', icon: Search },
+  { id: 'glossario', grupo: 'Material', label: 'Glossário', labelShort: 'Glossário', icon: Library },
+  { id: 'apostila', grupo: 'Mais', label: 'Criar apostila', labelShort: 'Criar', icon: BookOpen },
+  { id: 'comparar', grupo: 'Mais', label: 'Comparar modelos', labelShort: 'Comparar', icon: Scale },
+  { id: 'laboratorio', grupo: 'Mais', label: 'Laboratório de prompts', labelShort: 'Laboratório', icon: FlaskConical },
+  { id: 'comprimir', grupo: 'Mais', label: 'Comprimir arquivos', labelShort: 'Comprimir', icon: FileArchive },
+  { id: 'perfis-comportamentais', grupo: 'Mais', label: 'Perfis de resposta', labelShort: 'Respostas', icon: Shield },
+  { id: 'elenco', grupo: 'Mais', label: 'Elenco', labelShort: 'Elenco', icon: PartyPopper },
+  { id: 'suporte', grupo: 'Mais', label: 'Suporte de TI', labelShort: 'Suporte', icon: LifeBuoy },
 ]
 
 export default function Home() {
-  const [active, setActive] = useState('perguntar')
+  const [active, setActive] = useState('hoje')
   const [providers, setProviders] = useState<ProvidersResp>({})
   const [statusTick, setStatusTick] = useState(0)
   const [glossarioSeed, setGlossarioSeed] = useState({ texto: '', tick: 0 })
+  const [perguntaSeed, setPerguntaSeed] = useState({ texto: '', tick: 0 })
   // 'verificando' até o servidor dizer se o app é privado; 'login' mostra a
   // tela de entrada no lugar do app inteiro.
   const [acesso, setAcesso] = useState<'verificando' | 'liberado' | 'login'>('verificando')
   const [privado, setPrivado] = useState(false)
+
+  function perguntarNaConversa(texto: string) {
+    setPerguntaSeed((s) => ({ texto, tick: s.tick + 1 }))
+    setActive('perguntar')
+  }
 
   function enviarParaGlossario(texto: string) {
     setGlossarioSeed((s) => ({ texto, tick: s.tick + 1 }))
@@ -112,8 +123,11 @@ export default function Home() {
       <TabNav tabs={TABS} active={active} onChange={setActive} />
       <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-4">
         <div className="relative">
+          <TabPanel id="hoje" active={active === 'hoje'}>
+            <HojeTab ativo={active === 'hoje'} onPerguntar={perguntarNaConversa} onIr={setActive} />
+          </TabPanel>
           <TabPanel id="perguntar" active={active === 'perguntar'}>
-            <PerguntarTab providers={providers} />
+            <PerguntarTab providers={providers} seed={perguntaSeed} />
           </TabPanel>
           <TabPanel id="professor" active={active === 'professor'}>
             <ProfessorTab providers={providers} />
