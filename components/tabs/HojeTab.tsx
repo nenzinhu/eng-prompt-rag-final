@@ -155,7 +155,7 @@ export default function HojeTab({
             <Target className="h-5 w-5 shrink-0 text-violet" aria-hidden="true" />
             <span className="text-[0.9rem] text-text">Resolver uma questão</span>
           </button>
-          <button type="button" onClick={() => onIr('aprender')} className={atalho}>
+          <button type="button" onClick={() => onIr('feynman')} className={atalho}>
             <Lightbulb className="h-5 w-5 shrink-0 text-violet" aria-hidden="true" />
             <span className="text-[0.9rem] text-text">Explicar com minhas palavras</span>
           </button>

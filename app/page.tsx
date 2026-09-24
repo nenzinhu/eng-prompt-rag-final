@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import {
   MessageCircle,
-  GraduationCap,
+  ScrollText,
   BookOpen,
   Scale,
   Search,
@@ -14,7 +14,6 @@ import {
   Shield,
   PartyPopper,
   LifeBuoy,
-  Lightbulb,
   FlaskConical,
   House,
 } from 'lucide-react'
@@ -26,9 +25,8 @@ import Login from '@/components/Login'
 import TabNav, { type TabDef } from '@/components/TabNav'
 import TabPanel from '@/components/TabPanel'
 import HojeTab from '@/components/tabs/HojeTab'
-import PerguntarTab from '@/components/tabs/PerguntarTab'
-import ProfessorTab from '@/components/tabs/ProfessorTab'
-import AprenderTab from '@/components/tabs/AprenderTab'
+import EstudarTab from '@/components/tabs/EstudarTab'
+import ResumoApostilaTab from '@/components/tabs/ResumoApostilaTab'
 import LaboratorioTab from '@/components/tabs/LaboratorioTab'
 import BuscarTab from '@/components/tabs/BuscarTab'
 import ResolverTab from '@/components/tabs/ResolverTab'
@@ -45,13 +43,12 @@ import SuporteTab from '@/components/tabs/SuporteTab'
 // Praticar e Material são o caminho do estudo; o resto fica em Mais.
 const TABS: TabDef[] = [
   { id: 'hoje', grupo: 'Hoje', label: 'O que estudar agora', labelShort: 'Hoje', icon: House },
-  { id: 'perguntar', grupo: 'Estudar', label: 'Conversa', labelShort: 'Conversa', icon: MessageCircle },
-  { id: 'professor', grupo: 'Estudar', label: 'Professor', labelShort: 'Professor', icon: GraduationCap },
+  { id: 'perguntar', grupo: 'Estudar', label: 'Conversa com a apostila', labelShort: 'Conversa', icon: MessageCircle },
   { id: 'resolver', grupo: 'Praticar', label: 'Resolver questão', labelShort: 'Resolver', icon: Target },
-  { id: 'aprender', grupo: 'Praticar', label: 'Explicar com minhas palavras', labelShort: 'Feynman', icon: Lightbulb },
   { id: 'pdfs', grupo: 'Material', label: 'Minhas apostilas', labelShort: 'Apostilas', icon: FileStack },
   { id: 'buscar', grupo: 'Material', label: 'Buscar no material', labelShort: 'Buscar', icon: Search },
   { id: 'glossario', grupo: 'Material', label: 'Glossário', labelShort: 'Glossário', icon: Library },
+  { id: 'resumir', grupo: 'Material', label: 'Resumir apostila', labelShort: 'Resumir', icon: ScrollText },
   { id: 'apostila', grupo: 'Mais', label: 'Criar apostila', labelShort: 'Criar', icon: BookOpen },
   { id: 'comparar', grupo: 'Mais', label: 'Comparar modelos', labelShort: 'Comparar', icon: Scale },
   { id: 'laboratorio', grupo: 'Mais', label: 'Laboratório de prompts', labelShort: 'Laboratório', icon: FlaskConical },
@@ -67,6 +64,7 @@ export default function Home() {
   const [statusTick, setStatusTick] = useState(0)
   const [glossarioSeed, setGlossarioSeed] = useState({ texto: '', tick: 0 })
   const [perguntaSeed, setPerguntaSeed] = useState({ texto: '', tick: 0 })
+  const [modoSeed, setModoSeed] = useState<{ modo: 'feynman'; tick: number }>({ modo: 'feynman', tick: 0 })
   // 'verificando' até o servidor dizer se o app é privado; 'login' mostra a
   // tela de entrada no lugar do app inteiro.
   const [acesso, setAcesso] = useState<'verificando' | 'liberado' | 'login'>('verificando')
@@ -75,6 +73,16 @@ export default function Home() {
   function perguntarNaConversa(texto: string) {
     setPerguntaSeed((s) => ({ texto, tick: s.tick + 1 }))
     setActive('perguntar')
+  }
+
+  /** Destinos da tela Hoje: abas, ou o modo Feynman dentro de Estudar. */
+  function irPara(destino: string) {
+    if (destino === 'feynman') {
+      setModoSeed((s) => ({ modo: 'feynman', tick: s.tick + 1 }))
+      setActive('perguntar')
+      return
+    }
+    setActive(destino)
   }
 
   function enviarParaGlossario(texto: string) {
@@ -124,16 +132,10 @@ export default function Home() {
       <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-4">
         <div className="relative">
           <TabPanel id="hoje" active={active === 'hoje'}>
-            <HojeTab ativo={active === 'hoje'} onPerguntar={perguntarNaConversa} onIr={setActive} />
+            <HojeTab ativo={active === 'hoje'} onPerguntar={perguntarNaConversa} onIr={irPara} />
           </TabPanel>
           <TabPanel id="perguntar" active={active === 'perguntar'}>
-            <PerguntarTab providers={providers} seed={perguntaSeed} />
-          </TabPanel>
-          <TabPanel id="professor" active={active === 'professor'}>
-            <ProfessorTab providers={providers} />
-          </TabPanel>
-          <TabPanel id="aprender" active={active === 'aprender'}>
-            <AprenderTab providers={providers} />
+            <EstudarTab providers={providers} seed={perguntaSeed} modoSeed={modoSeed} />
           </TabPanel>
           <TabPanel id="laboratorio" active={active === 'laboratorio'}>
             <LaboratorioTab providers={providers} />
@@ -149,6 +151,9 @@ export default function Home() {
           </TabPanel>
           <TabPanel id="resolver" active={active === 'resolver'}>
             <ResolverTab providers={providers} onEnviarGlossario={enviarParaGlossario} />
+          </TabPanel>
+          <TabPanel id="resumir" active={active === 'resumir'}>
+            <ResumoApostilaTab providers={providers} />
           </TabPanel>
           <TabPanel id="glossario" active={active === 'glossario'}>
             <GlossarioTab providers={providers} seed={glossarioSeed} />
