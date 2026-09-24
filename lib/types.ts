@@ -79,6 +79,23 @@ export interface PerguntarResp {
   interrompida?: string
 }
 
+/** Questão do "Me testa". `fonte`/`pagina` só vêm quando a página existe nos trechos usados. */
+export interface Questao {
+  pergunta: string
+  alternativas: string[]
+  correta: number
+  explicacao: string
+  fonte: string | null
+  pagina: number | null
+}
+
+export interface QuestoesResp {
+  questoes: Questao[]
+  tema: string
+  provider: string
+  modelo: string
+}
+
 export interface ResumoApostilaResp {
   resumo: string
   provider: string

@@ -16,6 +16,9 @@ import {
   LifeBuoy,
   FlaskConical,
   House,
+  NotebookPen,
+  Layers,
+  ClipboardCheck,
 } from 'lucide-react'
 import { api, EVENTO_SESSAO_EXPIRADA } from '@/lib/api'
 import { limparTokenAdmin } from '@/lib/admin'
@@ -27,6 +30,9 @@ import TabPanel from '@/components/TabPanel'
 import HojeTab from '@/components/tabs/HojeTab'
 import EstudarTab from '@/components/tabs/EstudarTab'
 import ResumoApostilaTab from '@/components/tabs/ResumoApostilaTab'
+import MeTestaTab from '@/components/tabs/MeTestaTab'
+import CadernoTab from '@/components/tabs/CadernoTab'
+import FlashcardsTab from '@/components/tabs/FlashcardsTab'
 import LaboratorioTab from '@/components/tabs/LaboratorioTab'
 import BuscarTab from '@/components/tabs/BuscarTab'
 import ResolverTab from '@/components/tabs/ResolverTab'
@@ -44,7 +50,10 @@ import SuporteTab from '@/components/tabs/SuporteTab'
 const TABS: TabDef[] = [
   { id: 'hoje', grupo: 'Hoje', label: 'O que estudar agora', labelShort: 'Hoje', icon: House },
   { id: 'perguntar', grupo: 'Estudar', label: 'Conversa com a apostila', labelShort: 'Conversa', icon: MessageCircle },
-  { id: 'resolver', grupo: 'Praticar', label: 'Resolver questão', labelShort: 'Resolver', icon: Target },
+  { id: 'testar', grupo: 'Praticar', label: 'Me testa', labelShort: 'Me testa', icon: Target },
+  { id: 'erros', grupo: 'Praticar', label: 'Caderno de erros', labelShort: 'Erros', icon: NotebookPen },
+  { id: 'flashcards', grupo: 'Praticar', label: 'Flashcards', labelShort: 'Flashcards', icon: Layers },
+  { id: 'resolver', grupo: 'Praticar', label: 'Resolver questão', labelShort: 'Resolver', icon: ClipboardCheck },
   { id: 'pdfs', grupo: 'Material', label: 'Minhas apostilas', labelShort: 'Apostilas', icon: FileStack },
   { id: 'buscar', grupo: 'Material', label: 'Buscar no material', labelShort: 'Buscar', icon: Search },
   { id: 'glossario', grupo: 'Material', label: 'Glossário', labelShort: 'Glossário', icon: Library },
@@ -64,6 +73,7 @@ export default function Home() {
   const [statusTick, setStatusTick] = useState(0)
   const [glossarioSeed, setGlossarioSeed] = useState({ texto: '', tick: 0 })
   const [perguntaSeed, setPerguntaSeed] = useState({ texto: '', tick: 0 })
+  const [testeSeed, setTesteSeed] = useState({ tema: '', tick: 0 })
   const [modoSeed, setModoSeed] = useState<{ modo: 'feynman'; tick: number }>({ modo: 'feynman', tick: 0 })
   // 'verificando' até o servidor dizer se o app é privado; 'login' mostra a
   // tela de entrada no lugar do app inteiro.
@@ -73,6 +83,11 @@ export default function Home() {
   function perguntarNaConversa(texto: string) {
     setPerguntaSeed((s) => ({ texto, tick: s.tick + 1 }))
     setActive('perguntar')
+  }
+
+  function testarSobre(tema: string) {
+    setTesteSeed((s) => ({ tema, tick: s.tick + 1 }))
+    setActive('testar')
   }
 
   /** Destinos da tela Hoje: abas, ou o modo Feynman dentro de Estudar. */
@@ -132,7 +147,7 @@ export default function Home() {
       <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-4">
         <div className="relative">
           <TabPanel id="hoje" active={active === 'hoje'}>
-            <HojeTab ativo={active === 'hoje'} onPerguntar={perguntarNaConversa} onIr={irPara} />
+            <HojeTab ativo={active === 'hoje'} onPerguntar={perguntarNaConversa} onTestar={testarSobre} onIr={irPara} />
           </TabPanel>
           <TabPanel id="perguntar" active={active === 'perguntar'}>
             <EstudarTab providers={providers} seed={perguntaSeed} modoSeed={modoSeed} />
@@ -148,6 +163,15 @@ export default function Home() {
           </TabPanel>
           <TabPanel id="comparar" active={active === 'comparar'}>
             <CompararTab providers={providers} />
+          </TabPanel>
+          <TabPanel id="testar" active={active === 'testar'}>
+            <MeTestaTab providers={providers} seed={testeSeed} onIr={irPara} />
+          </TabPanel>
+          <TabPanel id="erros" active={active === 'erros'}>
+            <CadernoTab ativo={active === 'erros'} onIr={irPara} />
+          </TabPanel>
+          <TabPanel id="flashcards" active={active === 'flashcards'}>
+            <FlashcardsTab ativo={active === 'flashcards'} onIr={irPara} />
           </TabPanel>
           <TabPanel id="resolver" active={active === 'resolver'}>
             <ResolverTab providers={providers} onEnviarGlossario={enviarParaGlossario} />

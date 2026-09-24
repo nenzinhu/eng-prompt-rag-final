@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowRight, Lightbulb, Search, Target } from 'lucide-react'
+import { ArrowRight, ClipboardCheck, Layers, Lightbulb, NotebookPen, Search } from 'lucide-react'
+import { lerCaderno } from '@/lib/caderno'
 import { lerProgresso, nomeDaApostila, resumoPorApostila, PROGRESSO_VAZIO, type Progresso } from '@/lib/progresso'
 
 const EXEMPLOS = [
@@ -17,18 +18,24 @@ const EXEMPLOS = [
 export default function HojeTab({
   ativo,
   onPerguntar,
+  onTestar,
   onIr,
 }: {
   /** Relê o progresso sempre que a tela volta a ficar visível. */
   ativo: boolean
   onPerguntar: (texto: string) => void
+  /** Abre o Me testa já com este assunto. */
+  onTestar: (tema: string) => void
   onIr: (aba: string) => void
 }) {
   const [progresso, setProgresso] = useState<Progresso>(PROGRESSO_VAZIO)
   const [pergunta, setPergunta] = useState('')
+  const [erros, setErros] = useState(0)
 
   useEffect(() => {
-    if (ativo) setProgresso(lerProgresso())
+    if (!ativo) return
+    setProgresso(lerProgresso())
+    setErros(lerCaderno().length)
   }, [ativo])
 
   const ultimo = progresso.estudos[0]
@@ -73,11 +80,7 @@ export default function HojeTab({
             </button>
             <button
               type="button"
-              onClick={() =>
-                onPerguntar(
-                  `Faça 3 perguntas de múltipla escolha, com gabarito no fim, para eu testar o que aprendi sobre: ${ultimo.pergunta}`,
-                )
-              }
+              onClick={() => onTestar(ultimo.pergunta)}
               className="min-h-11 rounded-lg border border-white/15 px-4 text-sm text-text transition-colors hover:bg-white/[0.05]"
             >
               Me testa
@@ -105,6 +108,18 @@ export default function HojeTab({
             ))}
           </div>
         </section>
+      )}
+
+      {erros > 0 && (
+        <button type="button" onClick={() => onIr('erros')} className={`${atalho} min-h-[72px]`}>
+          <NotebookPen className="h-5 w-5 shrink-0 text-violet" aria-hidden="true" />
+          <span className="flex flex-col">
+            <span className="text-[0.95rem] font-semibold text-text">
+              Revisar {erros === 1 ? '1 ponto que você errou' : `${erros} pontos que você errou`}
+            </span>
+            <span className="text-[0.8rem] text-muted">caderno de erros</span>
+          </span>
+        </button>
       )}
 
       <form onSubmit={enviar} className="glass flex items-center gap-2 rounded-xl p-1.5 pl-4">
@@ -150,9 +165,13 @@ export default function HojeTab({
         <h2 id="praticar-titulo" className="mb-2 text-[0.95rem] font-semibold text-text">
           Outros caminhos
         </h2>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <button type="button" onClick={() => onIr('flashcards')} className={atalho}>
+            <Layers className="h-5 w-5 shrink-0 text-violet" aria-hidden="true" />
+            <span className="text-[0.9rem] text-text">Flashcards do glossário</span>
+          </button>
           <button type="button" onClick={() => onIr('resolver')} className={atalho}>
-            <Target className="h-5 w-5 shrink-0 text-violet" aria-hidden="true" />
+            <ClipboardCheck className="h-5 w-5 shrink-0 text-violet" aria-hidden="true" />
             <span className="text-[0.9rem] text-text">Resolver uma questão</span>
           </button>
           <button type="button" onClick={() => onIr('feynman')} className={atalho}>

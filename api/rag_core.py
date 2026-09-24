@@ -773,3 +773,59 @@ def extrair_resolucao(bruto: str) -> dict:
             if isinstance(v, str) and v.strip() and str(k).strip().upper() != letra
         }
     return resultado
+
+
+MAX_QUESTOES = 5
+
+
+def extrair_questoes(bruto: str, trechos: list[dict]) -> list[dict]:
+    """Lê as questões do "Me testa": `{"questoes": [{pergunta, alternativas, correta, explicacao, fonte, pagina}]}`.
+
+    Cada questão precisa de 3 a 5 alternativas não vazias e de `correta` válida
+    (índice a partir de 0 ou letra A-E). A citação só fica se o par fonte+página
+    estiver entre os trechos recuperados: uma página inventada pelo modelo vira
+    citação nenhuma, nunca uma citação errada.
+    """
+    bloco = extrair_bloco_json(bruto)
+    if not bloco:
+        return []
+    try:
+        parsed = json.loads(bloco)
+    except json.JSONDecodeError:
+        return []
+    lista = parsed.get("questoes") if isinstance(parsed, dict) else None
+    if not isinstance(lista, list):
+        return []
+    citaveis = {(t.get("source"), t.get("page")) for t in trechos}
+    questoes: list[dict] = []
+    for item in lista:
+        if not isinstance(item, dict):
+            continue
+        pergunta = str(item.get("pergunta") or "").strip()
+        alternativas = item.get("alternativas")
+        if not pergunta or not isinstance(alternativas, list):
+            continue
+        alternativas = [str(a).strip() for a in alternativas]
+        if not 3 <= len(alternativas) <= 5 or not all(alternativas):
+            continue
+        correta = item.get("correta")
+        if isinstance(correta, str) and len(correta.strip()) == 1 and correta.strip().isalpha():
+            correta = ord(correta.strip().upper()) - ord("A")
+        if isinstance(correta, bool) or not isinstance(correta, int) or not 0 <= correta < len(alternativas):
+            continue
+        fonte, pagina = item.get("fonte"), item.get("pagina")
+        if isinstance(pagina, str) and pagina.strip().isdigit():
+            pagina = int(pagina.strip())
+        if (fonte, pagina) not in citaveis:
+            fonte, pagina = None, None
+        questoes.append({
+            "pergunta": pergunta,
+            "alternativas": alternativas,
+            "correta": correta,
+            "explicacao": str(item.get("explicacao") or "").strip(),
+            "fonte": fonte,
+            "pagina": pagina,
+        })
+        if len(questoes) == MAX_QUESTOES:
+            break
+    return questoes

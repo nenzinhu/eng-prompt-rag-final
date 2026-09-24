@@ -29,7 +29,7 @@ para que o aluno não gaste nada por padrão ([api/_app/provedores.py](api/_app/
 
 ## 2. Funcionalidades
 
-A interface abre na tela **Hoje** ("o que eu estudo agora?": continuar de onde parou, páginas estudadas por apostila, atalhos), e o resto fica em 4 grupos: **Estudar** (uma conversa só, com os modos Direto, Simples, Socrático e Feynman, mais as outras personalidades do antigo Professor em "Mais jeitos"), **Praticar**, **Material** (inclui Resumir apostila) e **Mais** ([app/page.tsx](app/page.tsx)). O progresso fica no navegador ([lib/progresso.ts](lib/progresso.ts)). As tabelas abaixo descrevem cada aba.
+A interface abre na tela **Hoje** ("o que eu estudo agora?": continuar de onde parou, páginas estudadas por apostila, atalhos), e o resto fica em 4 grupos: **Estudar** (uma conversa só, com os modos Direto, Simples, Socrático e Feynman, mais as outras personalidades do antigo Professor em "Mais jeitos"), **Praticar** (Me testa com questões tiradas da apostila e página citada, Caderno de erros, Flashcards do glossário e Resolver questão; rota `/api/praticar/questoes`), **Material** (inclui Resumir apostila) e **Mais** ([app/page.tsx](app/page.tsx)). O progresso e o caderno de erros ficam no navegador ([lib/progresso.ts](lib/progresso.ts), [lib/caderno.ts](lib/caderno.ts)). As tabelas abaixo descrevem cada aba.
 
 ### Estudar
 

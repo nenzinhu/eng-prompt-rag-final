@@ -61,6 +61,7 @@ from _app.prompts import (  # noqa: E402
     SYSTEM_PROMPT_RESOLVER,
     SYSTEM_PROMPT_SIMPLIFICAR,
     SYSTEM_PROMPT_VERIFICAR,
+    SYSTEM_PROMPT_QUESTOES,
     SYSTEM_PROMPT_GLOSSARIO,
     SYSTEM_PROMPT_COMPARAR,
     SYSTEM_PROMPT_APOSTILA,
@@ -90,6 +91,7 @@ from _app.documentos import (  # noqa: E402
     nome_para_storage,
 )
 from rag_core import (  # noqa: E402
+    MAX_QUESTOES,
     SOBREPOSICAO_CHUNK,
     calcular_concordancia,
     chunk_texto,
@@ -100,6 +102,7 @@ from rag_core import (  # noqa: E402
     extrair_resolucao,
     extrair_resposta_direta,
     extrair_termos_glossario,
+    extrair_questoes,
     formatar_alternativas,
     formatar_exemplos_para_banco,
     frase_tem_apoio_textual,
@@ -2059,6 +2062,56 @@ async def verificar(req: VerificarReq, request: Request):
     if not perguntas:
         perguntas = [l.strip("-•* ").strip() for l in bruto.splitlines() if l.strip()][:2]
     return {"perguntas": perguntas[:2], "provider": req.provider, "modelo": modelo}
+
+
+# ── Praticar: "Me testa" ─────────────────────────────────────────────────────
+
+MAX_CHARS_TEMA_QUESTOES = 500
+
+
+class QuestoesReq(BaseModel):
+    tema: str = ""  # vazio: pontos variados do material
+    quantidade: int = 3
+    provider: str = "nous"
+    modelo: Optional[str] = None
+
+
+@app.post("/api/praticar/questoes")
+async def praticar_questoes(req: QuestoesReq, request: Request):
+    """Questões de múltipla escolha tiradas do material, cada uma com a página de onde veio."""
+    await _limitar_llm(request)
+    tema = req.tema.strip()[:MAX_CHARS_TEMA_QUESTOES]
+    quantidade = max(1, min(req.quantidade, MAX_QUESTOES))
+    consulta = tema or "conceitos principais do curso"
+    emb = (await gerar_embeddings([consulta]))[0]
+    chunks = await buscar_chunks(emb, n=6, texto=consulta)
+    if not chunks:
+        raise HTTPException(400, "Banco vetorial vazio — ingira os PDFs primeiro.")
+    contexto, _ = montar_contexto(chunks)
+    modelo = resolver_modelo(req.provider, req.modelo)
+    user_prompt = (
+        f"CONTEXTO:\n{contexto}\n\nTEMA: {tema or 'pontos variados do contexto'}\n"
+        f"QUANTIDADE: {quantidade} questões"
+    )
+
+    # Mesma lógica do glossário: uma segunda tentativa só se ainda couber no tempo.
+    questoes: list[dict] = []
+    for _ in range(2):
+        restante = tempo_restante_llm(request)
+        if restante < 8:
+            break
+        bruto = limpar_resposta(
+            await chamar_llm(req.provider, modelo, SYSTEM_PROMPT_QUESTOES, user_prompt, timeout=restante)
+        )
+        questoes = extrair_questoes(bruto, chunks)[:quantidade]
+        if questoes:
+            break
+    if not questoes:
+        raise HTTPException(
+            502,
+            "O modelo não devolveu as questões no formato esperado. Tente de novo ou escolha outro modelo.",
+        )
+    return {"questoes": questoes, "tema": tema, "provider": req.provider, "modelo": modelo}
 
 
 # ── Aprender: explicação em níveis + técnica Feynman ────────────────────────

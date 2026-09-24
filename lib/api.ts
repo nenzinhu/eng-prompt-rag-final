@@ -10,6 +10,7 @@ import type {
   TurnoConversa,
   PerguntarResp,
   ResolverResp,
+  QuestoesResp,
   PdfsResp,
   IngerirResp,
   PreviaIngestaoResp,
@@ -306,6 +307,8 @@ export const api = {
       provider,
       modelo,
     }),
+  praticarQuestoes: (tema: string, quantidade: number, provider: string, modelo: string) =>
+    postJson<QuestoesResp>('/api/praticar/questoes', { tema, quantidade, provider, modelo }),
   resolver: (texto: string, provider: string, modelo: string) =>
     postJson<ResolverResp>('/api/resolver', { texto, provider, modelo }),
   glossario: (tema: string, provider: string, modelo: string) =>
