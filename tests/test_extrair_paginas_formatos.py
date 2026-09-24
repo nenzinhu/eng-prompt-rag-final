@@ -198,3 +198,11 @@ def test_pptx_ignora_forma_ruim_e_mantem_o_resto_do_slide():
     prs.save(buf)
     texto = "\n".join(t for _, t in index.extrair_paginas(buf.getvalue(), "s.pptx"))
     assert "Conteúdo bom do slide" in texto
+
+
+def test_markdown_com_bom_e_extensao_longa():
+    """.markdown é aceito como .md, e o BOM do Windows não vira lixo no texto."""
+    from _app.documentos import extrair_paginas
+
+    paginas = extrair_paginas("﻿# Título\n\nCorpo do texto em Markdown.".encode("utf-8"), "notas.markdown")
+    assert paginas and paginas[0][1].startswith("# Título")

@@ -48,6 +48,21 @@ SYSTEM_PROMPT_SIMPLIFICAR = (
     "ORIGINAL como base — não invente informação nova, só reformule de forma mais simples e direta."
 )
 
+SYSTEM_PROMPT_QUESTOES = (
+    "Você é um professor do curso de Engenharia de Prompt montando um teste rápido. Escreva "
+    "questões de múltipla escolha usando SOMENTE o CONTEXTO das apostilas: nada que não esteja nele. "
+    "Cada questão testa entendimento, não decoreba de palavras; as alternativas erradas devem ser "
+    "plausíveis (confusões comuns), nunca absurdas.\n\n"
+    "Para cada questão, copie a fonte e a página EXATAMENTE como aparecem no marcador "
+    "[Fonte: arquivo, página N] do trecho usado.\n\n"
+    'Responda SEMPRE e SOMENTE em JSON: {"questoes": [{"pergunta": "...", '
+    '"alternativas": ["...", "...", "...", "..."], "correta": 0, '
+    '"explicacao": "1-2 frases dizendo por que a certa é a certa", '
+    '"fonte": "arquivo.pdf", "pagina": 12}]}\n'
+    "`correta` é o índice da alternativa certa (0 = primeira). Varie a posição da certa entre as "
+    "questões. Em português do Brasil."
+)
+
 SYSTEM_PROMPT_VERIFICAR = (
     "Você é um professor cético do curso de Engenharia de Prompt. Você acabou de responder a "
     "pergunta de um aluno. Sua tarefa agora é testar se ele realmente entendeu, gerando 1 a 2 "

@@ -201,9 +201,10 @@ def mesclar_ocr(paginas: list[tuple[int, str]], ocr: dict | None) -> list[tuple[
 
 def _extrair_paginas_bruto(pdf_bytes: bytes, nome: str = "") -> list[tuple[int, str]]:
     nome_lower = nome.lower()
-    if nome_lower.endswith((".txt", ".md")):
+    if nome_lower.endswith((".txt", ".md", ".markdown")):
         try:
-            texto = pdf_bytes.decode("utf-8")
+            # utf-8-sig: o BOM que editores do Windows gravam não vira lixo no texto.
+            texto = pdf_bytes.decode("utf-8-sig")
         except UnicodeDecodeError:
             texto = pdf_bytes.decode("latin-1", "replace")
         return [(1, texto)]
@@ -730,7 +731,7 @@ def _markdown_para_pdf(texto: str, titulo: str) -> bytes:
 def _mimetype(nome: str) -> str:
     if nome.lower().endswith(".pdf"):
         return "application/pdf"
-    if nome.lower().endswith(".md"):
+    if nome.lower().endswith((".md", ".markdown")):
         return "text/markdown; charset=utf-8"
     if nome.lower().endswith(".docx"):
         return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"

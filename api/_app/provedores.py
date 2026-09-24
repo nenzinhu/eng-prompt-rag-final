@@ -150,6 +150,63 @@ PROVIDERS = {
             "tencent/hy3-free",
         ],
     },
+    # ── Provedores adicionados em 24/09/2026 ────────────────────────────────
+    # AINDA SEM CHAMADA REAL: a rede do ambiente em que foram adicionados
+    # bloqueava estes hosts. Modelos escolhidos pelo plano gratuito documentado
+    # de cada provedor; rode `python scripts/verificar_modelos.py` com as chaves
+    # no .env para medir e tirar da lista o que não responder.
+    "together": {
+        "label": "Together AI",
+        "base_url": "https://api.together.xyz/v1",
+        "env_key": "TOGETHER_API_KEY",
+        # Endpoints "-Free": gratuitos, com limite baixo de requisições por minuto.
+        "models": [
+            "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
+        ],
+        "notas": {
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free": "raciocina antes, mais lento",
+        },
+        "aviso": "Modelos gratuitos do Together: poucas requisições por minuto. Ainda não testados neste app.",
+    },
+    "cohere": {
+        "label": "Cohere",
+        # Endpoint de compatibilidade com a API da OpenAI.
+        "base_url": "https://api.cohere.ai/compatibility/v1",
+        "env_key": "COHERE_API_KEY",
+        "models": [
+            "command-r7b-12-2024",
+            "command-a-03-2025",
+        ],
+        "notas": {
+            "command-r7b-12-2024": "rápido, respostas mais simples",
+            "command-a-03-2025": "mais completo",
+        },
+        "aviso": "Chave de teste do Cohere: gratuita, com cerca de 1.000 chamadas por mês. Ainda não testado neste app.",
+    },
+    "huggingface": {
+        "label": "Hugging Face",
+        "base_url": "https://router.huggingface.co/v1",
+        "env_key": "HUGGINGFACE_API_KEY",
+        "models": [
+            "meta-llama/Llama-3.1-8B-Instruct",
+            "Qwen/Qwen2.5-72B-Instruct",
+        ],
+        "aviso": "Hugging Face: créditos gratuitos pequenos por mês. O token precisa da permissão "
+        "“Make calls to Inference Providers”. Ainda não testado neste app.",
+    },
+    "modelscope": {
+        "label": "ModelScope",
+        "base_url": "https://api-inference.modelscope.cn/v1",
+        "env_key": "MODELSCOPE_API_KEY",
+        # Qwen3 exige desligar o raciocínio fora do streaming; os modelos abaixo não.
+        "models": [
+            "Qwen/Qwen2.5-72B-Instruct",
+            "deepseek-ai/DeepSeek-V3",
+        ],
+        "aviso": "ModelScope: cota diária gratuita; a conta precisa estar vinculada à Alibaba Cloud. "
+        "Ainda não testado neste app.",
+    },
     "openrouter": {
         "label": "OpenRouter",
         "base_url": "https://openrouter.ai/api/v1",

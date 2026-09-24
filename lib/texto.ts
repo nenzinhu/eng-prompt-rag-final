@@ -152,3 +152,9 @@ export function nomeParaStorage(nome: string): string {
   }
   return base || `documento-${marcaDoNome(nome)}`
 }
+
+/**
+ * Tipos MIME de Markdown/texto. Só a extensão no `accept` não basta no celular:
+ * o seletor do Android e do iOS deixa o .md cinza quando não reconhece o tipo.
+ */
+export const MIME_TEXTO = ['text/markdown', 'text/x-markdown', 'text/plain']

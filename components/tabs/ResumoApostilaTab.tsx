@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import { FileText, TriangleAlert, Download, Library } from 'lucide-react'
 import { api, baixarBlob } from '@/lib/api'
+import { MIME_TEXTO } from '@/lib/texto'
 import { prefersReducedMotion } from '@/lib/reducedMotion'
 import { useProviderModel } from '@/lib/useProviderModel'
 import type { ProvidersResp, ResumoApostilaResp } from '@/lib/types'
@@ -54,7 +55,7 @@ export default function ResumoApostilaTab({ providers }: { providers: ProvidersR
   return (
     <div>
       <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
-        Anexe um PDF, .docx ou .pptx da apostila — o Professor Sabe Tudo lê tudo e escreve um resumo
+        Anexe um PDF, .docx, .pptx, .md ou .txt da apostila — o Professor Sabe Tudo lê tudo e escreve um resumo
         autoexplicativo do assunto, do tamanho que o conteúdo pedir
       </p>
       <ProviderSelect
@@ -68,7 +69,7 @@ export default function ResumoApostilaTab({ providers }: { providers: ProvidersR
       <label className="glass flex min-h-[80px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/15 p-4 text-center text-muted transition-colors hover:border-violet/40">
         <input
           type="file"
-          accept=".pdf,.txt,.md,.docx,.pptx"
+          accept={['.pdf', '.txt', '.md', '.markdown', '.docx', '.pptx', ...MIME_TEXTO].join(',')}
           className="hidden"
           disabled={loading}
           onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}

@@ -5,7 +5,7 @@ import { FileText, Upload, Search, X, TriangleAlert } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { lerTokenAdmin, salvarTokenAdmin, limparTokenAdmin } from '@/lib/admin'
 import { ingerirArquivo, resumirIngestao, type ResultadoIngestao } from '@/lib/ingestao'
-import { nomeParaStorage } from '@/lib/texto'
+import { MIME_TEXTO, nomeParaStorage } from '@/lib/texto'
 import type { PreviaIngestaoResp, UploadResp } from '@/lib/types'
 import AdminToken from '../AdminToken'
 
@@ -398,7 +398,7 @@ export default function PdfsTab({ onStatusChange }: { onStatusChange?: () => voi
               ref={fileInputRef}
               type="file"
               multiple
-              accept={extensoes.join(',')}
+              accept={[...extensoes, ...MIME_TEXTO].join(',')}
               className="hidden"
               onChange={(e) => addFiles(Array.from(e.target.files ?? []))}
             />

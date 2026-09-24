@@ -11,6 +11,7 @@
  * O arquivo nunca sai do computador do aluno; só o texto vai para o campo.
  */
 import { reconhecerImagem } from './ocr'
+import { MIME_TEXTO } from './texto'
 
 /** Página com menos que isso de texto é tratada como imagem digitalizada. */
 const MIN_CARACTERES_PAGINA = 20
@@ -35,7 +36,7 @@ export function tipoDoArquivo(file: File): TipoAnexo {
 }
 
 /** `accept` do input de arquivo: imagens + documentos suportados. */
-export const ACEITOS = ['image/*', '.pdf', '.docx', ...EXTENSOES_TEXTO.map((e) => `.${e}`)].join(',')
+export const ACEITOS = ['image/*', '.pdf', '.docx', ...EXTENSOES_TEXTO.map((e) => `.${e}`), ...MIME_TEXTO].join(',')
 
 async function textoDePdf(file: File, onProgresso?: (fracao: number) => void): Promise<string> {
   // Build legacy + worker servido de /public (copiado no postinstall): o

@@ -2,13 +2,20 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
-import { TriangleAlert } from 'lucide-react'
+import { LogOut, TriangleAlert } from 'lucide-react'
 import { api } from '@/lib/api'
 import { prefersReducedMotion } from '@/lib/reducedMotion'
 import InstalarApp from './InstalarApp'
 import Conta from './Conta'
 
-export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }) {
+export default function Header({
+  refreshSignal = 0,
+  onSair,
+}: {
+  refreshSignal?: number
+  /** Só no app privado: encerra a sessão e volta à tela de entrada. */
+  onSair?: () => void
+}) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'offline'>('loading')
   const [total, setTotal] = useState(0)
   const [inseguro, setInseguro] = useState(false)
@@ -177,6 +184,17 @@ export default function Header({ refreshSignal = 0 }: { refreshSignal?: number }
           <span ref={dotRef} className={`h-1.5 w-1.5 rounded-full bg-current ${status === 'loading' ? 'animate-pulse' : ''}`} />
           {label}
         </div>
+        {onSair && (
+          <button
+            type="button"
+            onClick={onSair}
+            title="Sair"
+            aria-label="Sair"
+            className="flex h-8 w-8 items-center justify-center rounded-md border border-white/[0.12] text-muted transition-colors hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet"
+          >
+            <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        )}
       </div>
     </header>
   )
