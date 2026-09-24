@@ -22,6 +22,7 @@ from api.rag_core import (  # noqa: E402
     classificar_fidelidade,
     conclusao_fallback,
     dividir_fatos,
+    alternativas_sem_letra,
     extrair_alternativas,
     varias_listas_de_alternativas,
     extrair_bloco_json,
@@ -188,6 +189,54 @@ def test_extrair_alternativas_duas_questoes_usa_a_ultima_e_avisa():
 def test_extrair_alternativas_marcador_fora_de_ordem_fica_no_conteudo():
     questao, alternativas = extrair_alternativas("Pergunta?\nA) bactéria\nE. coli\nB) vírus")
     assert alternativas == {"A": "bactéria\nE. coli", "B": "vírus"}
+
+
+# Questão colada sem A), B), C)…: o espaçamento separa as alternativas.
+
+
+def test_sem_letra_uma_alternativa_por_linha():
+    texto = "Qual é a capital do Brasil?\nSão Paulo\nBrasília\nRio de Janeiro\nSalvador"
+    questao, alternativas = extrair_alternativas(texto)
+    assert questao == "Qual é a capital do Brasil?"
+    assert alternativas == {"A": "São Paulo", "B": "Brasília", "C": "Rio de Janeiro", "D": "Salvador"}
+    assert alternativas_sem_letra(texto)
+
+
+def test_sem_letra_blocos_separados_por_linha_em_branco():
+    texto = (
+        "Leia o texto.\n\nAssinale a correta:\n\n"
+        "RAG busca trechos\nantes de responder\n\nRAG dispensa contexto\n\nRAG treina o modelo"
+    )
+    questao, alternativas = extrair_alternativas(texto)
+    assert questao == "Leia o texto.\n\nAssinale a correta:"
+    assert alternativas == {
+        "A": "RAG busca trechos\nantes de responder",
+        "B": "RAG dispensa contexto",
+        "C": "RAG treina o modelo",
+    }
+
+
+def test_sem_letra_enunciado_de_varias_linhas_sem_interrogacao():
+    questao, alternativas = extrair_alternativas("Enunciado longo\n\num\n\ndois\n\ntres")
+    assert questao == "Enunciado longo"
+    assert list(alternativas) == ["A", "B", "C"]
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "Só uma pergunta, sem opções.",
+        "Pergunta?\nsó uma opção",
+        "Pergunta?\n" + "\n".join(f"opção {i}" for i in range(6)),  # 6 opções: não é questão
+    ],
+)
+def test_sem_letra_fora_do_formato_nao_inventa_alternativas(texto):
+    assert extrair_alternativas(texto)[1] == {}
+    assert not alternativas_sem_letra(texto)
+
+
+def test_com_letras_nao_e_sem_letra():
+    assert not alternativas_sem_letra("Pergunta?" + _ALTERNATIVAS_PADRAO)
 
 
 def test_formatar_alternativas():

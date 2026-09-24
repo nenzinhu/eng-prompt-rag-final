@@ -115,6 +115,7 @@ from rag_core import (  # noqa: E402
     separar_secoes_fale,
     separar_exemplos,
     varias_listas_de_alternativas,
+    alternativas_sem_letra,
 )
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
@@ -2485,7 +2486,11 @@ async def resolver(req: ResolverReq, request: Request):
     questao, alternativas = extrair_alternativas(texto)
 
     if not alternativas:
-        raise HTTPException(400, "Não foi possível identificar alternativas (A, B, C...) no texto.")
+        raise HTTPException(
+            400,
+            "Não foi possível identificar alternativas. Use letras (A, B, C...) ou deixe o "
+            "enunciado e cada alternativa em linhas separadas.",
+        )
 
     emb = (await gerar_embeddings([questao]))[0]
     chunks = await buscar_chunks(emb, n=8, texto=questao)
@@ -2524,6 +2529,8 @@ async def resolver(req: ResolverReq, request: Request):
         # Mais de uma lista A, B, C… no texto: foi usada a última. A interface
         # mostra o enunciado reconhecido para o aluno conferir.
         "varias_listas": varias_listas_de_alternativas(texto),
+        # Sem letras no texto: as alternativas vieram do espaçamento (A, B, C… na ordem).
+        "sem_letras": alternativas_sem_letra(texto),
         "alternativas": alternativas,
         "resposta": letra,
         "conteudo_resposta": alternativas.get(letra, "") if letra else "",

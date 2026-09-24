@@ -24,7 +24,7 @@ interface ResultadoLote {
 function EnunciadoUsado({ resultado }: { resultado: ResolverResp }) {
   return (
     <details
-      open={resultado.varias_listas}
+      open={resultado.varias_listas || resultado.sem_letras}
       className="mb-4 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 text-[0.8rem]"
     >
       <summary className="cursor-pointer font-mono text-[0.68rem] uppercase tracking-wider text-muted">
@@ -37,7 +37,22 @@ function EnunciadoUsado({ resultado }: { resultado: ResolverResp }) {
           da questão certa.
         </div>
       )}
+      {resultado.sem_letras && (
+        <div className="mt-2 flex items-start gap-1.5 text-amber-300">
+          <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          A questão veio sem letras: cada alternativa separada por linha virou A, B, C… na ordem. Confira abaixo.
+        </div>
+      )}
       <p className="mt-2 whitespace-pre-wrap leading-relaxed text-text">{resultado.questao}</p>
+      {resultado.sem_letras && (
+        <ol className="mt-2 space-y-1 text-text">
+          {Object.entries(resultado.alternativas).map(([letra, conteudo]) => (
+            <li key={letra} className="whitespace-pre-wrap">
+              <strong className="font-mono">{letra})</strong> {conteudo}
+            </li>
+          ))}
+        </ol>
+      )}
     </details>
   )
 }
@@ -183,7 +198,7 @@ export default function ResolverTab({
           <div>
             <p className="mb-2.5 text-[0.8rem] leading-relaxed text-muted">
               <strong className="font-medium text-text">Cole a questão completa</strong> com todas as alternativas (A,
-              B, C, D…), ou envie um print. A IA busca no material e escolhe a alternativa correta, explicando o
+              B, C, D…) — sem letras, basta uma alternativa por linha —, ou envie um print. A IA busca no material e escolhe a alternativa correta, explicando o
               raciocínio.
             </p>
             <textarea

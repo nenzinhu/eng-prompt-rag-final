@@ -156,13 +156,14 @@ def extrair_alternativas(texto: str) -> tuple[str, dict[str, str]]:
 
     Usa a ÚLTIMA lista de alternativas em ordem: tudo antes dela é enunciado,
     inclusive afirmativas "a) b)" e linhas como "E. coli". Devolve
-    `(enunciado, {"A": "texto", ...})`. O dicionário vem vazio quando nenhuma
-    lista é reconhecida — quem chama decide o que fazer.
+    `(enunciado, {"A": "texto", ...})`. Sem nenhuma lista com letras, cai em
+    `_alternativas_sem_letra` (opções separadas pelo espaçamento). O dicionário
+    vem vazio quando nada disso é reconhecido — quem chama decide o que fazer.
     """
     texto = texto or ""
     listas = _listas_de_alternativas(texto)
     if not listas:
-        return texto.strip(), {}
+        return _alternativas_sem_letra(texto)
     lista = listas[-1]
     # O "(" que sobra de "(A)" depois da formatação do navegador é descartado.
     enunciado = texto[: lista[0].start()].strip().rstrip("(").strip()
@@ -171,6 +172,47 @@ def extrair_alternativas(texto: str) -> tuple[str, dict[str, str]]:
         fim = seguinte.start() if seguinte else len(texto)
         alternativas[atual.group(1).upper()] = texto[atual.end() : fim].strip().rstrip("(").strip()
     return enunciado, alternativas
+
+
+MIN_ALTERNATIVAS_SEM_LETRA = 2
+MAX_ALTERNATIVAS_SEM_LETRA = 5
+
+
+def _separar_enunciado(partes: list[str]) -> tuple[str, list[str]] | None:
+    """Enunciado + opções quando as partes formam uma questão sem letras.
+
+    O enunciado termina na ÚLTIMA parte que acaba em "?" ou ":" ("Assinale a
+    correta:"); sem nenhuma, é só a primeira parte. O que vem depois são as
+    opções, e só vale com 2 a 5 delas — fora disso não parece questão.
+    """
+    fim = max((i for i, p in enumerate(partes) if p.rstrip().endswith(("?", ":"))), default=0)
+    enunciado, opcoes = partes[: fim + 1], partes[fim + 1 :]
+    if not MIN_ALTERNATIVAS_SEM_LETRA <= len(opcoes) <= MAX_ALTERNATIVAS_SEM_LETRA:
+        return None
+    return "\n\n".join(enunciado), opcoes
+
+
+def _alternativas_sem_letra(texto: str) -> tuple[str, dict[str, str]]:
+    """Plano B: questão colada sem A), B), C)… — o espaçamento separa as opções.
+
+    Primeiro tenta blocos separados por linha em branco (cada bloco pode ter
+    várias linhas); se não formar questão, uma opção por linha. As letras são
+    atribuídas na ordem em que as opções aparecem.
+    """
+    blocos = [b.strip() for b in re.split(r"\n[ \t]*\n", texto) if b.strip()]
+    linhas = [ln.strip() for ln in texto.splitlines() if ln.strip()]
+    for partes in (blocos, linhas):
+        separado = _separar_enunciado(partes)
+        if separado:
+            enunciado, opcoes = separado
+            return enunciado, {chr(ord("A") + i): o for i, o in enumerate(opcoes)}
+    return texto.strip(), {}
+
+
+def alternativas_sem_letra(texto: str) -> bool:
+    """Verdadeiro quando as alternativas vieram do espaçamento, sem letras no
+    texto original — a interface avisa como as letras foram atribuídas."""
+    return not _listas_de_alternativas(texto or "") and bool(extrair_alternativas(texto)[1])
 
 
 def varias_listas_de_alternativas(texto: str) -> bool:
