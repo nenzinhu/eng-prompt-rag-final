@@ -221,7 +221,7 @@ LIMITE_LEITURA_POR_MINUTO = 40
 LIMITE_LEITURA_POR_DIA_IP = int(os.environ.get("LIMITE_LEITURA_POR_DIA_IP", "600"))
 
 
-EXTENSOES_DOCUMENTO = (".pdf", ".txt", ".md", ".docx", ".pptx")
+EXTENSOES_DOCUMENTO = (".pdf", ".txt", ".md", ".markdown", ".docx", ".pptx")
 
 app = FastAPI(title="Engenharia de Prompt — RAG API (cloud)")
 app.add_middleware(
