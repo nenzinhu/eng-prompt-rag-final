@@ -208,3 +208,15 @@ def test_pdfs_sem_admin_configurado_falha_fechada(monkeypatch):
     monkeypatch.setattr(index, "ADMIN_TOKEN", "")
     r = cliente.get("/api/pdfs")
     assert r.status_code == 503
+
+
+def test_provedores_novos_aparecem_e_validam_modelo():
+    """Together, Cohere, Hugging Face e ModelScope entram no seletor com a lista curada."""
+    lista = index.listar_providers()
+    for nome in ("together", "cohere", "huggingface", "modelscope"):
+        cfg = index.PROVIDERS[nome]
+        assert cfg["base_url"].startswith("https://")
+        assert nome in lista and lista[nome]["models"] == cfg["models"]
+        assert index.resolver_modelo(nome, None) == cfg["models"][0]
+    with pytest.raises(index.HTTPException):
+        index.resolver_modelo("together", "modelo-pago-qualquer")
