@@ -34,6 +34,8 @@ import type {
   FaleOQuePensaResp,
   SuportePersonasResp,
   SuporteAtendimentoResp,
+  ProfessorPersonasResp,
+  ProfessorResp,
 } from './types'
 import { semRaciocinio } from './texto'
 
@@ -370,6 +372,14 @@ export const api = {
       problema,
       persona_id: personaId,
       historico,
+      provider,
+      modelo,
+    }),
+  professorPersonas: () => pedir<ProfessorPersonasResp>('/api/professor-personas'),
+  professorResponder: (pergunta: string, personaId: string, provider: string, modelo: string) =>
+    postJson<ProfessorResp>('/api/professor-responder', {
+      pergunta,
+      persona_id: personaId,
       provider,
       modelo,
     }),

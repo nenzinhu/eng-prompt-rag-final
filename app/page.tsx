@@ -19,6 +19,7 @@ import {
   NotebookPen,
   Layers,
   ClipboardCheck,
+  GraduationCap,
 } from 'lucide-react'
 import { api, EVENTO_SESSAO_EXPIRADA } from '@/lib/api'
 import { limparTokenAdmin } from '@/lib/admin'
@@ -44,12 +45,14 @@ import ApostilaTab from '@/components/tabs/ApostilaTab'
 import PerfisComportamentaisTab from '@/components/tabs/PerfisComportamentaisTab'
 import ElencoMainTab from '@/components/tabs/ElencoMainTab'
 import SuporteTab from '@/components/tabs/SuporteTab'
+import ProfessoresTab from '@/components/tabs/ProfessoresTab'
 
 // Organização do mapa "de 14 abas para 3": Hoje diz o que estudar; Estudar,
 // Praticar e Material são o caminho do estudo; o resto fica em Mais.
 const TABS: TabDef[] = [
   { id: 'hoje', grupo: 'Hoje', label: 'O que estudar agora', labelShort: 'Hoje', icon: House },
   { id: 'perguntar', grupo: 'Estudar', label: 'Conversa com a apostila', labelShort: 'Conversa', icon: MessageCircle },
+  { id: 'professores', grupo: 'Estudar', label: 'Professores', labelShort: 'Professores', icon: GraduationCap },
   { id: 'testar', grupo: 'Praticar', label: 'Me testa', labelShort: 'Me testa', icon: Target },
   { id: 'erros', grupo: 'Praticar', label: 'Caderno de erros', labelShort: 'Erros', icon: NotebookPen },
   { id: 'flashcards', grupo: 'Praticar', label: 'Flashcards', labelShort: 'Flashcards', icon: Layers },
@@ -151,6 +154,9 @@ export default function Home() {
           </TabPanel>
           <TabPanel id="perguntar" active={active === 'perguntar'}>
             <EstudarTab providers={providers} seed={perguntaSeed} modoSeed={modoSeed} />
+          </TabPanel>
+          <TabPanel id="professores" active={active === 'professores'}>
+            <ProfessoresTab providers={providers} />
           </TabPanel>
           <TabPanel id="laboratorio" active={active === 'laboratorio'}>
             <LaboratorioTab providers={providers} />

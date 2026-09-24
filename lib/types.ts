@@ -133,6 +133,8 @@ export interface ResolverResp {
   questao: string
   /** O texto tinha mais de uma lista A, B, C…; foi usada a última. */
   varias_listas?: boolean
+  /** Sem A), B)… no texto: as alternativas vieram do espaçamento, com letras na ordem. */
+  sem_letras?: boolean
   alternativas: Record<string, string>
   resposta: string | null
   conteudo_resposta: string
@@ -405,6 +407,27 @@ export interface AprenderAvaliarResp {
 export interface LaboratorioResp {
   /** Resposta crua do modelo — sem `limpar_resposta`, nem o `<think>` some. */
   resposta: string
+  provider: string
+  modelo: string
+}
+
+// ── Professores (resposta direta, sem consultar o material) ─────────────────
+
+export interface ProfessorPersona {
+  persona_id: string
+  nome: string
+  display_name: string
+  description: string
+  exemplo: string
+}
+
+export interface ProfessorPersonasResp {
+  personas: ProfessorPersona[]
+}
+
+export interface ProfessorResp {
+  resposta: string
+  persona_id: string
   provider: string
   modelo: string
 }

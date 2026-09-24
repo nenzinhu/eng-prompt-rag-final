@@ -75,6 +75,8 @@ from _app.prompts import (  # noqa: E402
     FALE_PERSONAS,
     SYSTEM_PROMPT_SUPORTE,
     SUPORTE_PERSONAS,
+    SYSTEM_PROMPT_PROFESSOR,
+    PROFESSOR_PERSONAS,
     PERSONA_PROMPTS,
     NIVEIS_APRENDER,
     SYSTEM_PROMPT_AVALIAR_FEYNMAN,
@@ -426,8 +428,8 @@ async def exigir_admin(x_admin_token: str = Header(default="")):
     Escopo real, para não prometer o que não entrega: as rotas de geração que
     gastam chave de IA (/api/perguntar, /api/glossario, /api/resolver,
     /api/comparar, /api/gerar-apostila, /api/resumir-apostila, /api/simplificar,
-    /api/verificar, /api/auditar, /api/perfil-comportamental e
-    /api/elenco-conversa) são PÚBLICAS de propósito — o aluno usa o app sem
+    /api/verificar, /api/auditar, /api/perfil-comportamental,
+    /api/elenco-conversa e /api/professor-responder) são PÚBLICAS de propósito — o aluno usa o app sem
     login. O que contém abuso ali é `_limitar_llm` (limite por IP) somado à
     validação de modelo em `resolver_modelo`, que impede escolher um modelo fora
     da lista curada.
@@ -1656,6 +1658,60 @@ async def suporte_atendimento(req: SuporteReq, request: Request):
         "resposta": limpar_resposta(resposta),
         "persona_id": req.persona_id,
         "usou_historico": bool(persona.get("usa_historico") and anteriores),
+        "provider": req.provider,
+        "modelo": modelo,
+    }
+
+
+@app.get("/api/professor-personas")
+def listar_professor_personas():
+    return {
+        "personas": [
+            {
+                "persona_id": pid,
+                "nome": p["nome"],
+                "display_name": p["display_name"],
+                "description": p["description"],
+                "exemplo": p["exemplo"],
+            }
+            for pid, p in PROFESSOR_PERSONAS.items()
+        ]
+    }
+
+
+# Uma pergunta pontual, não um texto para analisar: o teto mantém a resposta
+# cirúrgica e o prompt dentro do limite dos provedores gratuitos.
+MAX_PERGUNTA_PROFESSOR = 2000
+
+
+class ProfessorReq(BaseModel):
+    pergunta: str
+    persona_id: str = "reto"
+    provider: str = "nous"
+    modelo: Optional[str] = None
+
+
+@app.post("/api/professor-responder")
+async def professor_responder(req: ProfessorReq, request: Request):
+    pergunta = req.pergunta.strip()
+    if not pergunta:
+        raise HTTPException(400, "Escreva a pergunta para o professor.")
+    if len(pergunta) > MAX_PERGUNTA_PROFESSOR:
+        raise HTTPException(400, f"Pergunta longa demais: até {MAX_PERGUNTA_PROFESSOR} caracteres.")
+    persona = PROFESSOR_PERSONAS.get(req.persona_id)
+    if not persona:
+        raise HTTPException(400, f"Professor desconhecido: '{req.persona_id}'.")
+    await _limitar_llm(request)
+    modelo = resolver_modelo(req.provider, req.modelo)
+    system_prompt = (
+        f"{SYSTEM_PROMPT_PROFESSOR}\n\n"
+        f"PERSONALIDADE ATIVA — {persona['nome']}, {persona['display_name']}:\n{persona['prompt_modifier']}"
+    )
+    # Sem busca no índice de propósito: a aba responde só com o conhecimento do modelo.
+    resposta = await chamar_llm(req.provider, modelo, system_prompt, f"PERGUNTA DO ALUNO:\n{pergunta}")
+    return {
+        "resposta": limpar_resposta(resposta),
+        "persona_id": req.persona_id,
         "provider": req.provider,
         "modelo": modelo,
     }

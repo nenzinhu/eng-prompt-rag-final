@@ -64,6 +64,12 @@ A interface abre na tela **Hoje** ("o que eu estudo agora?": continuar de onde p
 | **Perfis Comportamentais** | O usuário cola uma mensagem recebida e escolhe o tom da resposta que protege seus limites: colérico, estoico, reservado, empático-firme ou protetor | `/api/perfis-comportamentais`, `/api/perfil-comportamental` |
 | **Elenco — Fale o que pensa** | Aba com dois modos. **Fale o que pensa**: o usuário escreve o rascunho do jeito que sair; a IA diz o que ele quis dizer, analisa como o texto pode soar e devolve a mensagem melhorada na personalidade escolhida: automático, direto, diplomata (indireto), para o(a) ex, papo de amigo, lição de moral, agir correto, desabafo sincero ou cobrança educada. **Puxar assunto**: o Elenco original, que gera uma mensagem com gancho de assunto (debatedor, curiosa, nostálgico, resenha, paquera etc.) | `/api/fale-personas`, `/api/fale-o-que-pensa`, `/api/elenco-personas`, `/api/elenco-conversa` |
 
+### Professores
+
+| Aba | O que faz | Rotas |
+|---|---|---|
+| **Professores** (grupo Estudar) | O aluno escolhe um de 10 professores e recebe uma resposta cirúrgica à pergunta, **sem consultar a apostila** (só o conhecimento do modelo). Todos seguem as mesmas regras: a primeira frase já é a resposta, sem introdução nem oferta de "quer saber mais?". Muda o que acompanha a resposta: Reto (só a resposta), Clara (porquê em 3 passos), Caso (um exemplo), Ana Logia (analogia), Euclides (definição rigorosa), Banca (gabarito + pegadinha), Memo (macete), Porém (exceção), Cronos (contexto), Zero (linguagem de iniciante) | `/api/professor-personas`, `/api/professor-responder` |
+
 ### Suporte
 
 | Aba | O que faz | Rotas |
