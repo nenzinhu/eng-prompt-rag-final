@@ -17,9 +17,11 @@ import {
   Lightbulb,
   FlaskConical,
 } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, EVENTO_SESSAO_EXPIRADA } from '@/lib/api'
+import { limparTokenAdmin } from '@/lib/admin'
 import type { ProvidersResp } from '@/lib/types'
 import Header from '@/components/Header'
+import Login from '@/components/Login'
 import TabNav, { type TabDef } from '@/components/TabNav'
 import TabPanel from '@/components/TabPanel'
 import PerguntarTab from '@/components/tabs/PerguntarTab'
@@ -59,6 +61,10 @@ export default function Home() {
   const [providers, setProviders] = useState<ProvidersResp>({})
   const [statusTick, setStatusTick] = useState(0)
   const [glossarioSeed, setGlossarioSeed] = useState({ texto: '', tick: 0 })
+  // 'verificando' até o servidor dizer se o app é privado; 'login' mostra a
+  // tela de entrada no lugar do app inteiro.
+  const [acesso, setAcesso] = useState<'verificando' | 'liberado' | 'login'>('verificando')
+  const [privado, setPrivado] = useState(false)
 
   function enviarParaGlossario(texto: string) {
     setGlossarioSeed((s) => ({ texto, tick: s.tick + 1 }))
@@ -67,14 +73,42 @@ export default function Home() {
 
   useEffect(() => {
     api
+      .sessao()
+      .then((s) => {
+        setPrivado(s.privado)
+        setAcesso(s.logado ? 'liberado' : 'login')
+      })
+      // Backend antigo (sem /api/sessao) ou fora do ar: segue como antes, e
+      // cada aba mostra o próprio erro.
+      .catch(() => setAcesso('liberado'))
+    const expirou = () => setAcesso('login')
+    window.addEventListener(EVENTO_SESSAO_EXPIRADA, expirou)
+    return () => window.removeEventListener(EVENTO_SESSAO_EXPIRADA, expirou)
+  }, [])
+
+  useEffect(() => {
+    if (acesso !== 'liberado') return
+    api
       .providers()
       .then(setProviders)
       .catch(() => setProviders({}))
-  }, [])
+  }, [acesso])
+
+  async function sair() {
+    limparTokenAdmin()
+    try {
+      await api.sair()
+    } finally {
+      setAcesso('login')
+    }
+  }
+
+  if (acesso === 'verificando') return null
+  if (acesso === 'login') return <Login onEntrou={() => setAcesso('liberado')} />
 
   return (
     <>
-      <Header refreshSignal={statusTick} />
+      <Header refreshSignal={statusTick} onSair={privado ? sair : undefined} />
       <TabNav tabs={TABS} active={active} onChange={setActive} />
       <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-4">
         <div className="relative">

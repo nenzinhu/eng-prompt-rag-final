@@ -126,6 +126,15 @@ SESSION_SECRET = os.environ.get("SESSION_SECRET", "")
 # estado em memória.
 SESSAO_ADMIN_SEGUNDOS = 8 * 60 * 60  # 8 horas
 
+# App privado: com APP_PRIVADO=1, TODA rota /api exige login (as mesmas
+# credenciais do admin). A sessão vai num cookie HttpOnly, então cada chamada
+# do navegador já sai autenticada sem o front repassar token; scripts seguem
+# usando o header X-Admin-Token. Dura mais que a do admin porque é o acesso do
+# dia a dia (inclusive o app instalado no celular).
+APP_PRIVADO = os.environ.get("APP_PRIVADO", "").strip().lower() in ("1", "true", "sim")
+COOKIE_SESSAO = "sessao_app"
+SESSAO_APP_SEGUNDOS = 30 * 24 * 60 * 60  # 30 dias
+
 # Origens liberadas no CORS. Sem configuração, só o desenvolvimento local.
 ALLOWED_ORIGINS = [
     o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",") if o.strip()
@@ -368,7 +377,7 @@ def _segredo_sessao() -> str:
     return SESSION_SECRET or ADMIN_TOKEN
 
 
-def emitir_sessao(usuario: str) -> tuple[str, int]:
+def emitir_sessao(usuario: str, duracao: Optional[int] = None) -> tuple[str, int]:
     """Emite um token de sessão assinado (HMAC) com expiração.
 
     Formato: base64url(payload).base64url(assinatura), onde payload é
@@ -376,7 +385,7 @@ def emitir_sessao(usuario: str) -> tuple[str, int]:
     auto-contida: qualquer instância valida pela assinatura + expiração.
     """
     segredo = _segredo_sessao()
-    exp = int(time.time()) + SESSAO_ADMIN_SEGUNDOS
+    exp = int(time.time()) + (SESSAO_ADMIN_SEGUNDOS if duracao is None else duracao)
     payload = base64.urlsafe_b64encode(json.dumps({"u": usuario, "exp": exp}).encode()).rstrip(b"=").decode()
     assinatura = base64.urlsafe_b64encode(
         hmac.new(segredo.encode(), payload.encode(), hashlib.sha256).digest()
@@ -432,11 +441,52 @@ async def exigir_admin(x_admin_token: str = Header(default="")):
             "ADMIN_TOKEN não configurado no servidor. Defina a variável de ambiente "
             "ADMIN_TOKEN para habilitar as rotas de escrita.",
         )
-    if validar_sessao(x_admin_token):
-        return
-    if iguais_em_tempo_constante(x_admin_token, ADMIN_TOKEN):
+    if _token_admin_valido(x_admin_token):
         return
     raise HTTPException(401, "Sessão de admin ausente ou inválida (faça login na área restrita).")
+
+
+def _token_admin_valido(token: str) -> bool:
+    """Sessão assinada válida ou, para scripts/CLI, o próprio ADMIN_TOKEN."""
+    if not (ADMIN_TOKEN and token):
+        return False
+    return validar_sessao(token) or iguais_em_tempo_constante(token, ADMIN_TOKEN)
+
+
+def sessao_do_app_valida(request: Request) -> bool:
+    return _token_admin_valido(request.cookies.get(COOKIE_SESSAO, "")) or _token_admin_valido(
+        request.headers.get("x-admin-token", "")
+    )
+
+
+# Rotas que respondem sem login mesmo com o app privado: entrar, sair e saber
+# se é preciso entrar.
+ROTAS_SEM_LOGIN = {"/api/admin/login", "/api/sessao", "/api/sessao/sair"}
+
+
+@app.middleware("http")
+async def exigir_login_no_app_privado(request: Request, call_next):
+    """Com APP_PRIVADO, barra toda a API para quem não entrou.
+
+    Falha fechada: sem ADMIN_TOKEN configurado nenhuma sessão é válida, então
+    tudo responde 401 (e o login explica o que falta configurar).
+    """
+    caminho = request.url.path
+    if (
+        APP_PRIVADO
+        and caminho.startswith("/api/")
+        and caminho not in ROTAS_SEM_LOGIN
+        and request.method != "OPTIONS"
+        and not sessao_do_app_valida(request)
+    ):
+        # O header deixa o front distinguir "sessão do app acabou" do 401 da
+        # área de admin, que só pede o login de novo naquela aba.
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Entre com usuário e senha para usar o app."},
+            headers={"X-Sessao": "ausente"},
+        )
+    return await call_next(request)
 
 
 # ── Limite de uso das rotas que gastam chave de IA ─────────────────────────
@@ -1176,7 +1226,7 @@ class LoginReq(BaseModel):
 
 
 @app.post("/api/admin/login")
-async def admin_login(req: LoginReq, request: Request):
+async def admin_login(req: LoginReq, request: Request, response: Response):
     """Autentica o administrador e devolve uma sessão.
 
     Valida usuário e senha (comparação em tempo constante para evitar ataque de
@@ -1200,11 +1250,35 @@ async def admin_login(req: LoginReq, request: Request):
     ):
         raise HTTPException(401, "Usuário ou senha inválidos.")
     token, exp = emitir_sessao(ADMIN_USER)
+    if APP_PRIVADO:
+        sessao_app, _exp = emitir_sessao(ADMIN_USER, SESSAO_APP_SEGUNDOS)
+        response.set_cookie(
+            COOKIE_SESSAO,
+            sessao_app,
+            max_age=SESSAO_APP_SEGUNDOS,
+            httponly=True,
+            samesite="lax",
+            # Na Vercel o TLS termina no proxy: o esquema real vem no header.
+            secure=request.headers.get("x-forwarded-proto", request.url.scheme) == "https",
+            path="/",
+        )
     return {"token": token, "expira": exp, "usuario": ADMIN_USER}
 
 
 @app.get("/api/admin/verificar")
 async def admin_verificar(_: None = Depends(exigir_admin)):
+    return {"ok": True}
+
+
+@app.get("/api/sessao")
+def estado_sessao(request: Request):
+    """O front consulta isto antes de mostrar o app: precisa de login?"""
+    return {"privado": APP_PRIVADO, "logado": (not APP_PRIVADO) or sessao_do_app_valida(request)}
+
+
+@app.post("/api/sessao/sair")
+def sair(response: Response):
+    response.delete_cookie(COOKIE_SESSAO, path="/")
     return {"ok": True}
 
 

@@ -148,6 +148,7 @@ ficam em [supabase-backup/migracoes/](supabase-backup/migracoes/).
 - **Chaves separadas:** a leitura usa a chave pública (anon); a escrita e o Storage usam a `service_role`, que só existe no servidor.
 - **RLS:** migrações de 10/09/2026 deixam leitura pública e escrita exclusiva da `service_role`.
 - **Administrador:** usuário e senha geram uma sessão assinada válida por 8 h, enviada no header `X-Admin-Token`. Sem `ADMIN_TOKEN` configurado, as rotas de escrita respondem `503`. O login aceita 8 tentativas por IP a cada 15 min (`LIMITE_LOGIN_ADMIN`), na memória da instância e, com a `service_role`, também compartilhado no Supabase.
+- **App privado (opcional):** com `APP_PRIVADO=1`, toda rota `/api` exige login com as credenciais do admin. A sessão fica num cookie HttpOnly (`SameSite=Lax`, 30 dias); o botão de sair no cabeçalho encerra. Scripts entram com o header `X-Admin-Token`. Sem `ADMIN_TOKEN`, tudo responde 401 (falha fechada).
 - **CORS:** restrito às origens de `ALLOWED_ORIGINS`.
 - **Upload:** 4 MB na Vercel, porque a plataforma recusa corpos acima de 4,5 MB, e 25 MB rodando localmente. `MAX_UPLOAD_MB` substitui os dois.
 - **Envio direto (arquivos grandes):** acima desse teto, a aba PDFs pede uma URL assinada (`/api/upload/url`), o navegador envia o arquivo direto ao Storage em `_envios/<id>/<nome>` e `/api/upload/confirmar` aplica as mesmas regras do upload comum e grava no nome final. Teto de 50 MB por arquivo (limite do Supabase no plano gratuito). Um envio abandonado no meio pode deixar um provisório em `_envios/`, que não é indexado e pode ser apagado no painel.
@@ -205,6 +206,7 @@ usar o backend de produção, defina `BACKEND_URL`.
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Leitura |
 | `SUPABASE_SERVICE_ROLE_KEY` | Escrita, Storage e limite de uso (só no servidor) |
 | `ADMIN_TOKEN`, `ADMIN_USER`, `ADMIN_PASS`, `SESSION_SECRET` | Acesso administrativo |
+| `APP_PRIVADO` | `1` tranca o app inteiro com usuário e senha (os de `ADMIN_USER`/`ADMIN_PASS`); sessão de 30 dias em cookie |
 | `ALLOWED_ORIGINS` | CORS |
 | `GROQ_API_KEY`, `NOUS_API_KEY`, `NVIDIA_API_KEY`, `OPENROUTER_API_KEY`, `ANYAPI_API_KEY`, `ORCAROUTER_API_KEY` | Provedores de IA (só os usados) |
 | `LIMITE_LLM_POR_DIA_IP`, `LIMITE_LLM_GLOBAL_POR_DIA` | Tetos diários (0 desliga) |

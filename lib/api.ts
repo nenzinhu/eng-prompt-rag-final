@@ -88,8 +88,23 @@ function mensagemDe(data: unknown, status: number, texto: string): string {
   return cru ? `Erro ${status}: ${cru}` : `Erro ${status} na requisição`
 }
 
-async function pedir<T>(url: string, init?: RequestInit): Promise<T> {
+/** Disparado quando o app privado recusa a chamada: a sessão acabou e é preciso entrar de novo. */
+export const EVENTO_SESSAO_EXPIRADA = 'sessao-expirada'
+
+/**
+ * `fetch` das rotas do app. O 401 com `X-Sessao` vem do modo privado (e não da
+ * área de admin, que tem o próprio login): avisa a página para voltar ao login.
+ */
+async function buscar(url: string, init?: RequestInit): Promise<Response> {
   const r = await fetch(url, init)
+  if (r.status === 401 && r.headers.get('X-Sessao') && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(EVENTO_SESSAO_EXPIRADA))
+  }
+  return r
+}
+
+async function pedir<T>(url: string, init?: RequestInit): Promise<T> {
+  const r = await buscar(url, init)
   const texto = await r.text()
   let data: unknown = null
   try {
@@ -139,7 +154,7 @@ function nomeDoContentDisposition(header: string | null, padrao: string): string
 
 /** Baixa um arquivo binário (POST com corpo JSON, resposta é o arquivo, não JSON). */
 async function baixarArquivo(url: string, body: unknown, nomePadrao: string): Promise<void> {
-  const r = await fetch(url, {
+  const r = await buscar(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -188,7 +203,7 @@ async function perguntarStream(
   /** Turnos anteriores da conversa, do mais antigo ao mais recente. O servidor corta o excesso. */
   historico: TurnoConversa[] = [],
 ): Promise<PerguntarResp> {
-  const r = await fetch('/api/perguntar/stream', {
+  const r = await buscar('/api/perguntar/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pergunta, provider, modelo, persona, historico }),
@@ -370,6 +385,10 @@ export const api = {
       { tema, formato, provider, modelo, interesses: interesses.trim() || null },
       `apostila.${formato}`
     ),
+
+  // ── Acesso ao app (modo privado) ─────────────────────────────────────────
+  sessao: () => pedir<{ privado: boolean; logado: boolean }>('/api/sessao'),
+  sair: () => postJson<{ ok: boolean }>('/api/sessao/sair', {}),
 
   // ── Rotas de escrita (exigem o token de admin) ───────────────────────────
   adminLogin: (usuario: string, senha: string) =>
