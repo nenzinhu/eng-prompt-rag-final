@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { TriangleAlert } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { TermoGlossario } from '@/lib/types'
+import { lerAgenda, paraHoje, proximaRevisao, registrar, salvarAgenda } from '@/lib/revisao'
 
 const POR_RODADA = 15
 
@@ -17,8 +18,10 @@ function embaralhar<T>(lista: T[]): T[] {
 }
 
 /**
- * Flashcards com os termos já salvos no Glossário. "Não sabia" devolve o
- * cartão para o fim da fila; a rodada acaba quando todos foram lembrados.
+ * Flashcards com os termos já salvos no Glossário. A rodada traz primeiro o
+ * que a agenda espaçada (lib/revisao.ts) marcou para hoje. "Não sabia" devolve
+ * o cartão para o fim da fila; só a primeira resposta de cada cartão conta
+ * para a agenda.
  */
 export default function FlashcardsTab({ ativo, onIr }: { ativo: boolean; onIr: (aba: string) => void }) {
   const [termos, setTermos] = useState<TermoGlossario[] | null>(null)
@@ -28,8 +31,16 @@ export default function FlashcardsTab({ ativo, onIr }: { ativo: boolean; onIr: (
   const [errados, setErrados] = useState<Set<string>>(new Set())
   const [erro, setErro] = useState('')
 
-  const novaRodada = useCallback((lista: TermoGlossario[]) => {
-    setFila(embaralhar(lista).slice(0, POR_RODADA))
+  const [emDia, setEmDia] = useState(false)
+  const [total, setTotal] = useState(0)
+
+  /** `todos`: ignora a agenda (o aluno quer revisar mesmo com tudo em dia). */
+  const novaRodada = useCallback((lista: TermoGlossario[], todos = false) => {
+    const hoje = paraHoje(lista, lerAgenda(), Date.now())
+    setEmDia(!todos && !hoje.length)
+    const rodada = todos ? embaralhar(lista).slice(0, POR_RODADA) : hoje.slice(0, POR_RODADA)
+    setFila(rodada)
+    setTotal(rodada.length)
     setVirado(false)
     setDeCara(0)
     setErrados(new Set())
@@ -47,12 +58,17 @@ export default function FlashcardsTab({ ativo, onIr }: { ativo: boolean; onIr: (
   }, [ativo, termos, novaRodada])
 
   const atual = fila[0]
-  const total = Math.min(termos?.length ?? 0, POR_RODADA)
+
+  function anotarNaAgenda(termo: string, sabia: boolean) {
+    salvarAgenda(registrar(lerAgenda(), termo, sabia, Date.now()))
+  }
 
   function responder(sabia: boolean) {
     if (!atual) return
+    const primeiraResposta = !errados.has(atual.termo)
+    if (primeiraResposta) anotarNaAgenda(atual.termo, sabia)
     if (sabia) {
-      if (!errados.has(atual.termo)) setDeCara((n) => n + 1)
+      if (primeiraResposta) setDeCara((n) => n + 1)
       setFila((f) => f.slice(1))
     } else {
       setErrados((s) => new Set(s).add(atual.termo))
@@ -82,6 +98,28 @@ export default function FlashcardsTab({ ativo, onIr }: { ativo: boolean; onIr: (
           className="min-h-11 rounded-lg bg-lime px-5 text-sm font-semibold text-[#08070c] transition-opacity hover:opacity-90"
         >
           Ir para o Glossário
+        </button>
+      </div>
+    )
+  }
+
+  if (emDia) {
+    const proxima = proximaRevisao(lerAgenda())
+    return (
+      <div role="status" className="glass flex flex-col items-start gap-3 rounded-2xl p-5">
+        <p className="font-display text-[1.5rem] italic text-text">Revisão em dia</p>
+        <p className="text-[0.9rem] text-muted">
+          {proxima
+            ? `Próximos cartões em ${new Date(proxima).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}.`
+            : 'Nenhum cartão agendado.'}{' '}
+          Revisar no dia certo fixa mais do que revisar todo dia.
+        </p>
+        <button
+          type="button"
+          onClick={() => novaRodada(termos, true)}
+          className="min-h-11 rounded-lg border border-white/15 px-5 text-sm text-text transition-colors hover:bg-white/[0.05]"
+        >
+          Revisar mesmo assim
         </button>
       </div>
     )

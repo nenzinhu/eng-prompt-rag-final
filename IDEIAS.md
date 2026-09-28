@@ -32,18 +32,6 @@ Registro de ideias inovadoras. Mantido pela skill `ideias-novas`.
   confirmação de e-mail.
 - **Próximo passo:** função de validação do JWT com teste, antes de mexer na cota.
 
-### I-003 · Revisão espaçada dos termos do Glossário
-- **Data:** 2026-09-18
-- **Status:** nova
-- **Problema:** os termos gerados ficam salvos (`glossario_termos`), mas não há nada que ajude o
-  aluno a memorizá-los.
-- **Proposta:** modo "revisar" com cartões (termo → explicação) e agenda simples de repetição
-  espaçada (1, 3, 7, 14 dias).
-- **Impacto:** médio — reforça o estudo sem chamar IA (custo zero por revisão).
-- **Esforço:** baixo — só front, agenda no localStorage; na conta depois de I-001.
-- **Riscos/dúvidas:** sem dado de quantos alunos usam o Glossário hoje.
-- **Próximo passo:** protótipo na aba Glossário com os termos já salvos.
-
 ### I-004 · Simulado com correção citando as fontes
 - **Data:** 2026-09-18
 - **Status:** nova
@@ -89,4 +77,19 @@ Registro de ideias inovadoras. Mantido pela skill `ideias-novas`.
 - **Histórico:** 2026-09-18 nova → feita, junto com o PDF novo da apostila (capa, sumário,
   seções numeradas, caixas de destaque, tabelas).
 ## Feitas
+
+### I-003 · Revisão espaçada dos termos do Glossário
+- **Data:** 2026-09-18
+- **Status:** feita
+- **Problema:** os termos gerados ficam salvos (`glossario_termos`), mas não há nada que ajude o
+  aluno a memorizá-los.
+- **Proposta:** modo "revisar" com cartões (termo → explicação) e agenda simples de repetição
+  espaçada (1, 3, 7, 14 dias).
+- **Impacto:** médio — reforça o estudo sem chamar IA (custo zero por revisão).
+- **Esforço:** baixo — só front, agenda no localStorage; na conta depois de I-001.
+- **Riscos/dúvidas:** sem dado de quantos alunos usam o Glossário hoje.
+- **Próximo passo:** protótipo na aba Glossário com os termos já salvos.
+- **Histórico:** 2026-09-28 nova → feita: agenda 1/3/7/14 dias na aba Flashcards
+  (`lib/revisao.ts`), no navegador; ir para a conta depende de I-001.
+
 ## Descartadas
