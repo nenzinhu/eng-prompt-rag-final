@@ -28,6 +28,7 @@ import Header from '@/components/Header'
 import Login from '@/components/Login'
 import TabNav, { type TabDef } from '@/components/TabNav'
 import TabPanel from '@/components/TabPanel'
+import PaletaComandos from '@/components/PaletaComandos'
 import HojeTab from '@/components/tabs/HojeTab'
 import EstudarTab from '@/components/tabs/EstudarTab'
 import ResumoApostilaTab from '@/components/tabs/ResumoApostilaTab'
@@ -147,6 +148,7 @@ export default function Home() {
     <>
       <Header refreshSignal={statusTick} onSair={privado ? sair : undefined} />
       <TabNav tabs={TABS} active={active} onChange={setActive} />
+      <PaletaComandos tabs={TABS} onIr={setActive} onPerguntar={perguntarNaConversa} onTestar={testarSobre} />
       <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-4">
         <div className="relative">
           <TabPanel id="hoje" active={active === 'hoje'}>
