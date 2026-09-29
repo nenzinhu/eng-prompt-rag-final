@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Scale, TriangleAlert, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import { estimarAcerto } from '@/lib/acerto'
 import type { CompararAlvo, CompararResp, NivelConcordancia, ProvidersResp } from '@/lib/types'
 import Markdown from '../Markdown'
 import EvidenceList from '../EvidenceList'
@@ -45,7 +46,21 @@ const CORES: Record<NivelConcordancia, { borda: string; texto: string; fundo: st
   },
 }
 
-export default function CompararTab({ providers }: { providers: ProvidersResp }) {
+const CORES_ACERTO = {
+  alta: 'text-emerald-300 bg-emerald-400',
+  media: 'text-amber-300 bg-amber-300',
+  baixa: 'text-rose-300 bg-rose-400',
+} as const
+
+export default function CompararTab({
+  providers,
+  duplo = false,
+}: {
+  providers: ProvidersResp
+  /** Modo "Duas IAs" do Estudar: exatamente dois modelos lado a lado e estimativa de acerto. */
+  duplo?: boolean
+}) {
+  const maxModelos = duplo ? 2 : MAX_MODELOS
   const chaves = Object.keys(providers)
   // Só provedores com chave de API configurada podem ir num slot: escolher um
   // sem chave dava erro naquele card, sem o aluno ter feito nada.
@@ -62,11 +77,16 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
     if (!configurados.length) return
     setSlots((atual) => {
       if (atual.length) return atual
-      return configurados.slice(0, 3).map((p, i) => ({
+      const iniciais = configurados.slice(0, duplo ? 2 : 3).map((p, i) => ({
         id: i,
         provider: p,
         modelo: providers[p]?.models?.[0] ?? '',
       }))
+      // Com um só provedor configurado, compara dois modelos dele.
+      const unico = configurados[0]
+      const segundo = providers[unico]?.models?.[1]
+      if (iniciais.length === 1 && segundo) iniciais.push({ id: 1, provider: unico, modelo: segundo })
+      return iniciais
     })
   }, [configurados.join(','), providers]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -84,7 +104,7 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
 
   function adicionar() {
     setSlots((s) => {
-      if (s.length >= MAX_MODELOS) return s
+      if (s.length >= maxModelos) return s
       const usados = new Set(s.map((x) => x.provider))
       const livre = configurados.find((c) => !usados.has(c)) ?? configurados[0] ?? ''
       const proximoId = Math.max(0, ...s.map((x) => x.id)) + 1
@@ -115,11 +135,14 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
   }
 
   const cores = resultado ? CORES[resultado.nivel_concordancia] : null
+  const acerto = duplo && resultado ? estimarAcerto(resultado) : null
 
   return (
     <div>
       <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
-        Mesma pergunta, vários modelos — onde eles discordarem é onde vale estudar
+        {duplo
+          ? 'Duas IAs respondem a mesma questão — se chegarem à mesma resposta, a chance de acerto sobe'
+          : 'Mesma pergunta, vários modelos — onde eles discordarem é onde vale estudar'}
       </p>
 
       {/* Seletores de modelo */}
@@ -163,7 +186,7 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
             )}
           </div>
         ))}
-        {slots.length < MAX_MODELOS && (
+        {slots.length < maxModelos && (
           <button
             onClick={adicionar}
             className="self-start rounded-lg border border-dashed border-white/15 px-3 py-1.5 text-[0.75rem] text-muted transition-colors hover:border-violet/40 hover:text-text"
@@ -225,6 +248,34 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
 
         {!loading && !erro && resultado && cores && (
           <div className="flex flex-col gap-4">
+            {acerto && (
+              <div className="glass rounded-xl px-4 py-3.5" role="status">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-[0.85rem] font-semibold text-text">Probabilidade de acerto (estimativa)</span>
+                  <span className={`font-mono text-2xl font-bold ${CORES_ACERTO[acerto.faixa].split(' ')[0]}`}>
+                    {acerto.percentual}%
+                  </span>
+                </div>
+                <div
+                  className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"
+                  role="meter"
+                  aria-label="Probabilidade de acerto"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={acerto.percentual}
+                >
+                  <div
+                    className={`h-full rounded-full ${CORES_ACERTO[acerto.faixa].split(' ')[1]}`}
+                    style={{ width: `${acerto.percentual}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-[0.8rem] leading-relaxed text-muted">
+                  {acerto.motivo} Baseado na concordância entre as IAs e no quanto a resposta se apoia na apostila — confira
+                  sempre as páginas citadas.
+                </p>
+              </div>
+            )}
+
             {/* Veredito */}
             <div className={`rounded-xl border ${cores.borda} ${cores.fundo} px-4 py-3.5`}>
               <div className={`font-semibold ${cores.texto}`}>
@@ -281,7 +332,7 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
             )}
 
             {/* Respostas lado a lado */}
-            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <div className={`grid gap-4 md:grid-cols-2 ${duplo ? '' : 'xl:grid-cols-3'}`}>
               {resultado.respostas.map((r, i) => (
                 <div key={`${i}-${r.rotulo}`} className="glass grad-border flex flex-col overflow-hidden rounded-xl">
                   <div className="border-b border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
@@ -290,6 +341,7 @@ export default function CompararTab({ providers }: { providers: ProvidersResp })
                     </div>
                     <div className="font-mono text-[0.62rem] text-muted">
                       {r.provider} · {r.segundos}s
+                      {acerto?.alternativas[i] && <> · marcou {acerto.alternativas[i]}</>}
                     </div>
                   </div>
                   <div className="flex-1 p-3.5">

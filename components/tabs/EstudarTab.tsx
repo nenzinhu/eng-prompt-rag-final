@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import type { ProvidersResp } from '@/lib/types'
 import PerguntarTab from './PerguntarTab'
 import AprenderTab from './AprenderTab'
+import CompararTab from './CompararTab'
 
 /** Modos principais: um toque troca o jeito de explicar sem perder a conversa. */
 const MODOS = [
@@ -11,6 +12,7 @@ const MODOS = [
   { id: 'simples', rotulo: 'Simples', persona: 'nivel_inicial', dica: 'Do zero, com analogias do dia a dia' },
   { id: 'socratico', rotulo: 'Socrático', persona: 'socratico', dica: 'Perguntas que levam você à resposta' },
   { id: 'feynman', rotulo: 'Feynman', persona: '', dica: 'A IA explica, depois você explica e ela avalia' },
+  { id: 'duas', rotulo: 'Duas IAs', persona: '', dica: 'Dois modelos lado a lado e a chance de a resposta estar certa' },
 ] as const
 
 /** As outras personalidades do antigo "Professor Sabe Tudo" (ver PERSONA_PROMPTS no backend). */
@@ -47,7 +49,7 @@ export default function EstudarTab({
   const [outra, setOutra] = useState(OUTRAS[0].persona)
 
   useEffect(() => {
-    if (seed?.texto.trim()) setModo((m) => (m === 'feynman' ? 'direto' : m))
+    if (seed?.texto.trim()) setModo((m) => (m === 'feynman' || m === 'duas' ? 'direto' : m))
   }, [seed?.tick, seed?.texto])
   useEffect(() => {
     if (modoSeed?.tick) setModo(modoSeed.modo)
@@ -97,7 +99,7 @@ export default function EstudarTab({
       <p className="mb-5 text-[0.85rem] text-muted">{dica}</p>
 
       {/* As duas ficam montadas: trocar de modo não apaga a conversa nem a explicação em curso. */}
-      <div hidden={modo === 'feynman'}>
+      <div hidden={modo === 'feynman' || modo === 'duas'}>
         <PerguntarTab
           providers={providers}
           persona={persona}
@@ -108,6 +110,9 @@ export default function EstudarTab({
       </div>
       <div hidden={modo !== 'feynman'}>
         <AprenderTab providers={providers} />
+      </div>
+      <div hidden={modo !== 'duas'}>
+        <CompararTab providers={providers} duplo />
       </div>
     </div>
   )
