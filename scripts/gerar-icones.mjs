@@ -3,13 +3,13 @@
 //     node scripts/gerar-icones.mjs
 //
 // O desenho é o mesmo de components/Header.tsx: o prompt ">_" com a estrela, em
-// preto sobre o degradê lime → hotpink. Rodar de novo sobrescreve os arquivos.
+// petróleo sobre verde suave. Rodar de novo sobrescreve os arquivos.
 import { writeFile } from 'node:fs/promises'
 import sharp from 'sharp'
 
-const LIME = '#c6ff3d'
-const HOTPINK = '#ff3df0'
-const TINTA = '#08070c'
+const LIME = '#c9e8a2'
+const HOTPINK = '#8bd5bf'
+const TINTA = '#0c1416'
 
 // Os três traços do logo, no viewBox 24×24 do cabeçalho.
 const glifo = `

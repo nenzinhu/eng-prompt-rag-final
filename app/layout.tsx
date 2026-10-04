@@ -17,7 +17,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: 'Engenharia de Prompt — Ensino Virtual',
-  description: 'RAG cloud para o curso de Engenharia de Prompt',
+  description: 'Seu espaço de estudo com apostilas, inteligência artificial e prática guiada.',
   applicationName: 'Eng. Prompt',
   icons: {
     icon: [
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#08070c',
+  themeColor: '#0c1416',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

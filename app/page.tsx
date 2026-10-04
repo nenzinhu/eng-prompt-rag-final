@@ -84,6 +84,10 @@ export default function Home() {
   const [acesso, setAcesso] = useState<'verificando' | 'liberado' | 'login'>('verificando')
   const [privado, setPrivado] = useState(false)
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }, [active])
+
   function perguntarNaConversa(texto: string) {
     setPerguntaSeed((s) => ({ texto, tick: s.tick + 1 }))
     setActive('perguntar')
@@ -149,7 +153,7 @@ export default function Home() {
       <Header refreshSignal={statusTick} onSair={privado ? sair : undefined} />
       <TabNav tabs={TABS} active={active} onChange={setActive} />
       <PaletaComandos tabs={TABS} onIr={setActive} onPerguntar={perguntarNaConversa} onTestar={testarSobre} />
-      <main className="relative mx-auto max-w-[900px] px-5 pb-16 pt-4">
+      <main className="relative mx-auto max-w-[1120px] px-5 pb-20 pt-8 sm:px-8 sm:pt-10">
         <div className="relative">
           <TabPanel id="hoje" active={active === 'hoje'}>
             <HojeTab ativo={active === 'hoje'} onPerguntar={perguntarNaConversa} onTestar={testarSobre} onIr={irPara} />

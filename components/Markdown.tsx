@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm'
 
 export default function Markdown({ children }: { children: string }) {
   return (
-    <div className="space-y-3 text-[0.9rem] leading-relaxed text-text">
+    <div className="answer-markdown space-y-3 text-[0.95rem] leading-[1.8] text-text">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

@@ -146,6 +146,11 @@ export default function ResolverTab({
 
   return (
     <div>
+      <div className="mb-7">
+        <p className="mb-2 text-[0.7rem] font-medium uppercase tracking-[0.16em] text-cyan">Da dúvida à resposta</p>
+        <h1 className="font-display text-[2rem] leading-tight text-text sm:text-[2.5rem]">Entenda por que está certa.</h1>
+        <p className="mt-3 max-w-[650px] text-[0.9rem] leading-relaxed text-muted">Traga a questão e seu raciocínio. Confira a análise, as fontes e o resultado com o gabarito.</p>
+      </div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="font-mono text-[0.7rem] uppercase tracking-wider text-muted">
           Análise de questões de múltipla escolha (IA + RAG)
@@ -196,8 +201,9 @@ export default function ResolverTab({
       />
 
       {!modoLote ? (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div>
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <div className="rounded-2xl border border-white/[0.08] bg-surface/60 p-5 sm:p-6">
+            <h2 className="mb-4 flex items-center gap-2 text-[0.95rem] font-semibold text-text"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan/10 text-[0.7rem] text-cyan">1</span> Sua questão</h2>
             <p className="mb-2.5 text-[0.8rem] leading-relaxed text-muted">
               <strong className="font-medium text-text">Cole a questão completa</strong> com todas as alternativas (A,
               B, C, D…) — sem letras, basta uma alternativa por linha —, ou envie um print. A IA busca no material e escolhe a alternativa correta, explicando o
@@ -253,7 +259,15 @@ export default function ResolverTab({
             </div>
           </div>
 
-          <div>
+          <div className="min-w-0">
+            <h2 className="mb-4 flex items-center gap-2 text-[0.95rem] font-semibold text-text"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan/10 text-[0.7rem] text-cyan">2</span> Análise e resposta</h2>
+            {!loading && !ocrLoading && !erro && !resultado && (
+              <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-cyan/20 bg-surface/30 p-7 text-center">
+                <BookOpen className="mb-5 h-8 w-8 text-cyan/70" aria-hidden="true" />
+                <p className="font-display text-[1.3rem] text-text">Vamos conferir seu raciocínio.</p>
+                <p className="mt-3 max-w-[260px] text-[0.85rem] leading-relaxed text-muted">Adicione uma questão e clique em analisar. A resposta e os trechos da apostila aparecem aqui.</p>
+              </div>
+            )}
             {(loading || ocrLoading) && (
               <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 text-muted">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet/30 border-t-violet" />
@@ -417,12 +431,6 @@ export default function ResolverTab({
 
                   <EvidenceList items={resultado.contexto} />
                 </div>
-              </div>
-            )}
-            {!loading && !ocrLoading && !erro && !resultado && (
-              <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 text-center text-muted">
-                <Target className="h-6 w-6 opacity-50" aria-hidden="true" />
-                <span className="text-[0.82rem]">A resposta aparecerá aqui após a análise</span>
               </div>
             )}
           </div>

@@ -5,17 +5,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: '#08070c',
-        surface: '#100e17',
-        'surface-2': '#171320',
+        bg: '#0c1416',
+        surface: '#142023',
+        'surface-2': '#1b2a2e',
         border: 'rgba(255,255,255,0.08)',
         'border-2': 'rgba(255,255,255,0.14)',
-        violet: '#9b6bff',
-        cyan: '#2fe0d6',
-        lime: '#c6ff3d',
-        hotpink: '#ff3df0',
-        text: '#eae7f5',
-        muted: '#8b85a3',
+        violet: '#b4c7e7',
+        cyan: '#8bd5bf',
+        lime: '#c9e8a2',
+        hotpink: '#8bd5bf',
+        text: '#f0f1e9',
+        muted: '#a0b2b5',
       },
       fontFamily: {
         display: ['var(--font-fraunces)', 'serif'],

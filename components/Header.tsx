@@ -136,12 +136,12 @@ export default function Header({
   return (
     <header
       ref={rootRef}
-      className="sticky top-0 z-50 flex items-center justify-between border-b border-white/[0.12] bg-bg/70 px-[8px] py-[4px] backdrop-blur-xl"
+      className="sticky top-0 z-50 flex min-h-[76px] flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-white/[0.07] bg-bg/95 px-5 py-4 backdrop-blur-xl sm:px-8 lg:px-12"
     >
-      <div className="flex items-center gap-[6px]">
+      <div className="flex min-w-0 items-center gap-3">
         <span
           ref={logoRef}
-          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[4px] bg-gradient-to-br from-lime to-hotpink shadow-[0_0_17px_rgba(255,61,240,0.45)]"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime shadow-[0_4px_20px_rgba(201,232,162,0.08)]"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path
@@ -159,10 +159,10 @@ export default function Header({
           </svg>
         </span>
         <div ref={titleRef} className="leading-tight">
-          <div className="font-display text-[1.13rem] italic text-text">
-            Engenharia de Prompt <span className="grad-text not-italic font-sans font-semibold">IA</span>
+          <div className="text-[0.95rem] font-semibold tracking-tight text-text sm:text-[1.05rem]">
+            Engenharia de Prompt <span className="ml-1 rounded-md bg-cyan/10 px-1.5 py-0.5 font-mono text-[0.65rem] text-cyan">IA</span>
           </div>
-          <div className="font-mono text-[0.65rem] tracking-wide text-muted">RAG CLOUD · VERCEL + SUPABASE</div>
+          <div className="mt-0.5 text-[0.7rem] text-muted">Seu espaço para aprender melhor</div>
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -179,10 +179,13 @@ export default function Header({
         )}
         <div
           ref={badgeRef}
-          className={`flex items-center gap-2 rounded-md border px-3 py-1 font-mono text-[0.68rem] font-medium transition-colors ${styles[status]}`}
+          title={label}
+          role="status"
+          className={`flex min-h-8 items-center gap-2 rounded-full border px-2.5 py-1 text-[0.7rem] font-medium transition-colors sm:px-3 ${styles[status]}`}
         >
           <span ref={dotRef} className={`h-1.5 w-1.5 rounded-full bg-current ${status === 'loading' ? 'animate-pulse' : ''}`} />
-          {label}
+          <span className="hidden lg:inline">{label}</span>
+          <span className="lg:hidden">{status === 'ready' ? 'Material pronto' : status === 'empty' ? 'Sem material' : status === 'offline' ? 'Sem conexão' : 'Conectando'}</span>
         </div>
         {onSair && (
           <button

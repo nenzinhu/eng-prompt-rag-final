@@ -162,6 +162,10 @@ export default function CompararTab({
 
   return (
     <div>
+      <div className="mb-6">
+        <p className="mb-2 text-[0.7rem] font-medium uppercase tracking-[0.16em] text-cyan">Perspectivas lado a lado</p>
+        <h2 className="font-display text-[1.8rem] leading-tight text-text sm:text-[2.2rem]">{duplo ? 'Duas IAs. Uma questão.' : 'Compare antes de concluir.'}</h2>
+      </div>
       <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
         {duplo
           ? 'Duas IAs analisam sua questão e resposta — confira o resultado com o gabarito'
@@ -169,27 +173,29 @@ export default function CompararTab({
       </p>
 
       {/* Seletores de modelo */}
-      <div className="mb-4 flex flex-col gap-2">
+      <div className={`mb-5 grid gap-3 ${duplo ? 'sm:grid-cols-2' : ''}`}>
         {slots.map((slot, i) => (
-          <div key={slot.id} className="flex flex-wrap items-center gap-2">
-            <span className="w-16 shrink-0 font-mono text-[0.68rem] text-muted">
-              Modelo {i + 1}
+          <div key={slot.id} className="flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-white/[0.08] bg-surface/70 p-4">
+            <span className="mb-1 w-full text-[0.75rem] font-semibold text-cyan">
+              IA {i + 1}
             </span>
             <select
               value={slot.provider}
+              aria-label={`Provedor da IA ${i + 1}`}
               onChange={(e) => atualizar(slot.id, 'provider', e.target.value)}
-              className="glass rounded-lg px-3 py-2 font-mono text-[0.8rem] text-text outline-none"
+              className="glass min-h-11 w-full min-w-0 rounded-lg px-3 py-2 text-[0.8rem] text-text outline-none"
             >
               {Object.entries(providers).map(([k, v]) => (
-                <option key={k} value={k} className="bg-surface">
+                <option key={k} value={k} disabled={!v.configurado} className="bg-surface">
                   {v.label}
                 </option>
               ))}
             </select>
             <select
               value={slot.modelo}
+              aria-label={`Modelo da IA ${i + 1}`}
               onChange={(e) => atualizar(slot.id, 'modelo', e.target.value)}
-              className="glass min-w-0 flex-1 rounded-lg px-3 py-2 font-mono text-[0.78rem] text-text outline-none"
+              className="glass min-h-11 w-full min-w-0 rounded-lg px-3 py-2 text-[0.78rem] text-text outline-none"
             >
               {(providers[slot.provider]?.models ?? []).map((m) => (
                 <option key={m} value={m} className="bg-surface">
@@ -212,12 +218,15 @@ export default function CompararTab({
         {slots.length < maxModelos && (
           <button
             onClick={adicionar}
+            disabled={!configurados.length}
             className="self-start rounded-lg border border-dashed border-white/15 px-3 py-1.5 text-[0.75rem] text-muted transition-colors hover:border-violet/40 hover:text-text"
           >
             + adicionar modelo
           </button>
         )}
       </div>
+
+      {!configurados.length && <p role="status" className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/5 p-4 text-[0.85rem] leading-relaxed text-amber-200">Nenhuma IA está disponível no momento. O administrador precisa configurar os modelos para habilitar a comparação.</p>}
 
       <textarea
         value={pergunta}

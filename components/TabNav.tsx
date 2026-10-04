@@ -196,21 +196,31 @@ export default function TabNav({
   return (
     <nav
       aria-label="Navegação de ferramentas"
-      className={`sticky z-40 bg-bg/80 px-2 backdrop-blur-xl transition-[padding] duration-200 sm:px-4 ${
-        compacto ? 'py-0.5' : 'py-1.5'
+      className={`sticky z-40 border-b border-white/[0.06] bg-bg/95 px-4 backdrop-blur-xl transition-[padding] duration-200 sm:px-8 ${
+        compacto ? 'py-1' : 'py-3'
       }`}
       style={{ top: topo }}
     >
-      <div className="mx-auto flex max-w-full items-end justify-center gap-2">
+      <div className="mx-auto flex max-w-[1120px] flex-col gap-2">
+        <div className="hidden items-center gap-1 md:flex" aria-label="Áreas de estudo">
+          {grupos.map((g) => (
+            <button key={g} type="button" onClick={() => trocarGrupo(g)} aria-current={g === grupoAtivo ? 'page' : undefined}
+              className={`min-h-10 rounded-lg px-4 text-[0.85rem] font-medium transition-colors ${g === grupoAtivo ? 'bg-cyan/10 text-cyan' : 'text-muted hover:bg-white/[0.04] hover:text-text'}`}>
+              {g}
+            </button>
+          ))}
+          <span className="ml-auto text-[0.7rem] text-muted">Seu estudo, no seu ritmo</span>
+        </div>
+        <div className="flex min-w-0 items-end gap-2">
         {/* O grupo virou seletor: economiza a fileira de pílulas que ficava
             sempre visível. `trocarGrupo` já reabre a última aba usada no grupo. */}
-        <div ref={menuRef} className="relative shrink-0 pb-1">
+        <div ref={menuRef} className="relative shrink-0 pb-1 md:hidden">
           <button
             onClick={() => setMenuAberto((o) => !o)}
             aria-expanded={menuAberto}
             aria-haspopup="menu"
             aria-label={`Grupo: ${grupoAtivo}. Trocar de grupo`}
-            className="flex min-h-10 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 font-mono text-[0.72rem] uppercase tracking-wider text-lime transition-colors hover:bg-white/[0.08]"
+            className="flex min-h-10 items-center gap-2 rounded-lg border border-cyan/20 bg-cyan/10 px-3 py-1.5 text-[0.8rem] font-medium text-cyan transition-colors hover:bg-cyan/15"
           >
             {grupoAtivo}
             <ChevronDown
@@ -242,12 +252,12 @@ export default function TabNav({
           ref={navRef}
           role="tablist"
           aria-label={`Abas de ${grupoAtivo}`}
-          className="no-scrollbar relative flex min-w-0 items-center gap-1 overflow-x-auto border-b border-white/10 px-1 sm:flex-wrap sm:justify-center sm:overflow-visible"
+          className="no-scrollbar relative flex min-w-0 items-center gap-1 overflow-x-auto px-1 md:flex-wrap md:overflow-visible"
           style={{ width: 'fit-content' }}
         >
         <div
           ref={indicatorRef}
-          className="pointer-events-none absolute left-0 top-0 h-[3px] rounded-full bg-gradient-to-r from-lime to-hotpink"
+          className="pointer-events-none absolute left-0 top-0 h-[3px] rounded-full bg-cyan"
           style={{ width: 0, height: 0 }}
         />
         {abasDoGrupo.map((t) => {
@@ -261,7 +271,7 @@ export default function TabNav({
               id={`aba-${t.id}`}
               role="tab"
               aria-selected={active === t.id}
-              aria-controls={`painel-${t.id}`}
+              aria-controls={t.id}
               tabIndex={active === t.id ? 0 : -1}
               onKeyDown={(e) => navegarPorTeclado(e, t.id)}
               onClick={() => onClickBtn(t.id)}
@@ -273,10 +283,10 @@ export default function TabNav({
               title={t.label}
               className={`relative z-10 flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap px-3 text-[0.875rem] font-medium transition-[color,padding] duration-200 sm:px-3.5 sm:text-[0.9375rem] ${
                 compacto ? 'py-1.5' : 'py-2.5'
-              } ${active === t.id ? 'text-white' : 'text-muted hover:text-lime active:text-lime'}`}
+              } ${active === t.id ? 'text-text' : 'text-muted hover:text-cyan active:text-cyan'}`}
             >
               <Icon
-                className={`h-4 w-4 shrink-0 ${active === t.id ? 'text-lime' : ''}`}
+                className={`h-4 w-4 shrink-0 ${active === t.id ? 'text-cyan' : ''}`}
                 aria-hidden="true"
                 strokeWidth={2}
               />
@@ -289,6 +299,7 @@ export default function TabNav({
             </button>
           )
         })}
+        </div>
         </div>
       </div>
     </nav>

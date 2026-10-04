@@ -12,7 +12,7 @@ const MODOS = [
   { id: 'simples', rotulo: 'Simples', persona: 'nivel_inicial', dica: 'Do zero, com analogias do dia a dia' },
   { id: 'socratico', rotulo: 'Socrático', persona: 'socratico', dica: 'Perguntas que levam você à resposta' },
   { id: 'feynman', rotulo: 'Feynman', persona: '', dica: 'A IA explica, depois você explica e ela avalia' },
-  { id: 'duas', rotulo: 'Duas IAs', persona: '', dica: 'Dois modelos lado a lado e a chance de a resposta estar certa' },
+  { id: 'duas', rotulo: 'Duas IAs', persona: '', dica: 'Compare duas análises e confira os acertos com o gabarito' },
 ] as const
 
 /** As outras personalidades do antigo "Professor Sabe Tudo" (ver PERSONA_PROMPTS no backend). */
@@ -61,13 +61,18 @@ export default function EstudarTab({
   const dica = modo === 'outro' ? 'Mesma conversa, com outro jeito de explicar.' : principal?.dica ?? ''
 
   const chip = (ativo: boolean) =>
-    `min-h-10 rounded-full border px-4 text-[0.85rem] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-lime ${
-      ativo ? 'border-text bg-text font-semibold text-[#08070c]' : 'border-white/15 text-muted hover:text-text'
+    `min-h-11 rounded-xl border px-4 text-[0.85rem] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-lime ${
+      ativo ? 'border-cyan/30 bg-cyan/10 font-semibold text-cyan' : 'border-transparent text-muted hover:bg-white/[0.04] hover:text-text'
     }`
 
   return (
     <div>
-      <div role="group" aria-label="Jeito de explicar" className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="mb-6">
+        <p className="mb-2 text-[0.7rem] font-medium uppercase tracking-[0.16em] text-cyan">Estudar com IA</p>
+        <h1 className="font-display text-[2rem] leading-tight text-text sm:text-[2.5rem]">Uma conversa. Novos entendimentos.</h1>
+        <p className="mt-3 text-[0.9rem] leading-relaxed text-muted">Escolha como quer aprender. Sua apostila é o ponto de partida.</p>
+      </div>
+      <div role="group" aria-label="Jeito de explicar" className="mb-3 flex flex-wrap items-center gap-1 rounded-2xl border border-white/[0.07] bg-surface/60 p-2">
         {MODOS.map((m) => (
           <button key={m.id} type="button" aria-pressed={modo === m.id} onClick={() => setModo(m.id)} className={chip(modo === m.id)}>
             {m.rotulo}

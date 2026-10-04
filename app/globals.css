@@ -14,14 +14,13 @@ html,
 body {
   padding: 0;
   margin: 0;
-  background: #08070c;
-  color: #eae7f5;
+  background: #0c1416;
+  color: #f0f1e9;
 }
 
 body {
   background-image:
-    radial-gradient(60% 50% at 15% 0%, rgba(155, 107, 255, 0.07), transparent 60%),
-    radial-gradient(50% 40% at 100% 10%, rgba(47, 224, 214, 0.05), transparent 60%);
+    radial-gradient(70% 55% at 80% 0%, rgba(139, 213, 191, 0.065), transparent 70%);
   background-attachment: fixed;
   min-height: 100vh;
 }
@@ -38,7 +37,7 @@ body {
 }
 
 ::selection {
-  background: rgba(155, 107, 255, 0.35);
+  background: rgba(139, 213, 191, 0.3);
 }
 
 ::-webkit-scrollbar {
@@ -53,14 +52,13 @@ body {
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.035);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: linear-gradient(145deg, rgba(27, 42, 46, 0.85), rgba(20, 32, 35, 0.9));
   border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
 }
 
 .grad-text {
-  background: linear-gradient(90deg, #c9a9ff, #6fe3d9);
+  background: linear-gradient(90deg, #c9e8a2, #8bd5bf);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -75,7 +73,7 @@ body {
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, rgba(155, 107, 255, 0.6), rgba(47, 224, 214, 0.4));
+  background: linear-gradient(135deg, rgba(139, 213, 191, 0.35), rgba(139, 213, 191, 0.06));
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -88,6 +86,67 @@ body {
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+@layer base {
+  button, a, input, select, textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button, input, select, textarea {
+    transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+  }
+  button:disabled { cursor: not-allowed; }
+  button:not(:disabled), select { cursor: pointer; }
+  :focus-visible {
+    outline: 2px solid #8bd5bf;
+    outline-offset: 4px;
+  }
+  textarea, input, select { accent-color: #8bd5bf; }
+  textarea { resize: vertical; }
+  textarea:focus, input:focus, select:focus {
+    border-color: rgba(139, 213, 191, 0.65);
+    box-shadow: 0 0 0 3px rgba(139, 213, 191, 0.1);
+  }
+  select { max-width: 100%; }
+  input, textarea { font-size: max(1rem, 16px); }
+}
+
+.study-hero {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(120deg, #21352e, #17282b 65%, #19292c);
+  border: 1px solid rgba(201, 232, 162, 0.16);
+}
+.study-hero::after {
+  content: '';
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  right: -120px;
+  top: -180px;
+  border: 1px solid rgba(201, 232, 162, 0.12);
+  border-radius: 50%;
+  box-shadow: 0 0 0 45px rgba(201, 232, 162, 0.025), 0 0 0 90px rgba(201, 232, 162, 0.02);
+  pointer-events: none;
+}
+.action-card {
+  background: #142023;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+.action-card:hover {
+  background: #1b2a2e;
+  border-color: rgba(139, 213, 191, 0.3);
+  transform: translateY(-2px);
+}
+.answer-markdown { overflow-wrap: anywhere; }
+.answer-markdown > * > :first-child { margin-top: 0; }
+.answer-markdown p + p { margin-top: 0.85rem; }
+.answer-markdown li p { display: inline; }
+
+@media (max-width: 640px) {
+  select { min-height: 44px; }
+  textarea, input { font-size: 16px !important; }
 }
 
 @media (max-width: 380px) {
