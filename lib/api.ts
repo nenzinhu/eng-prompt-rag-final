@@ -311,8 +311,8 @@ export const api = {
     }),
   praticarQuestoes: (tema: string, quantidade: number, provider: string, modelo: string) =>
     postJson<QuestoesResp>('/api/praticar/questoes', { tema, quantidade, provider, modelo }),
-  resolver: (texto: string, provider: string, modelo: string) =>
-    postJson<ResolverResp>('/api/resolver', { texto, provider, modelo }),
+  resolver: (texto: string, provider: string, modelo: string, resposta_aluno = '') =>
+    postJson<ResolverResp>('/api/resolver', { texto, provider, modelo, resposta_aluno }),
   glossario: (tema: string, provider: string, modelo: string) =>
     postJson<GlossarioResp>('/api/glossario', { tema, provider, modelo }),
   /** Auditoria de fidelidade: frase por frase contra o material. */
@@ -383,8 +383,8 @@ export const api = {
       provider,
       modelo,
     }),
-  comparar: (pergunta: string, modelos: CompararAlvo[]) =>
-    postJson<CompararResp>('/api/comparar', { pergunta, modelos }),
+  comparar: (pergunta: string, modelos: CompararAlvo[], resposta_aluno = '') =>
+    postJson<CompararResp>('/api/comparar', { pergunta, modelos, resposta_aluno }),
   resumirApostila: (file: File, provider: string, modelo: string) => {
     const form = new FormData()
     form.append('file', file)

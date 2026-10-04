@@ -66,6 +66,7 @@ export default function ResolverTab({
 }) {
   const { provider, modelo, trocarProvider, setModelo, pronto, nenhumConfigurado } = useProviderModel(providers)
   const [texto, setTexto] = useState('')
+  const [respostaAluno, setRespostaAluno] = useState('')
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
   const [resultado, setResultado] = useState<ResolverResp | null>(null)
@@ -87,6 +88,7 @@ export default function ResolverTab({
   }, [])
 
   function marcarResultado(acertou: boolean) {
+    if (avaliado) return
     setAcuracia(registrarResultado(acertou))
     setAvaliado(true)
   }
@@ -111,7 +113,7 @@ export default function ResolverTab({
     setAvaliado(false)
     setVerDetalhada(false)
     try {
-      const d = await api.resolver(texto, provider, modelo)
+      const d = await api.resolver(texto, provider, modelo, respostaAluno)
       setResultado(d)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro na análise')
@@ -167,7 +169,7 @@ export default function ResolverTab({
       <div className="mb-4 flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
         <div className="flex items-center gap-1.5 font-mono text-[0.72rem] text-muted">
           <Target className="h-3.5 w-3.5" aria-hidden="true" />
-          Acurácia da IA:{' '}
+          Acertos da IA conferidos por você:{' '}
           <span className="font-semibold text-text">
             {acuracia.total > 0 ? `${Math.round((acuracia.acertos / acuracia.total) * 100)}%` : '—'}
           </span>{' '}
@@ -218,6 +220,16 @@ export default function ResolverTab({
               resetToken={anexoReset}
               dica="Envie um print ou foto da questão — o texto entra na caixa acima, aqui no navegador"
             />
+            <label className="mt-3 block text-[0.8rem] text-muted">
+              Sua resposta para analisar (opcional)
+              <textarea
+                value={respostaAluno}
+                onChange={(e) => setRespostaAluno(e.target.value)}
+                maxLength={4000}
+                placeholder="Ex.: marquei B porque…"
+                className="glass mt-2 min-h-[90px] w-full rounded-xl p-3 text-text outline-none"
+              />
+            </label>
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={analisar}
@@ -229,6 +241,7 @@ export default function ResolverTab({
               <button
                 onClick={() => {
                   setTexto('')
+                  setRespostaAluno('')
                   setResultado(null)
                   setErro('')
                   setAnexoReset((t) => t + 1)
@@ -273,7 +286,14 @@ export default function ResolverTab({
                   Resultado — {resultado.provider} / {resultado.modelo}
                 </div>
                 <div className="p-5">
-                  {resultado.pouco_embasado && <WarnBanner confianca={resultado.confianca_media} />}
+                  <p className="mb-3 text-[0.78rem] text-muted">
+                    {resultado.base_resposta === 'ia'
+                      ? resultado.motivo_sem_rag === 'busca_indisponivel'
+                        ? 'Resposta somente da IA: a consulta à apostila está indisponível.'
+                        : 'Resposta somente da IA: não foi encontrado material relevante na apostila.'
+                      : 'Resposta com apostila + IA. Confira as fontes abaixo.'}
+                  </p>
+                  {resultado.base_resposta !== 'ia' && resultado.pouco_embasado && <WarnBanner confianca={resultado.confianca_media} />}
                   <EnunciadoUsado resultado={resultado} />
                   <div className="mb-4 flex items-start gap-3.5 rounded-xl border border-cyan/25 bg-cyan/[0.06] p-4">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet to-cyan font-mono text-lg font-bold text-[#08070c]">

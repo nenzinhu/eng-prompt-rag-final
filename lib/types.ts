@@ -129,6 +129,8 @@ export interface AuditarResp {
 }
 
 export interface ResolverResp {
+  base_resposta?: 'rag_ia' | 'ia'
+  motivo_sem_rag?: 'sem_material_relevante' | 'busca_indisponivel' | null
   /** Enunciado que o backend reconheceu e mandou para a busca e para a IA. */
   questao: string
   /** O texto tinha mais de uma lista A, B, C…; foi usada a última. */
@@ -362,6 +364,8 @@ export interface SuporteAtendimentoResp {
 }
 
 export interface CompararResp {
+  base_resposta?: 'rag_ia' | 'ia'
+  motivo_sem_rag?: 'sem_material_relevante' | 'busca_indisponivel' | null
   pergunta: string
   respostas: CompararResposta[]
   nivel_concordancia: NivelConcordancia

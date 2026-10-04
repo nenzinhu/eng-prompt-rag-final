@@ -5,10 +5,10 @@ export interface AcuraciaStats {
   total: number
 }
 
-export function lerAcuracia(): AcuraciaStats {
+export function lerAcuracia(chave = KEY): AcuraciaStats {
   if (typeof window === 'undefined') return { acertos: 0, total: 0 }
   try {
-    const raw = window.localStorage.getItem(KEY)
+    const raw = window.localStorage.getItem(chave)
     if (!raw) return { acertos: 0, total: 0 }
     const parsed = JSON.parse(raw)
     return { acertos: parsed.acertos ?? 0, total: parsed.total ?? 0 }
@@ -17,11 +17,11 @@ export function lerAcuracia(): AcuraciaStats {
   }
 }
 
-export function registrarResultado(acertou: boolean): AcuraciaStats {
-  const atual = lerAcuracia()
+export function registrarResultado(acertou: boolean, chave = KEY): AcuraciaStats {
+  const atual = lerAcuracia(chave)
   const novo = { acertos: atual.acertos + (acertou ? 1 : 0), total: atual.total + 1 }
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(novo))
+    window.localStorage.setItem(chave, JSON.stringify(novo))
   } catch {
     // localStorage indisponível — segue só em memória
   }

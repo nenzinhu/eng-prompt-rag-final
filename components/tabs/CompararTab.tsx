@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Scale, TriangleAlert, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import { estimarAcerto } from '@/lib/acerto'
+import { lerAcuracia, registrarResultado, type AcuraciaStats } from '@/lib/accuracy'
 import type { CompararAlvo, CompararResp, NivelConcordancia, ProvidersResp } from '@/lib/types'
 import Markdown from '../Markdown'
 import EvidenceList from '../EvidenceList'
@@ -67,9 +68,25 @@ export default function CompararTab({
   const configurados = chaves.filter((p) => providers[p]?.configurado)
   const [slots, setSlots] = useState<Slot[]>([])
   const [pergunta, setPergunta] = useState('')
+  const [respostaAluno, setRespostaAluno] = useState('')
+  const [avaliados, setAvaliados] = useState<Record<number, boolean>>({})
+  const [estatisticas, setEstatisticas] = useState<Record<string, AcuraciaStats>>({})
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
   const [resultado, setResultado] = useState<CompararResp | null>(null)
+
+  function chaveModelo(provider: string, modelo: string) {
+    return `comparar_acuracia_v1:${JSON.stringify([provider, modelo])}`
+  }
+
+  function marcarResultado(i: number, acertou: boolean) {
+    const r = resultado?.respostas[i]
+    if (!r || r.erro || avaliados[i]) return
+    const chave = chaveModelo(r.provider, r.modelo)
+    const stats = registrarResultado(acertou, chave)
+    setEstatisticas((s) => ({ ...s, [chave]: stats }))
+    setAvaliados((s) => ({ ...s, [i]: true }))
+  }
 
   // Monta os slots iniciais com provedores distintos (a graça é comparar
   // modelos diferentes, não dois do mesmo provedor).
@@ -120,12 +137,18 @@ export default function CompararTab({
     if (!pergunta.trim() || slots.length < MIN_MODELOS) return
     setLoading(true)
     setErro('')
+    setAvaliados({})
     try {
       const d = await api.comparar(
         pergunta,
         slots.map((s) => ({ provider: s.provider, modelo: s.modelo })),
+        respostaAluno,
       )
       setResultado(d)
+      setEstatisticas(Object.fromEntries(d.respostas.map((r) => {
+        const chave = chaveModelo(r.provider, r.modelo)
+        return [chave, lerAcuracia(chave)]
+      })))
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não consegui comparar os modelos. Tente novamente.')
       setResultado(null)
@@ -141,7 +164,7 @@ export default function CompararTab({
     <div>
       <p className="mb-4 font-mono text-[0.7rem] uppercase tracking-wider text-muted">
         {duplo
-          ? 'Duas IAs respondem a mesma questão — se chegarem à mesma resposta, a chance de acerto sobe'
+          ? 'Duas IAs analisam sua questão e resposta — confira o resultado com o gabarito'
           : 'Mesma pergunta, vários modelos — onde eles discordarem é onde vale estudar'}
       </p>
 
@@ -203,6 +226,17 @@ export default function CompararTab({
         className="glass min-h-[110px] w-full rounded-xl p-4 font-mono text-[0.82rem] leading-relaxed text-text outline-none placeholder:text-muted focus:border-violet/40"
       />
 
+      <label className="mt-3 block text-[0.8rem] text-muted">
+        Sua resposta para analisar (opcional)
+        <textarea
+          value={respostaAluno}
+          onChange={(e) => setRespostaAluno(e.target.value)}
+          maxLength={4000}
+          placeholder="Ex.: marquei B porque…"
+          className="glass mt-2 min-h-[90px] w-full rounded-xl p-3 text-text outline-none"
+        />
+      </label>
+
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           onClick={enviar}
@@ -214,6 +248,8 @@ export default function CompararTab({
         <button
           onClick={() => {
             setPergunta('')
+            setRespostaAluno('')
+            setAvaliados({})
             setResultado(null)
             setErro('')
           }}
@@ -248,10 +284,17 @@ export default function CompararTab({
 
         {!loading && !erro && resultado && cores && (
           <div className="flex flex-col gap-4">
+            <p className="text-[0.8rem] text-muted">
+              {resultado.base_resposta === 'ia'
+                ? resultado.motivo_sem_rag === 'busca_indisponivel'
+                  ? 'Somente IA: a consulta à apostila está indisponível.'
+                  : 'Somente IA: não foi encontrado material relevante na apostila.'
+                : 'Apostila + IA: os modelos receberam os mesmos trechos.'}
+            </p>
             {acerto && (
               <div className="glass rounded-xl px-4 py-3.5" role="status">
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-[0.85rem] font-semibold text-text">Probabilidade de acerto (estimativa)</span>
+                  <span className="text-[0.85rem] font-semibold text-text">Indicador de concordância e apoio</span>
                   <span className={`font-mono text-2xl font-bold ${CORES_ACERTO[acerto.faixa].split(' ')[0]}`}>
                     {acerto.percentual}%
                   </span>
@@ -259,7 +302,7 @@ export default function CompararTab({
                 <div
                   className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"
                   role="meter"
-                  aria-label="Probabilidade de acerto"
+                  aria-label="Indicador de concordância e apoio"
                   aria-valuemin={0}
                   aria-valuemax={100}
                   aria-valuenow={acerto.percentual}
@@ -270,8 +313,8 @@ export default function CompararTab({
                   />
                 </div>
                 <p className="mt-2 text-[0.8rem] leading-relaxed text-muted">
-                  {acerto.motivo} Baseado na concordância entre as IAs e no quanto a resposta se apoia na apostila — confira
-                  sempre as páginas citadas.
+                  {acerto.motivo} Este indicador é uma heurística, não uma probabilidade de acerto nem acurácia medida.
+                  Confira com o gabarito e registre o resultado de cada IA abaixo.
                 </p>
               </div>
             )}
@@ -295,7 +338,7 @@ export default function CompararTab({
               </p>
               <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[0.68rem] text-muted">
                 <span>responderam: {resultado.modelos_ok}/{resultado.modelos_total}</span>
-                <span>confiança no material: {Math.round(resultado.confianca_media * 100)}%</span>
+                <span>{resultado.base_resposta === 'ia' ? 'sem apoio da apostila' : `similaridade da busca: ${Math.round(resultado.confianca_media * 100)}%`}</span>
                 <span>semelhança das conclusões: {Math.round(resultado.similaridade_conclusoes * 100)}%</span>
               </div>
             </div>
@@ -363,6 +406,23 @@ export default function CompararTab({
                           </div>
                         )}
                         <Markdown>{r.resposta}</Markdown>
+                        <div className="mt-4 border-t border-white/10 pt-3 text-[0.78rem] text-muted">
+                          {(() => {
+                            const stats = estatisticas[chaveModelo(r.provider, r.modelo)]
+                            return <p>Acertos conferidos: {stats?.total
+                              ? `${Math.round(stats.acertos / stats.total * 100)}% (${stats.acertos}/${stats.total})`
+                              : 'sem avaliações'}</p>
+                          })()}
+                          {avaliados[i] ? <p className="mt-2">Resultado registrado.</p> : (
+                            <div className="mt-2">
+                              <p>Compare esta IA com o gabarito:</p>
+                              <div className="mt-2 flex gap-2">
+                                <button onClick={() => marcarResultado(i, true)} className="rounded-lg border border-emerald-400/25 px-3 py-1.5 text-emerald-300">Acertou</button>
+                                <button onClick={() => marcarResultado(i, false)} className="rounded-lg border border-rose-400/25 px-3 py-1.5 text-rose-300">Errou</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </>
                     )}
                   </div>
@@ -370,7 +430,7 @@ export default function CompararTab({
               ))}
             </div>
 
-            {resultado.pouco_embasado && <WarnBanner confianca={resultado.confianca_media} />}
+            {resultado.base_resposta !== 'ia' && resultado.pouco_embasado && <WarnBanner confianca={resultado.confianca_media} />}
 
             <div className="glass rounded-xl p-4">
               <EvidenceList items={resultado.contexto} />
