@@ -119,7 +119,7 @@ confirmação explícita.
 | Processamento no navegador | pdfjs-dist e pdf-lib (PDF), mammoth (.docx), tesseract.js (OCR) |
 | Backend | Python, FastAPI, httpx, pypdf + fonttools, python-docx, python-pptx, fpdf2 |
 | Dados | Supabase: Postgres + pgvector, Storage, Edge Functions (Deno) |
-| IA | Groq, Nous Portal, NVIDIA NIM, Mistral, AnyAPI, Orca Router, Together, Cohere, Hugging Face, ModelScope, OpenRouter — todos por API OpenAI-compatible |
+| IA | Groq, Cerebras, Nous Portal, NVIDIA NIM, Mistral, AnyAPI, Orca Router, Together, Cohere, Hugging Face, ModelScope, OpenRouter — todos por API OpenAI-compatible |
 | Hospedagem | Vercel: Next.js mais função Python `api/index.py`, `maxDuration` de 60 s |
 | Qualidade | pytest, ruff, eslint, tsc, `node --test`, GitHub Actions |
 
@@ -214,7 +214,7 @@ usar o backend de produção, defina `BACKEND_URL`.
 | `ADMIN_TOKEN`, `ADMIN_USER`, `ADMIN_PASS`, `SESSION_SECRET` | Acesso administrativo |
 | `APP_PRIVADO` | `1` tranca o app inteiro com usuário e senha (os de `ADMIN_USER`/`ADMIN_PASS`); sessão de 30 dias em cookie |
 | `ALLOWED_ORIGINS` | CORS |
-| `GROQ_API_KEY`, `NOUS_API_KEY`, `NVIDIA_API_KEY`, `OPENROUTER_API_KEY`, `ANYAPI_API_KEY`, `ORCAROUTER_API_KEY`, `MISTRAL_API_KEY`, `TOGETHER_API_KEY`, `COHERE_API_KEY`, `HUGGINGFACE_API_KEY`, `MODELSCOPE_API_KEY` | Provedores de IA (só os usados) |
+| `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `NOUS_API_KEY`, `NVIDIA_API_KEY`, `OPENROUTER_API_KEY`, `ANYAPI_API_KEY`, `ORCAROUTER_API_KEY`, `MISTRAL_API_KEY`, `TOGETHER_API_KEY`, `COHERE_API_KEY`, `HUGGINGFACE_API_KEY`, `MODELSCOPE_API_KEY` | Provedores de IA (só os usados) |
 | `LIMITE_LLM_POR_DIA_IP`, `LIMITE_LLM_GLOBAL_POR_DIA` | Tetos diários (0 desliga) |
 | `MAX_DURACAO_FUNCAO`, `MAX_UPLOAD_MB` | Orçamento de tempo e limite de upload |
 | `BACKEND_URL` | Só em desenvolvimento |

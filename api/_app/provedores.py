@@ -42,7 +42,22 @@ PROVIDERS = {
             "allam-2-7b",              # 1,8 s
             "openai/gpt-oss-20b",      # 3,0 s
             "qwen/qwen3.6-27b",        # 2,5 s — emite tags <think>, tratadas na limpeza
-            # qwen/qwen3.8-27b removido: HTTP 502 na verificação de 10/09/2026.
+            # qwen3.8-27b deu 502 em 10/09/2026, mas consta como Preview no catálogo
+            # oficial do Groq em 14/10/2026 — reinstalado a pedido do usuário.
+            "qwen/qwen3.8-27b",
+        ],
+    },
+    # Verificado com CHAMADA REAL em 14/10/2026: o /v1/models da chave devolve só
+    # estes dois modelos e ambos responderam texto (~0,2-1,3 s). command-a-03-2025,
+    # command-a-plus-05-2026 e gpt-oss-20b deram HTTP 404 ("Model does not exist or
+    # you do not have access to it") nesta conta.
+    "cerebras": {
+        "label": "Cerebras",
+        "base_url": "https://api.cerebras.ai/v1",
+        "env_key": "CEREBRAS_API_KEY",
+        "models": [
+            "gpt-oss-120b",     # 0,2 s
+            "qwen-3.8-27b",     # 1,3 s — emite reasoning antes; o content vem preenchido
         ],
     },
     "nous": {
@@ -174,15 +189,22 @@ PROVIDERS = {
         # Endpoint de compatibilidade com a API da OpenAI.
         "base_url": "https://api.cohere.ai/compatibility/v1",
         "env_key": "COHERE_API_KEY",
+        # Testados com CHAMADA REAL em 14/10/2026 via /compatibility/v1: os três
+        # primeiros responderam texto em ~0,3 s; command-r7b continua no catálogo
+        # (/models) da chave.
         "models": [
-            "command-r7b-12-2024",
+            "c4ai-aya-vision-32b",
             "command-a-03-2025",
+            "command-a-plus-05-2026",
+            "command-r7b-12-2024",
         ],
         "notas": {
+            "c4ai-aya-vision-32b": "entende texto e imagem",
+            "command-a-03-2025": "rápido e completo",
+            "command-a-plus-05-2026": "o mais completo",
             "command-r7b-12-2024": "rápido, respostas mais simples",
-            "command-a-03-2025": "mais completo",
         },
-        "aviso": "Chave de teste do Cohere: gratuita, com cerca de 1.000 chamadas por mês. Ainda não testado neste app.",
+        "aviso": "Chave de teste do Cohere: gratuita, com cerca de 1.000 chamadas por mês.",
     },
     "huggingface": {
         "label": "Hugging Face",
@@ -225,6 +247,14 @@ PROVIDERS = {
             "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
             "nvidia/nemotron-3-super-120b-a12b:free",
             "poolside/laguna-xs-2.1:free",
+            # Conferidos no catálogo do OpenRouter em 14/10/2026 (ids exatos do
+            # /models, incluindo o sufixo -it do Gemma). Os do Poolside têm
+            # expiração anunciada para 31/10/2026.
+            "thinkingmachines/inkling:free",
+            "thinkingmachines/inkling-small:free",
+            "poolside/laguna-s-2.1:free",
+            "google/gemma-4-26b-a4b-it:free",
+            "google/gemma-4-31b-it:free",
             "openrouter/free",
             # nvidia/nemotron-3.5-lightning:free removido em 17/09/2026: ~90 s,
             # passa do tempo máximo da função (60 s).

@@ -46,7 +46,11 @@ def testar(base_url: str, chave: str, modelo: str) -> tuple[str, float]:
         r = httpx.post(
             f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {chave}"},
-            json={"model": modelo, "messages": [{"role": "user", "content": PERGUNTA}], "max_tokens": 50},
+            # max_tokens folgado de propósito: o app não limita a saída, e modelos
+            # que raciocinam antes (Cerebras qwen-3.8-27b, gpt-oss-120b) consomem
+            # dezenas de tokens de reasoning e devolveriam `content` vazio com um
+            # teto apertado — um falso negativo na verificação.
+            json={"model": modelo, "messages": [{"role": "user", "content": PERGUNTA}], "max_tokens": 300},
             timeout=TIMEOUT,
         )
     except httpx.HTTPError as e:
